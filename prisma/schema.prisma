@@ -113,6 +113,7 @@ model Site {
   aliases        SiteAlias[]
   contracts      Contract[]
   revenueEntries RevenueEntry[]
+  monthlyMemos   MonthlyMemo[]
 
   @@index([name])
   @@index([customerName])
@@ -283,6 +284,36 @@ model RevenueEntry {
   @@index([sourceType, status])
   @@index([contractId])
   @@index([contractLineId])
+}
+
+model MonthlyMemo {
+  id          String   @id @default(cuid())
+  siteId      String
+  month       String
+  content     String
+  version     Int      @default(1)
+  createdById String
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, month])
+  @@index([month])
+  @@index([siteId, updatedAt])
+}
+
+model SyncEvent {
+  id         Int      @id @default(autoincrement())
+  type       String
+  entityId   String
+  siteId     String?
+  month      String?
+  actorId    String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type, id])
 }
 
 model SystemSetting {
