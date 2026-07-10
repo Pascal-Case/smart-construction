@@ -3,6 +3,7 @@ import {
   Boxes,
   Building2,
   FileSpreadsheet,
+  FileText,
   HardHat,
   ReceiptText,
   Settings2,
@@ -23,6 +24,7 @@ const navigation = [
   { label: "매출 원장", icon: ReceiptText, phase: "Phase 5", href: "/revenues" },
   { label: "월별 현황", icon: BarChart3, phase: "Phase 6", href: "/reports/monthly" },
   { label: "월별 메모", icon: StickyNote, phase: "Phase 6", href: "/reports/monthly" },
+  { label: "거래명세표", icon: FileText, phase: "Phase 9", href: "/invoices" },
 ];
 
 export function AppShell({ children, user }: { children: React.ReactNode; user: SessionUser }) {
@@ -46,7 +48,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               <p className="text-xs text-muted-foreground">{user.role}</p>
             </div>
             <RealtimeStatus />
-            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 7</Badge>
+            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 9</Badge>
             <LogoutButton />
           </div>
         </div>
@@ -78,6 +80,9 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               </Link>
               <Link href="/settings/audit" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
                 <StickyNote className="size-4" aria-hidden="true" /> 감사 로그
+              </Link>
+              <Link href="/settings/company" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+                <FileText className="size-4" aria-hidden="true" /> 공급자 정보
               </Link>
             </div>
           )}
