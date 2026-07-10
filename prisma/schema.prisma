@@ -419,3 +419,27 @@ model SystemSetting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model LegacyMigrationBatch {
+  id               String   @id @default(cuid())
+  fingerprint      String   @unique
+  sourceType       String
+  sourceName       String?
+  totalItems       Int
+  totalSites       Int
+  totalContracts   Int
+  createdItems     Int
+  reusedItems      Int
+  createdSites     Int
+  reusedSites      Int
+  createdContracts Int
+  skippedContracts Int
+  warningCount     Int
+  reportJson       String
+  actorId          String
+  actorName        String
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+}
