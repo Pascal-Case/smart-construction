@@ -26,7 +26,7 @@ export function SetupForm() {
       <div className="space-y-2"><Label htmlFor="name">관리자 이름</Label><Input id="name" name="name" required autoFocus /></div>
       <div className="space-y-2"><Label htmlFor="loginId">관리자 아이디</Label><Input id="loginId" name="loginId" autoComplete="username" required /><p className="text-xs text-muted-foreground">영문 소문자, 숫자, . _ - 조합 3자 이상</p></div>
       <div className="space-y-2"><Label htmlFor="password">비밀번호</Label><Input id="password" name="password" type="password" autoComplete="new-password" required /><p className="text-xs text-muted-foreground">영문과 숫자를 포함한 10자 이상</p></div>
-      <Button className="w-full" size="lg" disabled={pending}>{pending ? "설정 중..." : "관리자 계정 생성"}</Button>
+      <Button type="submit" className="w-full" size="lg" disabled={pending}>{pending ? "설정 중..." : "관리자 계정 생성"}</Button>
     </form>
   );
 }

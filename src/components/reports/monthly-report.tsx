@@ -163,7 +163,7 @@ export function MonthlyReport({
               ))}
             </select>
           </div>
-          <Button variant="outline" disabled={loading}>
+          <Button type="submit" variant="outline" disabled={loading}>
             <Search data-icon="inline-start" />
             조회
           </Button>

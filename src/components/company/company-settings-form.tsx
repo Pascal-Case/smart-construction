@@ -53,7 +53,7 @@ export function CompanySettingsForm({ initialSetting }: { initialSetting: Compan
     <Field label="업태" name="businessType" defaultValue={setting.businessType} />
     <Field label="종목" name="businessItem" defaultValue={setting.businessItem} />
     <Field label="공급 안내 문구" name="defaultMessage" defaultValue={setting.defaultMessage} className="sm:col-span-2" />
-    <div className="flex items-center justify-between sm:col-span-2"><p className="text-xs text-muted-foreground">{setting.updatedAt ? `마지막 수정: ${new Date(setting.updatedAt).toLocaleString("ko-KR")}` : "아직 저장되지 않았습니다."}</p><Button disabled={busy}><Save data-icon="inline-start" />{busy ? "저장 중..." : "저장"}</Button></div>
+    <div className="flex items-center justify-between sm:col-span-2"><p className="text-xs text-muted-foreground">{setting.updatedAt ? `마지막 수정: ${new Date(setting.updatedAt).toLocaleString("ko-KR")}` : "아직 저장되지 않았습니다."}</p><Button type="submit" disabled={busy}><Save data-icon="inline-start" />{busy ? "저장 중..." : "저장"}</Button></div>
   </form>;
 }
 
