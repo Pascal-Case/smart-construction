@@ -8,8 +8,9 @@ $powerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $startScript = Join-Path $PSScriptRoot "start-production.ps1"
 $backupScript = Join-Path $PSScriptRoot "backup-database.ps1"
 $appArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $startScript + '" -NodeExe "' + $node + '" -Port ' + $Port
-$backupArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $backupScript + '"' + $(if ($BackupDirectory) { ' -BackupDirectory "' + [IO.Path]::GetFullPath($BackupDirectory, $root) + '"' } else { "" })
-$plan = [ordered]@{ Apply = [bool]$Apply; RunAs = "SYSTEM"; AppTask = $AppTaskName; AppTrigger = "Windows startup + 30 seconds"; Port = $Port; NodeExe = $node; BackupTask = $BackupTaskName; BackupTime = $BackupTime; BackupDirectory = if ($BackupDirectory) { [IO.Path]::GetFullPath($BackupDirectory, $root) } else { Join-Path $root "data\backups" }; ProjectRoot = $root }
+$resolvedBackupDirectory = if ($BackupDirectory) { Resolve-SmartConstructionPath -Path $BackupDirectory -BasePath $root } else { Join-Path $root "data\backups" }
+$backupArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $backupScript + '"' + $(if ($BackupDirectory) { ' -BackupDirectory "' + $resolvedBackupDirectory + '"' } else { "" })
+$plan = [ordered]@{ Apply = [bool]$Apply; RunAs = "SYSTEM"; AppTask = $AppTaskName; AppTrigger = "Windows startup + 30 seconds"; Port = $Port; NodeExe = $node; BackupTask = $BackupTaskName; BackupTime = $BackupTime; BackupDirectory = $resolvedBackupDirectory; ProjectRoot = $root }
 if (-not $Apply) {
     $plan
     Write-Host "Dry-run입니다. 관리자 PowerShell에서 -Apply를 지정해야 작업 스케줄러가 변경됩니다."

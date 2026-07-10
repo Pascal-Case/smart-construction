@@ -6,7 +6,7 @@ $root = Get-SmartConstructionRoot
 $database = Resolve-SmartConstructionDatabase -DatabasePath $DatabasePath
 if (-not (Test-Path -LiteralPath $database)) { throw "백업할 DB가 없습니다: $database" }
 $sqlite = Resolve-SqliteExecutable -SqliteExe $SqliteExe
-$backupRoot = if ($BackupDirectory) { [IO.Path]::GetFullPath($BackupDirectory, $root) } else { Join-Path $root "data\backups" }
+$backupRoot = if ($BackupDirectory) { Resolve-SmartConstructionPath -Path $BackupDirectory -BasePath $root } else { Join-Path $root "data\backups" }
 New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
 $target = Join-Path $backupRoot ("smart-construction-" + $timestamp + ".db")

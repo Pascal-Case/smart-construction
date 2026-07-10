@@ -5,7 +5,7 @@ param([Parameter(Mandatory)][string]$BackupFile, [string]$DatabasePath, [string]
 if (-not $ConfirmRestore) { throw "복구는 기존 DB를 교체합니다. 내용을 확인한 뒤 -ConfirmRestore를 지정해 주세요." }
 $root = Get-SmartConstructionRoot
 $database = Resolve-SmartConstructionDatabase -DatabasePath $DatabasePath
-$backup = [IO.Path]::GetFullPath($BackupFile, $root)
+$backup = Resolve-SmartConstructionPath -Path $BackupFile -BasePath $root
 if (-not (Test-Path -LiteralPath $backup)) { throw "백업 파일이 없습니다: $backup" }
 $sqlite = Resolve-SqliteExecutable -SqliteExe $SqliteExe
 Assert-SmartConstructionServerStopped -Port $Port

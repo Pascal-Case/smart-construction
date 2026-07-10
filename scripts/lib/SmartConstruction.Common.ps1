@@ -5,6 +5,12 @@ function Get-SmartConstructionRoot {
     return [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 }
 
+function Resolve-SmartConstructionPath {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$BasePath)
+    if ([IO.Path]::IsPathRooted($Path)) { return [IO.Path]::GetFullPath($Path) }
+    return [IO.Path]::GetFullPath((Join-Path $BasePath $Path))
+}
+
 function Get-SmartConstructionEnvValue {
     param([Parameter(Mandatory)][string]$Name)
     $root = Get-SmartConstructionRoot
@@ -20,7 +26,7 @@ function Get-SmartConstructionEnvValue {
 function Resolve-SmartConstructionDatabase {
     param([string]$DatabasePath)
     $root = Get-SmartConstructionRoot
-    if ($DatabasePath) { return [IO.Path]::GetFullPath($DatabasePath, $root) }
+    if ($DatabasePath) { return Resolve-SmartConstructionPath -Path $DatabasePath -BasePath $root }
     $url = Get-SmartConstructionEnvValue -Name "DATABASE_URL"
     if (-not $url.StartsWith("file:")) { throw "DATABASE_URL은 SQLite file: URL이어야 합니다." }
     $configured = $url.Substring(5)
