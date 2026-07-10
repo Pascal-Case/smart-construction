@@ -8,6 +8,7 @@ import {
   ReceiptText,
   Settings2,
   StickyNote,
+  Upload,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -48,7 +49,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               <p className="text-xs text-muted-foreground">{user.role}</p>
             </div>
             <RealtimeStatus />
-            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 9</Badge>
+            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 11</Badge>
             <LogoutButton />
           </div>
         </div>
@@ -83,6 +84,9 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               </Link>
               <Link href="/settings/company" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
                 <FileText className="size-4" aria-hidden="true" /> 공급자 정보
+              </Link>
+              <Link href="/settings/migration" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+                <Upload className="size-4" aria-hidden="true" /> 기존 데이터 이관
               </Link>
             </div>
           )}

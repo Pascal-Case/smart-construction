@@ -223,6 +223,25 @@
                 setTimeout(() => setSaveMessage(''), 2000);
             }, []);
 
+            const handleExportLegacyData = useCallback(() => {
+                const payload = {
+                    format: 'smart-construction-legacy-v1',
+                    sourceType: 'LOCAL_STORAGE',
+                    sourceName: 'Smart_Construction_App.html',
+                    exportedAt: new Date().toISOString(),
+                    items,
+                    contracts,
+                    supplier: supplierInfo
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'smart-construction-legacy-' + new Date().toISOString().slice(0, 10) + '.json';
+                link.click();
+                URL.revokeObjectURL(url);
+            }, [items, contracts, supplierInfo]);
+
             const handleAISimulation = (featureName) => {
                  console.log(`${featureName} 기능은 외부 API(Gemini)에 의존하므로 로컬 환경에서는 사용할 수 없습니다.`);
                  return false;
@@ -783,6 +802,7 @@
                             <div className="flex gap-2 items-center text-sm">
                                 <button onClick={handleManualSave} className={`px-3 py-2 bg-emerald-600 text-white rounded text-sm font-bold flex gap-1 shadow transition-all hover:bg-emerald-700 ${saveMessage ? 'bg-green-500' : ''}`}><Icon name="Save" size={16}/> {saveMessage || '설정 저장'}</button>
                                 <button onClick={() => console.log('설정 기능은 로컬 환경에서 비활성화되었습니다.')} className="p-2 hover:bg-slate-700 rounded"><Icon name="Settings"/></button>
+                                <button onClick={handleExportLegacyData} className="px-3 py-2 bg-sky-600 text-white rounded text-sm font-bold flex gap-1 shadow hover:bg-sky-700"><Icon name="Download" size={16}/> 이관 JSON</button>
                                 <div className="h-6 w-px bg-slate-600 mx-1"></div>
                                 <button onClick={() => setActiveTab('input')} className={`px-4 py-2 rounded font-bold ${activeTab === 'input' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}>관리</button>
                                 <button onClick={() => setActiveTab('report')} className={`px-4 py-2 rounded font-bold ${activeTab === 'report' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}>보고서</button>
