@@ -1022,7 +1022,7 @@ smart-construction/
 - [x] 오류 행을 설명하고 정상 데이터만 의도대로 저장 가능
 - [x] 코드 중복과 이름 충돌 시 자동 덮어쓰지 않음
 
-### Phase 4. 계약과 단가 예외
+### Phase 4. 계약과 단가 예외 — 완료 (2026-07-10)
 
 작업:
 
@@ -1034,8 +1034,8 @@ smart-construction/
 
 완료 조건:
 
-- 품목 표준단가 변경이 기존 계약단가를 바꾸지 않음
-- 계약단가 예외 사유와 수정자가 추적됨
+- [x] 품목 표준단가 변경이 기존 계약단가를 바꾸지 않음
+- [x] 계약단가 예외 사유와 수정자가 추적됨
 
 ### Phase 5. 매출 원장
 
@@ -1354,3 +1354,42 @@ smart-construction/
 - 발견·개선: PowerShell `Invoke-WebRequest -Form`의 quoted multipart boundary는 Next.js body parser가 거부했다. 브라우저와 동일한 표준 multipart를 보내는 `curl`로 파일 preview·commit을 재검증해 애플리케이션 동작을 확인했다.
 - 운영 메모: 현재 C: 여유 공간이 0이므로 검증 도구의 TEMP와 npm cache를 D: 작업공간으로 우회했다. 장기 운영 전 C: 공간을 확보해야 한다.
 - 다음 Phase 적용: 계약 품목은 품목 표준단가를 최초 제안값으로만 사용하고, 계약 행에는 실제 적용 단가와 예외 사유를 snapshot으로 저장한다.
+
+### 28.10 Phase 4 완료 결과
+
+- 계약 헤더와 다중 계약 품목 행, 상태, version, 감사 필드를 포함한 `20260710032138_phase4_contracts` migration
+- 현장별 계약 목록, 검색, 상태·현장 필터, pagination
+- 계약번호 `CONTRACT-0001` 형식 자동 생성과 관리자 입력 지원
+- 품목 선택 시 표준 매출·매입단가 제안
+- 계약 품목에 표준단가 snapshot과 실제 적용단가를 분리 저장
+- 표준단가와 다른 적용단가의 사유, 변경 사용자, 변경 시각 기록
+- 계약기간 안에서 품목별 매출 적용기간 검증
+- 계약 수정 시 기존 품목 행 ID 유지, 제외 행은 삭제하지 않고 비활성 이력 보존
+- 계약 aggregate 단위 transaction과 version 기반 동시 수정 충돌 차단
+- 계약 변경 전 헤더·추가·수정·제외 행 및 영향 월 preview
+- 계약 등록·수정 화면에서 예외단가 강조와 영향 확인 후 저장 흐름
+
+### 28.11 Phase 4 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| migration | Contract·ContractLine 생성 및 FK·index 확인 |
+| lint / typecheck / production build | 성공, 24개 route |
+| Vitest | 5개 파일, 14개 테스트 성공 |
+| 표준단가 계약 생성 | HTTP 201, `CONTRACT-0001` 자동 생성 |
+| 품목 표준단가 변경 후 기존 계약 | snapshot 220,000원 유지 |
+| 예외단가 사유 누락 | HTTP 400 |
+| 예외단가 사유 포함 | HTTP 201, 변경 사용자 기록 |
+| 계약 변경 영향 preview | HTTP 200, 2026-03~06 영향 월 확인 |
+| 계약 수정 | HTTP 200, version 2 |
+| 이전 version 재저장 | HTTP 409 |
+| VIEWER 계약 조회 / 생성 | HTTP 200 / 403 |
+
+### 28.12 Phase 4 회고
+
+- 잘된 점: 품목 마스터의 현재 단가와 계약 당시 단가를 분리해 마스터 변경이 과거 계약 금액을 소급 변경하지 않는다.
+- 잘된 점: 계약 헤더와 품목 행을 한 aggregate로 검증·저장하고, 감사 로그까지 같은 transaction에 포함했다.
+- 잘된 점: 계약 품목을 제거할 때 물리 삭제 대신 비활성화해 Phase 5의 자동 매출과 연결된 뒤에도 참조 이력을 유지할 수 있다.
+- 발견·개선: 예외단가가 그대로인 헤더 수정에서도 예외 수정자가 현재 사용자로 바뀔 수 있었다. 적용단가와 사유가 같으면 기존 수정자·시각을 보존하도록 수정했다.
+- 발견·개선: 편집 dialog의 행 상태를 effect로 동기화한 초기 구현이 React lint 규칙을 위반했다. dialog를 열 때 editor를 새로 mount하고 lazy state로 초기화해 불필요한 연쇄 render를 제거했다.
+- 다음 Phase 적용: 계약 자동 매출은 계약 행 snapshot을 다시 원장 snapshot으로 복사하고, `contractLineId + YYYY-MM` 고유키로 중복 생성을 차단한다.
