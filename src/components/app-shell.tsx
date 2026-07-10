@@ -19,7 +19,7 @@ const navigation = [
   { label: "현장 마스터", icon: Building2, phase: "Phase 3", href: "/masters/sites" },
   { label: "품목 마스터", icon: Boxes, phase: "Phase 3", href: "/masters/items" },
   { label: "계약 관리", icon: FileSpreadsheet, phase: "Phase 4", href: "/contracts" },
-  { label: "매출 원장", icon: ReceiptText, phase: "Phase 5" },
+  { label: "매출 원장", icon: ReceiptText, phase: "Phase 5", href: "/revenues" },
   { label: "월별 현황", icon: BarChart3, phase: "Phase 6" },
   { label: "월별 메모", icon: StickyNote, phase: "Phase 6" },
 ];
@@ -43,7 +43,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               <p className="text-sm font-medium">{user.name}</p>
               <p className="text-xs text-muted-foreground">{user.role}</p>
             </div>
-            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 4</Badge>
+            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 5</Badge>
             <LogoutButton />
           </div>
         </div>
