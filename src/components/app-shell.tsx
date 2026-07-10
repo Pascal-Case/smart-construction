@@ -8,7 +8,10 @@ import {
   Settings2,
   StickyNote,
 } from "lucide-react";
+import Link from "next/link";
 
+import type { SessionUser } from "@/lib/auth/dto";
+import { LogoutButton } from "@/components/logout-button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
@@ -21,7 +24,7 @@ const navigation = [
   { label: "월별 메모", icon: StickyNote, phase: "Phase 6" },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, user }: { children: React.ReactNode; user: SessionUser }) {
   return (
     <div className="min-h-svh bg-slate-50/70">
       <header className="sticky top-0 z-40 border-b bg-white/90 backdrop-blur">
@@ -35,9 +38,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <p className="text-xs text-muted-foreground">매출·청구 관리 시스템</p>
             </div>
           </div>
-          <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">
-            Phase 1
-          </Badge>
+          <div className="flex items-center gap-2">
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-medium">{user.name}</p>
+              <p className="text-xs text-muted-foreground">{user.role}</p>
+            </div>
+            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 2</Badge>
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
@@ -60,10 +68,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </ul>
           </nav>
           <Separator className="my-4" />
-          <div className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm text-muted-foreground">
-            <Settings2 className="size-4" aria-hidden="true" />
-            설정
-          </div>
+          {user.role === "ADMIN" && (
+            <div className="space-y-1">
+              <Link href="/settings/users" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+                <Settings2 className="size-4" aria-hidden="true" /> 사용자 관리
+              </Link>
+              <Link href="/settings/audit" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+                <StickyNote className="size-4" aria-hidden="true" /> 감사 로그
+              </Link>
+            </div>
+          )}
         </aside>
 
         <main className="min-w-0 p-4 sm:p-6 lg:p-8">{children}</main>

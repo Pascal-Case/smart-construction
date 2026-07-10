@@ -1,12 +1,12 @@
 import {
   ArrowUpRight,
-  CheckCircle2,
   Clock3,
   Database,
   Radio,
   Server,
   ShieldCheck,
 } from "lucide-react";
+import { redirect } from "next/navigation";
 
 import { PhaseReadyToast } from "@/components/phase-ready-toast";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { getCurrentUser } from "@/lib/auth/session";
 
 const foundations = [
   {
@@ -38,22 +39,23 @@ const foundations = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  if (!(await getCurrentUser())) redirect("/login");
   return (
     <div className="mx-auto max-w-6xl space-y-8">
       <section className="overflow-hidden rounded-3xl border border-teal-900/10 bg-gradient-to-br from-slate-950 via-slate-900 to-teal-950 px-6 py-8 text-white shadow-xl shadow-slate-900/5 sm:px-8 sm:py-10">
         <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl space-y-4">
             <Badge className="border-white/15 bg-white/10 text-teal-50">
-              구현 기반 구성 중
+              인증·권한 적용 완료
             </Badge>
             <div>
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                공동 업무 시스템의 기반을 준비했습니다.
+                안전한 공동 업무 기반을 준비했습니다.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                현장·품목·계약과 월별 매출 원장을 안전하게 확장할 수 있도록
-                서버, 데이터베이스, 공통 UI와 검증 흐름을 먼저 구성합니다.
+                DB 세션과 역할 권한, 사용자 관리와 감사 로그를 적용했습니다.
+                다음 단계부터 현장·품목 마스터를 연결합니다.
               </p>
             </div>
           </div>
@@ -112,24 +114,21 @@ export default function HomePage() {
         <CardHeader>
           <CardTitle>다음 구현 순서</CardTitle>
           <CardDescription>
-            Phase 1 검증이 완료되면 인증·권한과 감사 로그를 구현합니다.
+            Phase 2 인증·권한·감사가 완료되어 업무 데이터 구현으로 이동합니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <ol className="grid gap-3 text-sm sm:grid-cols-3">
-            {["인증·권한·감사", "현장·품목 마스터", "계약과 매출 원장"].map(
+            {["현장·품목 마스터", "계약과 매출 원장", "월별 현황과 출력"].map(
               (item, index) => (
                 <li
                   key={item}
                   className="flex items-center gap-3 rounded-xl border bg-slate-50 px-4 py-3"
                 >
                   <span className="flex size-6 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
-                    {index + 2}
+                    {index + 3}
                   </span>
                   <span className="font-medium">{item}</span>
-                  {index === 0 && (
-                    <CheckCircle2 className="ml-auto size-4 text-slate-400" aria-hidden="true" />
-                  )}
                 </li>
               ),
             )}
