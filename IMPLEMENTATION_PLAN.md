@@ -1086,7 +1086,7 @@ smart-construction/
 - [x] 같은 레코드 동시 수정 시 마지막 저장이 무조건 덮어쓰지 않음
 - [x] 연결 복구 후 최신 데이터와 일치함
 
-### Phase 8. Excel 매출 export
+### Phase 8. Excel 매출 export — 완료 (2026-07-10)
 
 작업:
 
@@ -1097,8 +1097,8 @@ smart-construction/
 
 완료 조건:
 
-- 화면 필터와 Excel 결과가 일치함
-- 각 시트 합계가 DB 원장 합계와 일치함
+- [x] 화면 필터와 Excel 결과가 일치함
+- [x] 각 시트 합계가 DB 원장 합계와 일치함
 
 ### Phase 9. 거래명세표
 
@@ -1524,3 +1524,56 @@ smart-construction/
 - 발견·개선: 일회성 포맷 명령에 pnpm을 사용하면서 npm 기반 `node_modules`가 pnpm layout으로 바뀌어 native SQLite binding이 누락됐다. 생성된 pnpm 메타데이터를 제거하고 `package-lock.json` 기준 `npm ci`로 복원했으며 이후 모든 검증 명령을 npm으로 통일했다.
 - 검증 제약: Windows sandbox 1385 오류로 브라우저 자동화는 불가능했다. 두 독립 HTTP session과 실제 SSE stream으로 서버 협업 경로를 검증했고, 수동 브라우저 인수 테스트는 운영 준비 단계 체크리스트에 유지한다.
 - 다음 Phase 적용: Excel export는 화면과 동일한 filter parser와 원장 query를 공유하고, 수식 주입 방지·날짜·통화 서식을 workbook 생성 계층에서 일관되게 적용한다.
+
+### 28.22 Phase 8 완료 결과
+
+- 매출 화면의 검색·시작일·종료일·현장·출처·상태를 그대로 전달하는 Excel 다운로드 버튼
+- 인증된 모든 사용자가 사용할 수 있는 `GET /api/revenues/export` Route Handler
+- 화면 목록과 Excel export가 공유하는 `buildRevenueWhere` filter builder
+- `월별요약`, `매출상세`, `월별특이사항` 3개 worksheet
+- 월·현장별 매출·매입·이익과 상태별 건수, 전체 합계
+- 상세 sheet를 참조하는 `SUMIFS`, `COUNTIFS`, 이익 수식과 cached result
+- 화면 합계와 동일한 취소 건 금액 제외 규칙
+- 실제 Excel 날짜 값과 `yyyy-mm-dd`, `yyyy-mm-dd hh:mm` 서식
+- 원 단위 통화 표시, 음수 red parentheses, 0원 dash 서식
+- 조회 조건·생성일시·금액 단위 metadata, frozen header, auto filter, print area
+- 제목·설명·메모를 포함한 문자열의 leading whitespace 수식 주입 방지
+- 빈 선택 필드를 empty shared string이 아닌 실제 빈 cell `null`로 저장
+- 10,000건 export 안전 한도와 초과 시 HTTP 413·필터 축소 안내
+
+### 28.23 Phase 8 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| `git diff --check` / typecheck / 전체 ESLint | 성공 |
+| Vitest | 8개 파일, 21개 테스트 성공 |
+| workbook 단위 테스트 | 3개 시트·수식·cached 합계·빈 결과·수식 주입 방지 성공 |
+| production build | 성공, `/api/revenues/export` 포함 |
+| 인증 없는 export | HTTP 401 |
+| 인증 사용자 export | HTTP 200, 표준 `.xlsx` MIME |
+| 화면 동일 filter 목록 | 2건, 매출 100,000원, 매입 40,000원 |
+| Excel 상세 / 요약 | 2건, 매출 100,000원, 매입 40,000원, 이익 60,000원 |
+| 취소 매출 | 상세 1건 유지, 요약 금액 제외, 취소 건수 1 |
+| `CONFIRMED` filter export | 상세 1건 |
+| 월별특이사항 | 기간·현장에 맞는 메모 1건 |
+| 수식 주입 fixture | `WEBSERVICE`, `HYPERLINK` 문자열 apostrophe 보호 |
+| artifact-tool formula error scan | 오류 0건 |
+| artifact-tool inspect | empty optional cell과 합계 보조 cell이 `null` |
+| artifact-tool render | 세 worksheet와 상세 좌·우 범위 시각 검수 성공 |
+| 10,000건 benchmark | 2.836초, 704,677 bytes, heap 240MB |
+| 50,000건 benchmark | 생성은 성공했으나 heap 1,212MB로 운영 한도에서 제외 |
+| 임시 production server | 포트 3318 listener 종료 확인 |
+
+실제 HTTP·Excel 검증은 운영 DB와 분리한 `data/phase8-http.db`에서 수행했다. 같은 filter의 화면 JSON과 export workbook을 대조했으며, artifact-tool로 값·수식 오류와 렌더 결과를 추가 확인했다.
+
+### 28.24 Phase 8 회고
+
+- 잘된 점: 목록과 export가 동일한 Prisma where builder를 사용해 화면과 파일 사이에 filter 규칙이 갈라지지 않는다.
+- 잘된 점: 요약 값을 정적 숫자로만 쓰지 않고 상세 sheet 참조 수식과 cached result를 함께 저장해 Excel에서 추적 가능하면서 서버 검증도 할 수 있다.
+- 잘된 점: 취소 원장을 상세 이력에는 남기고 집계 금액에서는 제외해 화면 원장의 가시성과 보고 합계 규칙을 동시에 유지한다.
+- 잘된 점: Spreadsheets 스킬의 FP&A 기준에 따라 조회 metadata, 단위, visible summary, freeze pane, filter, 날짜·통화 서식과 formula error scan을 반영했다.
+- 발견·개선: 최초 50,000건 한도는 실제 생성 가능했지만 heap 1.2GB를 사용했다. 10,000건 benchmark가 240MB·2.8초여서 초기 Windows 단일 호스트의 안전 한도를 10,000건으로 낮췄다.
+- 발견·개선: 빈 optional 값을 empty shared string으로 저장하면 artifact-tool이 shared-string index로 오인했다. 공통 sanitizer가 `null`을 그대로 유지하도록 바꿔 다른 Excel 소비 도구와의 호환성을 높였다.
+- 발견·개선: 빈 결과의 formula cached result 0은 ExcelJS 재로딩에서 생략될 수 있었다. `fullCalcOnLoad`와 합계 수식 존재를 보장하고 테스트는 수식 계약을 검증하도록 조정했다.
+- 운영 메모: 10,000건을 초과하면 무리하게 메모리를 사용하지 않고 413 오류로 기간 또는 현장 filter 축소를 안내한다.
+- 다음 Phase 적용: 거래명세표는 발행 시 원장과 공급자 정보를 snapshot으로 고정하고, 제공된 참조 양식의 필드·열 순서·A4 page break를 시각 검증한다.
