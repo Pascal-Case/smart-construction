@@ -7,6 +7,7 @@ import { AuthError } from "@/lib/auth/errors";
 import { buildContractImpact } from "@/lib/contracts/impact";
 import type { ContractInput, ContractListQuery } from "@/lib/contracts/schemas";
 import { prisma } from "@/lib/db/prisma";
+import { recordSyncEvent } from "@/lib/events/bus";
 import { normalizeCode } from "@/lib/masters/normalize";
 import { nextBusinessCode } from "@/lib/masters/sequence";
 
@@ -54,6 +55,7 @@ export async function createContract(actor: SessionUser, input: ContractInput) {
         lines: { create: prepared.map((line, index) => ({ ...line, sortOrder: index, createdById: actor.id, updatedById: actor.id })) },
       }, include: contractInclude });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "CONTRACT", entityId: contract.id, after: contract });
+      await recordSyncEvent(tx, { type: "contract.changed", entityId: contract.id, siteId: contract.siteId, actorId: actor.id });
       return contract;
     });
   } catch (error) { throw mapContractError(error); }
@@ -90,6 +92,7 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
       }
       const contract = await tx.contract.findUniqueOrThrow({ where: { id }, include: contractInclude });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "CONTRACT", entityId: id, before, after: contract });
+      await recordSyncEvent(tx, { type: "contract.changed", entityId: id, siteId: contract.siteId, actorId: actor.id });
       return contract;
     });
   } catch (error) { throw mapContractError(error); }

@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
+import { recordSyncEvent } from "@/lib/events/bus";
 import { cleanAliases, normalizeAlias, normalizeCode } from "@/lib/masters/normalize";
 
 type ParsedRow = { rowNumber: number; values: Record<string, unknown> };
@@ -76,6 +77,7 @@ export async function commitMasterImport(
         unchangedRows: preview.counts.unchanged, errorRows: preview.counts.error, actorId: actor.id, actorName: actor.name,
       } });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "IMPORT", entityType: type === "site" ? "SITE" : "ITEM", entityId: batch.id, after: preview.counts });
+      await recordSyncEvent(tx, { type: type === "site" ? "site.changed" : "item.changed", entityId: batch.id, actorId: actor.id });
     });
     return preview.counts;
   } catch (error) {

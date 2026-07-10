@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
+import { recordSyncEvent } from "@/lib/events/bus";
 import { assertItemIdentityAvailable } from "@/lib/masters/identity";
 import { cleanAliases, normalizeAlias, normalizeCode } from "@/lib/masters/normalize";
 import type { ItemInput, MasterListQuery } from "@/lib/masters/schemas";
@@ -43,6 +44,7 @@ export async function createItem(actor: SessionUser, input: ItemInput) {
       });
       const view = toItemView(item);
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "ITEM", entityId: item.id, after: view });
+      await recordSyncEvent(tx, { type: "item.changed", entityId: item.id, actorId: actor.id });
       return view;
     });
   } catch (error) { throw mapMasterError(error); }
@@ -66,6 +68,7 @@ export async function updateItem(actor: SessionUser, id: string, input: ItemInpu
       const item = await tx.item.findUniqueOrThrow({ where: { id }, include: includeAliases });
       const view = toItemView(item);
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "ITEM", entityId: id, before: toItemView(before), after: view });
+      await recordSyncEvent(tx, { type: "item.changed", entityId: id, actorId: actor.id });
       return view;
     });
   } catch (error) { throw mapMasterError(error); }

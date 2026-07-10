@@ -5,7 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
-import { publishAppEvent } from "@/lib/events/bus";
+import { recordSyncEvent } from "@/lib/events/bus";
 
 export async function getMonthlyMemo(siteId: string, month: string) {
   const memo = await prisma.monthlyMemo.findUnique({ where: { siteId_month: { siteId, month } } });
@@ -25,6 +25,7 @@ export async function saveMonthlyMemo(actor: SessionUser, input: { siteId: strin
         if (input.version != null) throw new AuthError("메모 상태가 변경되었습니다. 다시 불러와 주세요.", 409, "VERSION_CONFLICT");
         const created = await tx.monthlyMemo.create({ data: { siteId: input.siteId, month: input.month, content: input.content, createdById: actor.id, updatedById: actor.id } });
         await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "MONTHLY_MEMO", entityId: created.id, after: created });
+        await recordSyncEvent(tx, { type: "monthlyMemo.changed", entityId: created.id, siteId: created.siteId, month: created.month, actorId: actor.id });
         return created;
       }
       if (input.version == null) throw new AuthError("다른 사용자가 메모를 먼저 만들었습니다. 다시 불러와 주세요.", 409, "VERSION_CONFLICT");
@@ -32,10 +33,9 @@ export async function saveMonthlyMemo(actor: SessionUser, input: { siteId: strin
       if (!updated.count) throw new AuthError("다른 사용자가 메모를 먼저 수정했습니다. 내용을 다시 확인해 주세요.", 409, "VERSION_CONFLICT");
       const saved = await tx.monthlyMemo.findUniqueOrThrow({ where: { id: before.id } });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "MONTHLY_MEMO", entityId: saved.id, before, after: saved });
+      await recordSyncEvent(tx, { type: "monthlyMemo.changed", entityId: saved.id, siteId: saved.siteId, month: saved.month, actorId: actor.id });
       return saved;
     });
-    try { await publishAppEvent({ type: "monthlyMemo.changed", entityId: memo.id, siteId: memo.siteId, month: memo.month, actorId: actor.id }); }
-    catch (eventError) { console.error("월 메모 변경 이벤트 기록 실패", eventError); }
     return { ...memo, updatedByName: actor.name };
   } catch (error) {
     if (error instanceof AuthError) throw error;

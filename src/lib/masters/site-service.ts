@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
+import { recordSyncEvent } from "@/lib/events/bus";
 import { assertSiteIdentityAvailable } from "@/lib/masters/identity";
 import { cleanAliases, normalizeAlias, normalizeCode } from "@/lib/masters/normalize";
 import type { MasterListQuery, SiteInput } from "@/lib/masters/schemas";
@@ -47,6 +48,7 @@ export async function createSite(actor: SessionUser, input: SiteInput) {
       });
       const view = toSiteView(site);
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "SITE", entityId: site.id, after: view });
+      await recordSyncEvent(tx, { type: "site.changed", entityId: site.id, siteId: site.id, actorId: actor.id });
       return view;
     });
   } catch (error) { throw mapMasterError(error); }
@@ -74,6 +76,7 @@ export async function updateSite(actor: SessionUser, id: string, input: SiteInpu
       const site = await tx.site.findUniqueOrThrow({ where: { id }, include: includeAliases });
       const view = toSiteView(site);
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "SITE", entityId: id, before: toSiteView(before), after: view });
+      await recordSyncEvent(tx, { type: "site.changed", entityId: id, siteId: id, actorId: actor.id });
       return view;
     });
   } catch (error) { throw mapMasterError(error); }

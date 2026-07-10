@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
+import { recordSyncEvent } from "@/lib/events/bus";
 import { buildLineRevenueDrafts } from "@/lib/revenues/proration";
 
 const AUTO_CANCEL_REASON = "계약 변경으로 자동 매출 생성 대상에서 제외";
@@ -33,6 +34,7 @@ export async function generateContractRevenues(actor: SessionUser, contractId: s
       else counts.protected += 1;
     }
     await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "GENERATE", entityType: "CONTRACT_REVENUE", entityId: contractId, after: counts });
+    await recordSyncEvent(tx, { type: "revenue.changed", entityId: contractId, siteId: preview.contract.siteId, actorId: actor.id });
     return counts;
   });
 }
@@ -59,7 +61,7 @@ async function buildPreview(tx: Prisma.TransactionClient, contractId: string) {
     if (!current.generatedKey || draftKeys.has(current.generatedKey)) continue;
     rows.push(current.status === "DRAFT" ? { action: "CANCEL", existing: current } : { action: "PROTECTED", existing: current, reason: current.status === "CONFIRMED" ? "확정 매출" : "취소 매출" });
   }
-  return { contract: { id: contract.id, contractNo: contract.contractNo, title: contract.title, siteName: contract.site.name, version: contract.version }, rows, counts: countActions(rows), totalSalesAmount: drafts.reduce((sum, row) => sum + row.salesAmount, 0), totalCostAmount: drafts.reduce((sum, row) => sum + row.costAmount, 0) };
+  return { contract: { id: contract.id, contractNo: contract.contractNo, title: contract.title, siteId: contract.siteId, siteName: contract.site.name, version: contract.version }, rows, counts: countActions(rows), totalSalesAmount: drafts.reduce((sum, row) => sum + row.salesAmount, 0), totalCostAmount: drafts.reduce((sum, row) => sum + row.costAmount, 0) };
 }
 
 function contractDrafts(contract: { id: string; title: string; siteId: string; lines: Array<{ id: string; itemId: string; description: string | null; quantity: number; unit: string; standardSalesPriceSnapshot: number; appliedSalesPrice: number; standardCostPriceSnapshot: number; appliedCostPrice: number; priceOverrideReason: string | null; revenueStartDate: Date; revenueEndDate: Date; item: { name: string } }> }) {

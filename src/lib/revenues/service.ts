@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
+import { recordSyncEvent } from "@/lib/events/bus";
 import type { RevenueInput, RevenueListQuery } from "@/lib/revenues/schemas";
 
 const includeRelations = {
@@ -35,6 +36,7 @@ export async function createRevenue(actor: SessionUser, input: RevenueInput) {
       const data = await prepareRevenue(tx, input);
       const entry = await tx.revenueEntry.create({ data: { ...data, createdById: actor.id, updatedById: actor.id }, include: includeRelations });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "REVENUE", entityId: entry.id, after: entry });
+      await recordSyncEvent(tx, { type: "revenue.changed", entityId: entry.id, siteId: entry.siteId, actorId: actor.id });
       return entry;
     });
   } catch (error) { throw mapRevenueError(error); }
@@ -52,6 +54,7 @@ export async function updateRevenue(actor: SessionUser, id: string, input: Reven
       if (!updated.count) throw new AuthError("다른 사용자가 먼저 매출을 수정했습니다. 새로고침 후 다시 시도해 주세요.", 409, "VERSION_CONFLICT");
       const entry = await tx.revenueEntry.findUniqueOrThrow({ where: { id }, include: includeRelations });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "REVENUE", entityId: id, before, after: entry });
+      await recordSyncEvent(tx, { type: "revenue.changed", entityId: id, siteId: entry.siteId, actorId: actor.id });
       return entry;
     });
   } catch (error) { throw mapRevenueError(error); }
@@ -77,6 +80,7 @@ async function transitionRevenue(actor: SessionUser, id: string, version: number
     if (!result.count) throw new AuthError("다른 사용자가 먼저 매출 상태를 변경했습니다.", 409, "VERSION_CONFLICT");
     const entry = await tx.revenueEntry.findUniqueOrThrow({ where: { id }, include: includeRelations });
     await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: status === "CONFIRMED" ? "CONFIRM" : "CANCEL", entityType: "REVENUE", entityId: id, before, after: entry });
+    await recordSyncEvent(tx, { type: "revenue.changed", entityId: id, siteId: entry.siteId, actorId: actor.id });
     return entry;
   });
 }
