@@ -1055,7 +1055,7 @@ smart-construction/
 - [x] 같은 계약 월 매출이 중복 생성되지 않음
 - [x] 확정 과거 매출이 계약 변경으로 바뀌지 않음
 
-### Phase 6. 월별 현황과 메모
+### Phase 6. 월별 현황과 메모 — 완료 (2026-07-10)
 
 작업:
 
@@ -1067,8 +1067,8 @@ smart-construction/
 
 완료 조건:
 
-- 원장 합계와 월별 표·상세 합계가 일치함
-- 메모가 실시간 갱신되고 충돌을 안전하게 처리함
+- [x] 원장 합계와 월별 표·상세 합계가 일치함
+- [x] 메모가 실시간 갱신되고 충돌을 안전하게 처리함
 
 ### Phase 7. 실시간 협업
 
@@ -1439,3 +1439,45 @@ smart-construction/
 - 발견·개선: 매출 직접 금액의 예외 사유 검증은 있었지만 매입 직접 금액 차이는 최초 검토에서 빠졌다. 계산 매입액과 다른 최종 매입액에도 같은 사유 규칙을 적용했다.
 - 검증 메모: PowerShell `ConvertFrom-Json`이 ISO 날짜를 `DateTime`으로 변환해 문자열 `-like` 선택식이 실패했다. API 기간 필터는 원문 HTTP 200과 SQLite 값을 대조했고, 날짜 형식 비교로 바꿔 확정 보호 시나리오를 재검증했다.
 - 다음 Phase 적용: 월별 현황과 tooltip은 취소되지 않은 원장의 `salesAmount`를 합산하고, SSE 이벤트는 저장 transaction commit 이후 발행한다.
+
+### 28.16 Phase 6 완료 결과
+
+- 현장·월 고유 메모, version, 감사 필드를 포함한 `20260710035304_phase6_monthly_reports_memos` migration
+- 월 범위·현장 필터와 최대 24개월 조회 검증
+- 취소되지 않은 원장을 기준으로 현장×월 매출·매입·이익 matrix 집계
+- 현장·월·전체 합계와 작성 중·0원 검증 경고
+- 셀 hover 요약과 click 상세 원장 목록
+- 현장·월별 공유 메모 조회·저장과 수정자·수정 시각 표시
+- 메모 version 기반 낙관적 충돌 제어와 사용자 입력 보존 UI
+- `SyncEvent`와 `20260710041819_phase6_sync_events` migration
+- SQLite event cursor polling 기반 SSE와 20초 heartbeat
+- SSE 재접속 cursor, 최근 이벤트 재조회, 프록시 buffering 방지 header
+- 메모 commit 이후 `monthlyMemo.changed` 이벤트 기록·전파
+
+### 28.17 Phase 6 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| migration | MonthlyMemo·SyncEvent 및 unique·index 확인 |
+| lint / typecheck / production build | 성공, 29개 route |
+| Vitest | 7개 파일, 18개 테스트 성공 |
+| 월별 matrix 매출 / 상세 합계 | 90원 / 90원 일치 |
+| 월별 matrix 매입 / 이익 | 40원 / 50원 |
+| 취소 원장 | matrix·상세 집계에서 제외 |
+| 메모 생성·수정 | HTTP 200, version 증가 |
+| stale 메모 저장 | HTTP 409 |
+| VIEWER 메모 저장 | HTTP 403 |
+| 월별 셀 메모 표시 | `hasMemo = true` |
+| 다른 MANAGER 세션 SSE | connected 후 `monthlyMemo.changed` 수신 |
+| SSE event payload | 대상 siteId 확인 |
+| DB event | SyncEvent 1건, commit 후 기록 확인 |
+
+### 28.18 Phase 6 회고
+
+- 잘된 점: matrix, 월 합계, 전체 합계, 상세가 한 원장 조회 결과에서 만들어져 서로 다른 집계식으로 인한 오차를 제거했다.
+- 잘된 점: 메모 충돌 시 편집 중인 내용을 덮어쓰지 않고 저장을 잠근 뒤 사용자가 서버 내용을 다시 불러오게 해 조용한 유실을 막는다.
+- 잘된 점: EventSource 재연결 시 마지막 event id 이후를 DB에서 읽을 수 있어 연결이 잠시 끊겨도 변경을 따라잡을 수 있다.
+- 발견·개선: 최초 메모리 EventEmitter 방식은 Next.js production Route Handler 실행 context 사이에서 이벤트를 공유하지 못했다. 이벤트를 SQLite에 저장하고 SSE가 id cursor로 polling하도록 바꿔 worker·재연결 경계를 제거했다.
+- 발견·개선: SSE 검증 중 앱 종료 전 구버전 서버가 포트를 점유해 새 빌드가 시작되지 않았고, 구버전 connected 응답을 새 코드로 오인할 수 있었다. 최종 검증은 server PID와 stderr, SyncEvent row를 함께 확인했다.
+- Next.js 16 확인: 공식 로컬 문서의 Route Handler Web Streams 방식, 동적 GET, `X-Accel-Buffering: no`, `X-Content-Type-Options: nosniff` 권고를 적용했다.
+- 다음 Phase 적용: 모든 주요 mutation이 같은 SyncEvent outbox를 기록하도록 확대하고 공통 연결 상태에서 재연결 시 각 화면을 전체 재조회한다.
