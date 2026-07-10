@@ -1100,7 +1100,7 @@ smart-construction/
 - [x] 화면 필터와 Excel 결과가 일치함
 - [x] 각 시트 합계가 DB 원장 합계와 일치함
 
-### Phase 9. 거래명세표
+### Phase 9. 거래명세표 — 구현 완료·실무 승인 대기 (2026-07-10)
 
 작업:
 
@@ -1113,9 +1113,9 @@ smart-construction/
 
 완료 조건:
 
-- 요구된 네 가지 출력 조건 지원
-- 발행 후 원본 데이터가 바뀌어도 발행본이 유지됨
-- 실무 담당자가 출력 양식을 승인함
+- [x] 요구된 네 가지 출력 조건 지원
+- [x] 발행 후 원본 데이터가 바뀌어도 발행본이 유지됨
+- [ ] 실무 담당자가 출력 양식을 승인함 — Phase 11 수동 A4/PDF 인수
 
 ### Phase 10. 문장형 빠른 입력
 
@@ -1577,3 +1577,63 @@ smart-construction/
 - 발견·개선: 빈 결과의 formula cached result 0은 ExcelJS 재로딩에서 생략될 수 있었다. `fullCalcOnLoad`와 합계 수식 존재를 보장하고 테스트는 수식 계약을 검증하도록 조정했다.
 - 운영 메모: 10,000건을 초과하면 무리하게 메모리를 사용하지 않고 413 오류로 기간 또는 현장 filter 축소를 안내한다.
 - 다음 Phase 적용: 거래명세표는 발행 시 원장과 공급자 정보를 snapshot으로 고정하고, 제공된 참조 양식의 필드·열 순서·A4 page break를 시각 검증한다.
+
+### 28.25 Phase 9 구현 결과
+
+- `CompanySetting`, `InvoiceDocument`, `InvoiceLine`, `InvoiceRevenueLink` 모델과 `20260710094018_phase9_invoices` migration
+- 관리자 공급자 정보 설정과 version 기반 동시 수정 충돌 방지
+- 확정·미발행 원장만 조회하는 기간·현장별 발행 후보 API
+- 후보 전체 선택과 원하는 원장 개별 체크
+- 품목·규격·단위·단가가 모두 같은 행만 합산하는 미리보기
+- 원장 건별 표시 mode와 동일 품목 합산 mode
+- 여러 현장 선택 시 현장별 문서를 한 transaction에서 발행
+- 발행월 기준 `INV-YYYYMM-0001` 자동 번호
+- 공급자·수신처·라인·금액·발행일 snapshot
+- 원장별 unique 발행 link와 중복·동시 발행 HTTP 409 차단
+- 발행 이력 목록과 snapshot 재출력
+- `invoice.changed` transaction outbox와 SSE 자동 갱신
+- 제공 이미지 기준 제목·수신처·공급자 표와 `품명/규격/수량/단위/단가/금액`
+- 공급가액 합계와 `(원 / VAT 별도)` 표기
+- 12행 단위 A4 page 분리, 현장별 새 페이지, 반복 header
+- ADMIN·MANAGER 발행, VIEWER 조회·재출력 권한 분리
+
+### 28.26 Phase 9 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| migration | 8개 migration 신규 DB 순차 적용 성공 |
+| `git diff --check` / typecheck / 전체 ESLint | 성공 |
+| Vitest | 10개 파일, 25개 테스트 성공 |
+| 계산 테스트 | 합산·건별·현장 분리·자유형·음수 조정 3건 성공 |
+| print markup 테스트 | 13행을 A4 article 2개로 분리, 반복 header·최종 합계 확인 |
+| production build | 성공, 36개 static page 생성, 거래명세표 route 포함 |
+| 공급자 최초 저장 / 갱신 | version 1 / 2 |
+| stale 공급자 저장 | HTTP 409 |
+| 확정·미발행 후보 | 4건 |
+| 다현장 합산 preview | 현장별 문서 2건, A현장 표시행 2건 |
+| preview 전체 공급가액 | 930,000원 |
+| 발행 | HTTP 201, 문서 2건 |
+| 발행번호 | `INV-202605-0001`, `INV-202605-0002` |
+| 합산 line 원장 추적 | 동일 CCTV line에 revenue link 2건 |
+| 같은 원장 재발행 | HTTP 409 `INVOICE_CANDIDATE_CHANGED` |
+| 발행 후 후보 | 0건 |
+| 공급자·현장·품목 변경 후 snapshot | 기존 공급자·수신처·품목명 유지 |
+| print page | HTTP 200, snapshot 값과 6개 본문 열 확인 |
+| VIEWER 목록 / 발행 | HTTP 200 / 403 |
+| DB 문서 / line / link / event | 2 / 3 / 4 / 2 |
+| A현장 금액 | 공급가액 710,000원, VAT 71,000원, 합계 781,000원 |
+| B현장 금액 | 공급가액 220,000원, VAT 22,000원, 합계 242,000원 |
+
+실제 HTTP·DB 검증은 운영 DB와 분리한 `data/phase9-http.db`와 production server에서 수행했다. 브라우저 자동화는 Windows sandbox 1385 오류로 사용할 수 없어 실제 프린터/PDF 육안 승인은 Phase 11 수동 인수로 남겼다.
+
+### 28.27 Phase 9 회고
+
+- 잘된 점: 발행 문서·line뿐 아니라 모든 원장과의 link를 저장해 합산 line에서도 원본 2건 이상을 추적하고 unique constraint로 재발행을 차단한다.
+- 잘된 점: preview와 issue가 같은 순수 계산기를 사용하고 issue transaction에서 후보를 다시 조회해 미리보기 이후 상태 변경을 안전하게 거부한다.
+- 잘된 점: 5월 20일 발행일과 5월 1~31일 귀속기간을 별도 저장해 월말 전 선청구 업무를 그대로 지원한다.
+- 잘된 점: 발행 후 공급자·현장·품목 마스터를 수정한 E2E에서 기존 출력 snapshot이 유지됨을 확인했다.
+- 발견·개선: 계획의 `InvoiceLine.revenueEntryId` 하나만으로는 합산 line의 여러 원장을 표현할 수 없었다. `InvoiceRevenueLink`를 추가해 다대일 추적과 원장별 unique 발행을 함께 보장했다.
+- 발견·개선: 발행번호를 전역 순번이 아닌 발행월별 sequence로 분리해 번호만 보고 발행월과 순서를 식별할 수 있게 했다.
+- 발견·개선: 브라우저 UTC 날짜를 기본값으로 쓰면 한국 자정 직후 하루가 어긋날 수 있어 사용자 PC local date 기준으로 교정했다.
+- 검증 제약: 실제 A4 프린터·PDF의 여백, 서체, 공급자 실데이터와 참조 양식 최종 승인은 담당자 수동 확인이 필요하다.
+- 다음 Phase 적용: 스마트 입력은 마스터 별칭 matcher와 deterministic parser를 분리하고, 파싱 결과를 바로 저장하지 않고 사용자가 수정·확정하는 preview로 제공한다.
