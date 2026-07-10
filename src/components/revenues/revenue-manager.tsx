@@ -4,6 +4,7 @@ import { Calculator, Check, Pencil, Plus, Search, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useRealtimeRefresh } from "@/components/realtime-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,6 +24,7 @@ const sourceLabels = { CONTRACT: "계약", MANUAL: "직접", ADJUSTMENT: "조정
 export function RevenueManager({ initialData, sites, items, contracts, canEdit }: { initialData: RevenueList; sites: SiteOption[]; items: ItemOption[]; contracts: ContractOption[]; canEdit: boolean }) {
   const [data, setData] = useState(initialData); const [q, setQ] = useState(""); const [siteId, setSiteId] = useState(""); const [source, setSource] = useState("all"); const [status, setStatus] = useState("all"); const [startDate, setStartDate] = useState(""); const [endDate, setEndDate] = useState(""); const [loading, setLoading] = useState(false); const [editor, setEditor] = useState<RevenueView | "new" | null>(null); const [generatorOpen, setGeneratorOpen] = useState(false);
   async function load(page = 1) { setLoading(true); try { const params = new URLSearchParams({ q, siteId, sourceType: source, status, startDate, endDate, page: String(page), pageSize: "20" }); const response = await fetch(`/api/revenues?${params}`); const body = await response.json(); if (!response.ok) throw new Error(body.error?.message ?? "매출 원장을 불러오지 못했습니다."); setData(body); } catch (error) { toast.error(error instanceof Error ? error.message : "매출 원장을 불러오지 못했습니다."); } finally { setLoading(false); } }
+  useRealtimeRefresh(["revenue.changed"], () => void load(data.page));
   async function transition(row: RevenueView, action: "confirm" | "cancel") { const reason = action === "cancel" ? window.prompt("취소 사유를 입력해 주세요.") : null; if (action === "cancel" && !reason) return; const response = await fetch(`/api/revenues/${row.id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action === "confirm" ? { version: row.version } : { version: row.version, reason }) }); const body = await response.json(); if (!response.ok) return toast.error(body.error?.message ?? "상태를 변경하지 못했습니다."); toast.success(action === "confirm" ? "매출을 확정했습니다." : "매출을 취소했습니다."); void load(data.page); }
   return <div className="space-y-4">
     <div className="grid gap-3 sm:grid-cols-3"><Summary label="매출 합계" value={data.totals.salesAmount} /><Summary label="매입 합계" value={data.totals.costAmount} /><Summary label="이익" value={data.totals.salesAmount - data.totals.costAmount} /></div>

@@ -4,6 +4,7 @@ import { Download, FileDown, Pencil, Plus, Search, Upload } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useRealtimeRefresh } from "@/components/realtime-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -45,6 +46,7 @@ export function MasterManager({ type, initialData, canEdit }: { type: MasterType
       setLoading(false);
     }
   }
+  useRealtimeRefresh([type === "site" ? "site.changed" : "item.changed"], () => void load(data.page));
 
   function openCreate() { setEditing(null); setEditorOpen(true); }
   function openEdit(row: MasterRow) { setEditing(row); setEditorOpen(true); }

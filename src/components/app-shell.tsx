@@ -12,6 +12,7 @@ import Link from "next/link";
 
 import type { SessionUser } from "@/lib/auth/dto";
 import { LogoutButton } from "@/components/logout-button";
+import { RealtimeProvider, RealtimeStatus } from "@/components/realtime-provider";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
@@ -26,7 +27,8 @@ const navigation = [
 
 export function AppShell({ children, user }: { children: React.ReactNode; user: SessionUser }) {
   return (
-    <div className="min-h-svh bg-slate-50/70">
+    <RealtimeProvider>
+      <div className="min-h-svh bg-slate-50/70">
       <header className="sticky top-0 z-40 border-b bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -43,7 +45,8 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               <p className="text-sm font-medium">{user.name}</p>
               <p className="text-xs text-muted-foreground">{user.role}</p>
             </div>
-            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 6</Badge>
+            <RealtimeStatus />
+            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 7</Badge>
             <LogoutButton />
           </div>
         </div>
@@ -82,6 +85,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
 
         <main className="min-w-0 p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
-    </div>
+      </div>
+    </RealtimeProvider>
   );
 }
