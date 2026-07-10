@@ -18,6 +18,16 @@ enum UserRole {
   VIEWER
 }
 
+enum MasterType {
+  SITE
+  ITEM
+}
+
+enum ImportSource {
+  FILE
+  PASTE
+}
+
 model User {
   id           String     @id @default(cuid())
   loginId      String     @unique
@@ -62,6 +72,93 @@ model AuditLog {
   @@index([createdAt])
   @@index([entityType, entityId])
   @@index([actorId])
+}
+
+model Site {
+  id             String      @id @default(cuid())
+  code           String      @unique
+  name           String
+  customerName   String?
+  address        String?
+  managerName    String?
+  managerContact String?
+  startDate      DateTime?
+  endDate        DateTime?
+  isActive       Boolean     @default(true)
+  memo           String?
+  version        Int         @default(1)
+  createdById    String
+  updatedById    String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  aliases        SiteAlias[]
+
+  @@index([name])
+  @@index([customerName])
+  @@index([isActive, name])
+}
+
+model SiteAlias {
+  id              String @id @default(cuid())
+  siteId          String
+  alias           String
+  normalizedAlias String @unique
+  site            Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+}
+
+model Item {
+  id                String      @id @default(cuid())
+  code              String      @unique
+  name              String
+  unit              String
+  standardSalesPrice Int        @default(0)
+  standardCostPrice  Int        @default(0)
+  isActive          Boolean     @default(true)
+  memo              String?
+  version           Int         @default(1)
+  createdById       String
+  updatedById       String
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  aliases           ItemAlias[]
+
+  @@index([name])
+  @@index([isActive, name])
+}
+
+model ItemAlias {
+  id              String @id @default(cuid())
+  itemId          String
+  alias           String
+  normalizedAlias String @unique
+  item            Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+}
+
+model BusinessSequence {
+  key       String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model ImportBatch {
+  id            String       @id @default(cuid())
+  masterType    MasterType
+  source        ImportSource
+  sourceName    String?
+  totalRows     Int
+  createdRows   Int          @default(0)
+  updatedRows   Int          @default(0)
+  unchangedRows Int          @default(0)
+  errorRows     Int          @default(0)
+  actorId       String
+  actorName     String
+  createdAt     DateTime     @default(now())
+
+  @@index([masterType, createdAt])
 }
 
 model SystemSetting {
