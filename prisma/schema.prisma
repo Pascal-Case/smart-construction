@@ -28,6 +28,13 @@ enum ImportSource {
   PASTE
 }
 
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  CANCELED
+}
+
 model User {
   id           String     @id @default(cuid())
   loginId      String     @unique
@@ -92,6 +99,7 @@ model Site {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   aliases        SiteAlias[]
+  contracts      Contract[]
 
   @@index([name])
   @@index([customerName])
@@ -123,6 +131,7 @@ model Item {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   aliases           ItemAlias[]
+  contractLines     ContractLine[]
 
   @@index([name])
   @@index([isActive, name])
@@ -159,6 +168,58 @@ model ImportBatch {
   createdAt     DateTime     @default(now())
 
   @@index([masterType, createdAt])
+}
+
+model Contract {
+  id          String         @id @default(cuid())
+  contractNo  String         @unique
+  siteId      String
+  title       String
+  startDate   DateTime
+  endDate     DateTime
+  status      ContractStatus @default(DRAFT)
+  memo        String?
+  version     Int            @default(1)
+  createdById String
+  updatedById String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  site        Site           @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  lines       ContractLine[]
+
+  @@index([siteId, status])
+  @@index([startDate, endDate])
+  @@index([status, updatedAt])
+}
+
+model ContractLine {
+  id                         String   @id @default(cuid())
+  contractId                 String
+  itemId                     String
+  description                String?
+  quantity                   Float
+  unit                       String
+  standardSalesPriceSnapshot Int
+  appliedSalesPrice          Int
+  standardCostPriceSnapshot  Int
+  appliedCostPrice           Int
+  priceOverrideReason        String?
+  priceOverriddenById        String?
+  priceOverriddenAt          DateTime?
+  revenueStartDate           DateTime
+  revenueEndDate             DateTime
+  isActive                   Boolean  @default(true)
+  sortOrder                  Int      @default(0)
+  createdById                String
+  updatedById                String
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  contract                   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  item                       Item     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([contractId, isActive, sortOrder])
+  @@index([itemId])
+  @@index([revenueStartDate, revenueEndDate])
 }
 
 model SystemSetting {
