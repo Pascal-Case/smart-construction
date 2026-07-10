@@ -1809,3 +1809,16 @@ smart-construction/
 - 발견·개선: Windows PowerShell에서 .NET `Path.GetFullPath(path, base)` overload가 지원되지 않아 운영 dry-run이 중단됐다. 공통 `Resolve-SmartConstructionPath`로 상대·절대 경로를 명시적으로 정규화해 작업 스케줄러·backup·restore를 수정했다.
 - 발견·개선: 브라우저 자동화에서 native 날짜 입력을 직접 조작할 수 없었다. 화면의 입력 구조와 메모 modal은 확인하고, 기간·금액·발행은 인증 API와 print snapshot으로 교차 검증했다.
 - 운영 경계: 현재 acceptance DB와 테스트 계정은 인수 증빙용이다. 실제 팀 데이터 이관, server PC 재부팅, 방화벽/작업 스케줄러 `-Apply`, A4 출력 승인은 담당자 승인 후 수행한다.
+
+### 28.37 Phase 11 운영 시작 점검
+
+- `scripts/start-production.ps1 -Port 3000 -HostAddress 0.0.0.0`으로 운영 DB(`data/app.db`) production server를 기동했다.
+- `scripts/test-lan-readiness.ps1 -Port 3000` 결과 listener·health·DB가 모두 true였다.
+- 서버 자신의 Wi-Fi IPv4 주소로 `/api/health` 응답 `ok`, `/login` HTTP 200과 페이지 title을 확인했다.
+- readiness가 생성한 팀 접속 URL은 실행 시점의 사내 Wi-Fi IPv4를 사용하며 DHCP 변경 시 다시 확인해야 한다.
+
+### 28.38 운영 시작 점검 회고
+
+- 잘된 점: 운영 script가 migration을 먼저 적용하고 Next production을 시작해 재부팅 후에도 schema와 server 시작 순서가 고정된다.
+- 잘된 점: localhost가 아닌 `0.0.0.0` listener와 실제 LAN IPv4 요청을 함께 확인해 팀 공유 경로의 첫 관문을 검증했다.
+- 남은 확인: 다른 팀원 PC의 접속, Windows 방화벽 실제 적용, 재부팅 자동 시작, 두 사용자 간 실시간 갱신은 해당 PC와 권한이 준비된 뒤 수동 인수한다.
