@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { buildRevenueWhere } from "@/lib/revenues/query";
 import type { RevenueInput, RevenueListQuery } from "@/lib/revenues/schemas";
 
 const includeRelations = {
@@ -15,13 +16,7 @@ const includeRelations = {
 };
 
 export async function listRevenues(query: RevenueListQuery) {
-  const where: Prisma.RevenueEntryWhereInput = {
-    ...(query.siteId ? { siteId: query.siteId } : {}),
-    ...(query.sourceType !== "all" ? { sourceType: query.sourceType } : {}),
-    ...(query.status !== "all" ? { status: query.status } : {}),
-    ...(query.startDate || query.endDate ? { revenueDate: { ...(query.startDate ? { gte: dbDate(query.startDate) } : {}), ...(query.endDate ? { lte: dbDate(query.endDate) } : {}) } } : {}),
-    ...(query.q ? { OR: [{ title: { contains: query.q } }, { description: { contains: query.q } }, { site: { name: { contains: query.q } } }, { item: { name: { contains: query.q } } }] } : {}),
-  };
+  const where = buildRevenueWhere(query);
   const [total, rows, aggregate] = await prisma.$transaction([
     prisma.revenueEntry.count({ where }),
     prisma.revenueEntry.findMany({ where, include: includeRelations, orderBy: [{ revenueDate: "desc" }, { createdAt: "desc" }], skip: (query.page - 1) * query.pageSize, take: query.pageSize }),

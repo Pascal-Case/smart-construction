@@ -2,6 +2,8 @@ import "server-only";
 
 import ExcelJS from "exceljs";
 
+import { safeExcelValue } from "@/lib/excel/safe-value";
+
 export type MasterRow = Record<string, string | number | boolean | null | undefined>;
 
 const SITE_HEADERS = ["현장코드", "현장명", "거래처", "주소", "담당자", "연락처", "시작일", "종료일", "사용여부", "메모", "별칭"];
@@ -63,7 +65,3 @@ function cellValue(value: unknown) {
   return value ?? "";
 }
 function valueAt(row: Array<unknown>, index: number) { return index < 0 ? undefined : cellValue(row[index]); }
-function safeExcelValue(value: unknown) {
-  if (typeof value === "string" && /^[=+\-@]/.test(value)) return `'${value}`;
-  return value ?? "";
-}
