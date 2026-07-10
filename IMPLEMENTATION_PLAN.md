@@ -1133,7 +1133,7 @@ smart-construction/
 - [x] 결과 확인 없이 데이터가 저장되지 않음
 - [x] 정의된 대표 문장 회귀 테스트 통과
 
-### Phase 11. 데이터 이관과 운영 전환
+### Phase 11. 데이터 이관과 운영 전환 — 구현 완료·실무 인수 대기 (2026-07-10)
 
 작업:
 
@@ -1147,10 +1147,10 @@ smart-construction/
 
 완료 조건:
 
-- 이관 전후 건수와 합계 대조 완료
-- 재부팅 후 서비스 자동 시작
-- 다른 팀원 PC에서 IP 접속 성공
-- 백업 파일로 복구 훈련 성공
+- [ ] 실제 업무 JSON·Excel 이관 전후 건수와 합계 대조 — 도구 격리 검증 완료, 원본 인수 대기
+- [ ] 실제 서버 PC 재부팅 후 서비스 자동 시작 — dry-run 완료, 관리자 적용 대기
+- [ ] 다른 팀원 PC에서 IP 접속 성공 — readiness 완료, 사내 PC 인수 대기
+- [x] 백업 파일로 복구 훈련 성공 — 격리 production DB online backup·restore·건수 대조
 
 ## 23. 요구사항 추적표
 
@@ -1689,3 +1689,89 @@ smart-construction/
 - 발견·개선: 직접 총액과 수량 × 단가가 다를 수 있는 A/S 업무를 오류로 막지 않고 예외 사유를 제안한 뒤 기존 계약·매출 schema가 최종 검증하게 했다.
 - 검증 제약: 브라우저 자동화가 환경 오류로 실행되지 않아 실제 버튼 클릭, 작은 화면 layout, 키보드 조작은 Phase 11 사용자 인수에서 확인한다.
 - 다음 Phase 적용: 기존 localStorage·Excel 원본을 보존한 채 preview·대조 보고서를 거쳐 이관하고, Windows 자동 시작·사내 IP·백업·복구 절차를 실행 가능한 script와 운영 문서로 만든다.
+
+### 28.31 Phase 11 구현 결과
+
+- LegacyMigrationBatch model과 fingerprint unique 이관 이력
+- 기존 Smart_Construction_App.html의 현재 localStorage 품목·계약·공급자 JSON export
+- localStorage key JSON 문자열과 표준 bundle 양쪽 정규화
+- 품목·계약 row 단위 Zod 검증과 누락 품목 참조·중복 ID 보고
+- 계약 Excel 첫 20행 header 자동 탐색
+- 현장·품목·수량·시작일·종료일 필수 열과 매출단가·매입단가·단위 선택 열 mapping
+- xlsx·xlsm 5MB, 데이터 10,000행 제한
+- 같은 품목의 Excel 단가·단위 충돌 경고와 첫 값 유지
+- 관리자 전용 JSON·Excel preview, commit, 최근 이력 API
+- 품목·현장 기존 이름·별칭 재사용과 신규 생성 preview
+- 결정적 LEGACY 계약번호와 fingerprint 재이관 차단
+- 파일명·export 시각을 제외하고 실제 업무 데이터만 비교하는 fingerprint
+- 미리보기 후 normalized bundle·fingerprint 재검증
+- 품목·현장·계약·공급자 단일 DB transaction 이관
+- 기존 마스터와 레거시 단가가 다르면 레거시 이관 시점 단가 사유 보존
+- 이관 batch·개별 entity 감사 로그와 실시간 변경 event
+- 오류·경고·신규·기존·제외 건수 UI와 전체 검증 보고서 JSON
+- SQLite online backup, SHA-256 metadata, quick_check, 30일 보존 script
+- 서버 중지·확인 switch·복구 직전 backup·실패 rollback·quick_check restore script
+- migration 선적용 후 Next production 실행 script
+- Windows 시작 server task와 매일 backup task dry-run/apply script
+- Domain·Private profile, 지정 subnet만 허용하는 방화벽 dry-run/apply script
+- listener·health·DB·LAN IPv4·팀 접속 URL readiness script
+- 운영 가이드와 담당자 간단 사용자 안내
+
+### 28.32 Phase 11 자동 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| PowerShell AST | 7개 script, syntax error 0 |
+| 작업 스케줄러 dry-run | SYSTEM, 시작 +30초, port 3000, 매일 02:00, 외부 backup 경로 확인 |
+| 방화벽 dry-run | TCP 3000, 192.168.0.0/24, Domain·Private만 허용 계획 |
+| Vitest 전체 | 14개 파일, 40개 테스트 성공 |
+| 이관 전용 fixture | JSON·localStorage key·Excel·날짜·단가 충돌 8개 테스트 성공 |
+| TypeScript / 전체 ESLint | 성공 |
+| production build | 성공, 41개 static page 생성, migration route·page 포함 |
+| 신규 DB migration | 9개 migration 순차 적용 성공 |
+| 이관 preview | 품목 1, 현장 2, 계약 2, 오류 0, commit 가능 |
+| preview 후 계약 / 매출 | 0 / 0 |
+| fingerprint 변경 commit | HTTP 409 |
+| 이관 commit | 품목 1, 현장 2, 계약 2 생성 |
+| 동일 데이터 재이관 | HTTP 409 |
+| 이관 후 DB | 품목 1, 현장 2, 계약 2, line 2, 공급자 1, batch 1 |
+| 이관 후 매출 원장 | 0건 — 계약 매출 생성 전까지 자동 생성하지 않음 |
+| 이관 감사 / event | MIGRATE 7건 / sync event 5건 |
+| 레거시 계약 | 2건 모두 ACTIVE, 결정적 LEGACY 번호 |
+| 계약 line | 수량 2·1, 매출단가 220,000원, 매입단가 120,000원 |
+| 관리자 이관 page / 비로그인 API | HTTP 200 / 401 |
+| 이관 DB quick_check | ok |
+| 실행 중 DB online backup | 401,408 bytes, quick_check ok |
+| 별도 DB restore | 품목 1, 현장 2, 계약 2, 매출 0, batch 1, quick_check ok |
+| LAN readiness | listener·health·DB true, Wi-Fi URL 생성 |
+| 임시 production port | 3330 종료, 격리 DB·backup·log 정리 |
+
+### 28.33 Phase 11 회고
+
+- 잘된 점: preview와 commit이 같은 normalized bundle을 다시 읽고 fingerprint를 비교해 파일 변경·중복 이관을 명확히 차단한다.
+- 잘된 점: 파일명과 export 시각은 fingerprint에서 제외해 이름만 바꾼 같은 데이터도 재이관할 수 없다.
+- 잘된 점: 레거시 계약 ID에서 결정적 계약번호를 만들어 batch 차단 외에도 계약 단위 중복 방어선을 둔다.
+- 잘된 점: 이관 transaction은 계약만 만들고 매출 원장을 자동 생성하지 않아 사용자가 계약·기간·단가를 검토한 후 기존 생성 flow를 실행할 수 있다.
+- 잘된 점: online backup을 실행 중 production DB에서 만들고 별도 DB에 restore해 이관 건수와 quick_check를 함께 대조했다.
+- 발견·개선: ExcelJS와 Node Buffer 타입 선언이 달라 기존 master import와 같은 명시적 type boundary가 필요했다.
+- 발견·개선: preview가 반환한 계약 quantity·공급자 field 이름은 레거시 원문과 달라 commit 재검증 시 normalized 형식도 읽도록 양방향 정규화를 추가했다.
+- 발견·개선: 동일 품목이 Excel 여러 행에 다른 단가로 나오면 임의로 합치지 않고 첫 값·경고를 제공한다. 실제 원본에서 행별 계약단가가 필요하면 현행 계약 line 적용단가로 mapping을 확장해야 한다.
+- 발견·개선: restore는 실행 중 server에 덮어쓰지 않도록 listener를 차단하고 확인 switch, 사전 backup, 임시 복제, 실패 rollback을 강제한다.
+- 운영 원칙: 작업 스케줄러와 방화벽 script는 기본 dry-run이며 -Apply 없이는 Windows 상태를 바꾸지 않는다.
+- 검증 제약: browser 자동화는 Windows sandbox 1385 오류로 실행되지 않아 실제 UI click·A4 PDF 육안 확인은 실무 인수에 남겼다.
+
+### 28.34 실무 인수 대기 항목
+
+| 항목 | 필요한 입력·권한 | 완료 증빙 |
+|---|---|---|
+| 실제 데이터 이관 | localStorage JSON, 실제 계약 Excel | 원본·검증 보고서·이관 전후 건수·월 합계 |
+| 운영 server 확정 | PC 이름, 운영 DB, 별도 backup 경로 | 운영 표 기입 |
+| 고정 IP | 사내 IT 또는 router 관리자, MAC·CIDR | DHCP 예약 또는 승인된 static IP |
+| 방화벽 적용 | 관리자 PowerShell, 실제 사내 CIDR | 규칙 조회와 팀원 PC 접속 |
+| 자동 시작 적용 | 관리자 PowerShell | task LastTaskResult 0 |
+| 재부팅 인수 | server PC 재부팅 권한 | readiness Ready true |
+| 실시간 협업 | 팀원 PC 2대, 사용자 2명 | A 저장 후 B 자동 갱신 |
+| 거래명세표 승인 | 실제 공급자 data, A4 printer/PDF | 제공 양식 비교 승인 |
+| 최초 사용자 | 관리자·담당자·조회자 명단 | 개인 계정 로그인 확인 |
+
+실제 환경 변경과 실무 승인은 OPERATIONS_GUIDE.md 순서로 진행하며, 완료 증빙을 확보한 뒤 위 체크와 Phase 9 출력 승인 항목을 닫는다.
