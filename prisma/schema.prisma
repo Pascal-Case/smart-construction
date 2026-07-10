@@ -35,6 +35,18 @@ enum ContractStatus {
   CANCELED
 }
 
+enum RevenueSourceType {
+  CONTRACT
+  MANUAL
+  ADJUSTMENT
+}
+
+enum RevenueStatus {
+  DRAFT
+  CONFIRMED
+  CANCELED
+}
+
 model User {
   id           String     @id @default(cuid())
   loginId      String     @unique
@@ -100,6 +112,7 @@ model Site {
   updatedAt      DateTime    @updatedAt
   aliases        SiteAlias[]
   contracts      Contract[]
+  revenueEntries RevenueEntry[]
 
   @@index([name])
   @@index([customerName])
@@ -132,6 +145,7 @@ model Item {
   updatedAt         DateTime    @updatedAt
   aliases           ItemAlias[]
   contractLines     ContractLine[]
+  revenueEntries    RevenueEntry[]
 
   @@index([name])
   @@index([isActive, name])
@@ -186,6 +200,7 @@ model Contract {
   updatedAt   DateTime       @updatedAt
   site        Site           @relation(fields: [siteId], references: [id], onDelete: Restrict)
   lines       ContractLine[]
+  revenueEntries RevenueEntry[]
 
   @@index([siteId, status])
   @@index([startDate, endDate])
@@ -216,10 +231,58 @@ model ContractLine {
   updatedAt                  DateTime @updatedAt
   contract                   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
   item                       Item     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  revenueEntries             RevenueEntry[]
 
   @@index([contractId, isActive, sortOrder])
   @@index([itemId])
   @@index([revenueStartDate, revenueEndDate])
+}
+
+model RevenueEntry {
+  id                         String            @id @default(cuid())
+  siteId                     String
+  revenueDate                DateTime
+  servicePeriodStart         DateTime?
+  servicePeriodEnd           DateTime?
+  sourceType                 RevenueSourceType
+  contractId                 String?
+  contractLineId             String?
+  itemId                     String?
+  title                      String
+  description                String?
+  quantity                   Float?
+  unit                       String?
+  standardSalesPriceSnapshot Int?
+  appliedSalesPrice          Int?
+  salesAmount                Int
+  prorationDays              Int?
+  daysInMonth                Int?
+  standardCostPriceSnapshot  Int?
+  appliedCostPrice           Int?
+  costAmount                 Int?
+  priceOverrideReason        String?
+  status                     RevenueStatus     @default(DRAFT)
+  generatedKey               String?           @unique
+  confirmedById              String?
+  confirmedAt                DateTime?
+  canceledById               String?
+  canceledAt                 DateTime?
+  cancelReason               String?
+  version                    Int               @default(1)
+  createdById                String
+  updatedById                String
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
+  site                       Site              @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  contract                   Contract?         @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  contractLine               ContractLine?     @relation(fields: [contractLineId], references: [id], onDelete: Restrict)
+  item                       Item?             @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([revenueDate, status])
+  @@index([siteId, revenueDate])
+  @@index([sourceType, status])
+  @@index([contractId])
+  @@index([contractLineId])
 }
 
 model SystemSetting {
