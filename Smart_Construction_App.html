@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 건설안전 통합 관리 시스템</title>
+    
+    <!-- React & DOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- SheetJS (Excel) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body { background-color: #f8fafc; font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* 인쇄 스타일 정의 */
+        @media print {
+            @page { margin: 0; size: A4; }
+            body { visibility: hidden; background: white; margin: 0; padding: 0; }
+            #invoice-section { 
+                visibility: visible; 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 100%; 
+                min-height: 100vh;
+                margin: 0; 
+                padding: 0; /* A4 여백 최소화 */
+                box-shadow: none !important;
+                border: none !important;
+            }
+            #invoice-section * { visibility: visible; }
+            .no-print { display: none !important; }
+            
+            /* 각 명세표를 A4 페이지로 분리 및 잘림 방지 */
+            .invoice-page {
+                page-break-after: always;
+                page-break-before: avoid;
+                page-break-inside: avoid; /* 중요: 내부 잘림 방지 */
+                padding: 5mm; /* 인쇄 영역 패딩 최소화 */
+                box-sizing: border-box; /* 패딩이 전체 크기에 포함되도록 */
+            }
+            /* 마지막 페이지는 page-break-after 방지 */
+            .invoice-page:last-child {
+                page-break-after: avoid !important; 
+            }
+
+            /* 공급자 셀 수직 중앙 정렬 (인쇄 시) */
+            .supplier-label {
+                display: flex;
+                align-items: center; /* 수직 중앙 정렬 */
+                justify-content: center; /* 수평 중앙 정렬 */
+                height: 100%;
+                padding: 0 3px; 
+                font-size: 10px; /* 폰트 크기 조정 */
+                font-weight: bold;
+            }
+            
+            /* 품목명 셀에 줄바꿈 적용 */
+            .item-name-cell {
+                white-space: normal; 
+                overflow-wrap: break-word; 
+                word-wrap: break-word; 
+                min-width: 100px; 
+                font-size: 10px; /* 인쇄 시 품목명 글꼴 조정 */
+            }
+
+            /* 거래명세표 전체 글꼴 크기 재조정 */
+            .invoice-page table { font-size: 10px !important; } /* 전체 테이블 글꼴 조정 */
+            .invoice-page h1 { font-size: 32px !important; } /* 헤더 글꼴 조정 */
+            .invoice-page h2 { font-size: 20px !important; } /* 현장명 글꼴 조정 */
+            .invoice-page .text-lg { font-size: 14px !important; }
+            .invoice-page .text-3xl { font-size: 26px !important; } /* 합계 금액 조정 */
+            
+            /* 여백을 줄이기 위해 테이블 셀 내부 패딩도 미세하게 조정 */
+            .invoice-page table td, .invoice-page table th { padding: 1px 3px !important; height: 18px !important; }
+            .invoice-page .p-12 { padding: 5mm !important; } /* 미리보기 영역 패딩 조정 */
+
+            /* 합계 금액 섹션 패딩 추가 조정 */
+            .invoice-page .text-3xl { margin-top: 0; margin-bottom: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // ----------------------------------------------------------------------
+        // 1. 유틸리티 및 아이콘
+        // ----------------------------------------------------------------------
+        
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const icons = {
+                Plus: <path d="M5 12h14M12 5v14" />,
+                Trash2: <><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></>,
+                Calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></>,
+                FileSpreadsheet: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="M8 13h2" /><path d="M8 17h2" /><path d="M14 13h2" /><path d="M14 17h2" /></>,
+                Building2: <><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></>,
+                TrendingUp: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></>,
+                Save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></>,
+                Sparkles: <><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3z" /><path d="M5 3v4" /><path d="M9 3v4" /><path d="M3 5h4" /><path d="M3 9h4" /></>,
+                Loader2: <path d="M21 12a9 9 0 1 1-6.219-8.56" />,
+                Upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-3-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></>,
+                PenSquare: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z" /></>,
+                X: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
+                AlertTriangle: <><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
+                Check: <polyline points="20 6 9 17 4 12" />,
+                Filter: <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />,
+                Database: <><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></>,
+                HardDriveDownload: <><path d="M12 2v8" /><path d="m16 6-4 4-4-4" /><rect width="20" height="8" x="2" y="14" rx="2" /><path d="M6 18h.01" /><path d="M10 18h.01" /></>,
+                Download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></>,
+                Settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l-.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>,
+                Printer: <><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect width="12" height="8" x="6" y="14" /></>,
+                Search: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>
+            };
+
+            return (
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width={size}
+                    height={size}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`${name === 'Loader2' ? 'animate-spin' : ''} ${className}`}
+                >
+                    {icons[name] || <circle cx="12" cy="12" r="10" />}
+                </svg>
+            );
+        };
+
+        // ----------------------------------------------------------------------
+        // 4. 메인 앱 컴포넌트
+        // ----------------------------------------------------------------------
+
+        // Local Storage Keys
+        const MASTER_DB_KEY_ITEMS = 'scs_master_items_v15_local';
+        const MASTER_DB_KEY_CONTRACTS = 'scs_master_contracts_v15_local';
+        const MASTER_DB_KEY_SUPPLIER = 'scs_master_supplier_v15_local';
+
+        // Initial Data for Local Storage Fallback
+        const INITIAL_ITEMS = [
+            { id: '1', name: '스마트 안전모', salesPrice: 15000, costPrice: 8000, unit: '개/월' },
+            { id: '2', name: '이동형 CCTV', salesPrice: 150000, costPrice: 90000, unit: '대/월' },
+        ];
+        const INITIAL_CONTRACTS = [];
+        const INITIAL_SUPPLIER = {
+            regNo: '123-45-67890',
+            name: '(주)스마트건설안전',
+            owner: '홍길동',
+            address: '서울시 강남구 테헤란로 123',
+            type: '서비스',
+            category: '소프트웨어 개발'
+        };
+
+        const loadData = (key, fallback) => {
+            try {
+                const saved = localStorage.getItem(key);
+                // Ensure IDs are strings for consistency
+                if (key === MASTER_DB_KEY_ITEMS && saved) {
+                    return JSON.parse(saved).map(i => ({...i, id: String(i.id)}));
+                }
+                return saved ? JSON.parse(saved) : fallback;
+            } catch { return fallback; }
+        };
+
+
+        function ConstructionSalesManager() {
+            // --- Local Data States (using localStorage for persistence) ---
+            const [items, setItems] = useState(() => loadData(MASTER_DB_KEY_ITEMS, INITIAL_ITEMS));
+            const [contracts, setContracts] = useState(() => loadData(MASTER_DB_KEY_CONTRACTS, INITIAL_CONTRACTS));
+            const [supplierInfo, setSupplierInfo] = useState(() => loadData(MASTER_DB_KEY_SUPPLIER, INITIAL_SUPPLIER));
+            
+            // --- Data Persistence Effects ---
+            useEffect(() => { localStorage.setItem(MASTER_DB_KEY_ITEMS, JSON.stringify(items)); }, [items]);
+            useEffect(() => { localStorage.setItem(MASTER_DB_KEY_CONTRACTS, JSON.stringify(contracts)); }, [contracts]);
+            useEffect(() => { localStorage.setItem(MASTER_DB_KEY_SUPPLIER, JSON.stringify(supplierInfo)); }, [supplierInfo]);
+            
+            // --- UI States ---
+            const [activeTab, setActiveTab] = useState('input');
+            const [viewMode, setViewMode] = useState('profit');
+            const [contractSearchTerm, setContractSearchTerm] = useState('');
+            const [reportPeriod, setReportPeriod] = useState({ start: '2023-01', end: '2026-12' });
+            const [editingItemId, setEditingItemId] = useState(null);
+            const [editingContractId, setEditingContractId] = useState(null);
+            const [showBulkModal, setShowBulkModal] = useState(false);
+            const [deleteModal, setDeleteModal] = useState({ isOpen: false, type: null, targetId: null, message: '' });
+            const [saveMessage, setSaveMessage] = useState('');
+            const [previewData, setPreviewData] = useState(null);
+            const [fileParsing, setFileParsing] = useState(false);
+            const fileInputRef = useRef(null);
+            const [masterForm, setMasterForm] = useState({ name: '', salesPrice: '', costPrice: '', unit: '' });
+            const [contractForm, setContractForm] = useState({ site: '', itemId: '', qty: '', startDate: '', endDate: '' });
+            const [invoiceSite, setInvoiceSite] = useState('');
+            const [invoiceFullDate, setInvoiceFullDate] = useState(new Date().toISOString().slice(0, 10));
+            const [naturalInput, setNaturalInput] = useState('');
+            
+            // AI 기능 제거에 따라 해당 상태 제거 (단, Excel Import 메시지용으로 analysisResult, showAnalysis는 유지)
+            const [analysisResult, setAnalysisResult] = useState(''); 
+            const [showAnalysis, setShowAnalysis] = useState(false); 
+            
+            const [sitesToRender, setSitesToRender] = useState([]);
+            
+            // --- AI Simulation (Disabled for Local Use) ---
+            const handleManualSave = useCallback(() => {
+                // Supplier info update relies on useEffect
+                setSaveMessage('✅ 저장 완료!');
+                setTimeout(() => setSaveMessage(''), 2000);
+            }, []);
+
+            const handleAISimulation = (featureName) => {
+                 console.log(`${featureName} 기능은 외부 API(Gemini)에 의존하므로 로컬 환경에서는 사용할 수 없습니다.`);
+                 return false;
+            };
+
+            const handleSmartInput = () => {
+                // AI 스마트 입력 동적 모의 로직 (사용자 입력 반영)
+                console.log(`AI 스마트 입력 실행 (입력: "${naturalInput}"): 자연어 분석 후 계약 폼에 값을 채웁니다. (모의)`);
+                
+                const inputLower = naturalInput.toLowerCase();
+                const today = new Date().toISOString().slice(0, 10);
+                
+                // 기본값 설정 (1년 후 종료)
+                const defaultEndDate = new Date();
+                defaultEndDate.setFullYear(defaultEndDate.getFullYear() + 1);
+                
+                let newSite = 'AI 분석 현장'; 
+                let newItemId = '1'; 
+                let newQty = 1;
+                let newStartDate = today;
+                let newEndDate = defaultEndDate.toISOString().slice(0, 10);
+                
+                // 1. 품목 및 수량 파싱 (모의)
+                if (inputLower.includes('cctv') || inputLower.includes('이동형') || inputLower.includes('카메라')) {
+                    newItemId = '2'; 
+                }
+                else if (inputLower.includes('안전모') || inputLower.includes('헬멧')) {
+                    newItemId = '1'; 
+                }
+
+                const qtyMatch = inputLower.match(/(\d+)\s*(대|개|식|건|ea)/);
+                if (qtyMatch && qtyMatch[1]) {
+                    newQty = parseInt(qtyMatch[1], 10) || 1;
+                }
+
+                // 2. 현장 파싱 (모의)
+                // 명시적인 도시/현장 키워드 매칭
+                if (inputLower.includes('강남')) newSite = '강남 재건축 현장';
+                else if (inputLower.includes('부산')) newSite = '부산 해운대 프로젝트';
+                else if (inputLower.includes('a현장')) newSite = 'A현장';
+                else if (inputLower.includes('b현장')) newSite = 'B현장';
+                
+                // *** 사용자가 입력한 현장명 추출 및 반영 로직 강화 ***
+                const siteMatch = inputLower.match(/(.+)\s*현장/);
+                
+                if (siteMatch && siteMatch[1].trim().length > 0) {
+                    const extractedSite = siteMatch[1].trim().charAt(0).toUpperCase() + siteMatch[1].trim().slice(1);
+                    newSite = extractedSite;
+                } else if (newSite === 'AI 분석 현장') {
+                    // 특정 키워드도, "XXX 현장" 패턴도 없으면, 기본 현장명 유지
+                    newSite = '새 계약 현장명'; 
+                }
+                // **********************************************
+                
+                // 3. 계약 기간 파싱 (YYYY-MM-DD 형식 우선, 기간 단위 후순위)
+                let parsedStart = today;
+                let parsedEnd = newEndDate;
+
+                const parseDate = (d) => {
+                    let s = d.replace(/[년월일]/g, '-').replace(/[- ]+/g, '-').trim().replace(/-$/, '');
+                    
+                    // 두 자리 연도 보정 (23 -> 2023, 25 -> 2025 등)
+                    const yearMatch = s.match(/^(\d{2})[-]/);
+                    if (yearMatch) {
+                        const twoDigitYear = parseInt(yearMatch[1], 10);
+                        const currentYear = new Date().getFullYear();
+                        const currentTwoDigitYear = currentYear % 100;
+                        
+                        // 현재 연도와 비교하여 20xx년대로 추정
+                        const centuryPrefix = (twoDigitYear > currentTwoDigitYear + 5) ? '19' : '20';
+                        s = centuryPrefix + yearMatch[1] + s.slice(2); // 연도를 4자리로 보정
+                    }
+
+
+                    const dObj = new Date(s);
+                    
+                    // 안전한 연도 보정 후, 유효한 날짜인지 최종 확인
+                    return !isNaN(dObj.getTime()) ? dObj.toISOString().slice(0, 10) : null;
+                };
+
+                // 3-1. 명시적 날짜 패턴 검색 (YYYY-MM-DD 또는 YYYY년 MM월 DD일)
+                // YYYY-MM-DD ~ YYYY-MM-DD 패턴
+                const dateRangeMatch = inputLower.match(/(\d{2,4}[-년월일\s]*\d{1,2}[-월]\d{1,2}[일]?)\s*(부터|~)\s*(\d{2,4}[-년월일\s]*\d{1,2}[-월]\d{1,2}[일]?)/);
+                if (dateRangeMatch) {
+                    const startCandidate = parseDate(dateRangeMatch[1]);
+                    const endCandidate = parseDate(dateRangeMatch[3]);
+
+                    if (startCandidate) parsedStart = startCandidate;
+                    if (endCandidate) parsedEnd = endCandidate;
+                } 
+                // 3-2. 기간 단위 (개월/년) 패턴 검색 (명시적 날짜가 없을 경우에만 적용)
+                else {
+                    const monthsMatch = inputLower.match(/(\d+)\s*(개월)/);
+                    const yearsMatch = inputLower.match(/(\d+)\s*(년)/);
+                    
+                    if (monthsMatch || yearsMatch) {
+                        const baseDate = new Date(today); // 오늘 날짜를 기준으로 시작
+                        
+                        if (monthsMatch) {
+                            const monthsToAdd = parseInt(monthsMatch[1], 10);
+                            baseDate.setMonth(baseDate.getMonth() + monthsToAdd);
+                        } else if (yearsMatch) {
+                            const yearsToAdd = parseInt(yearsMatch[1], 10);
+                            baseDate.setFullYear(baseDate.getFullYear() + yearsToAdd);
+                        }
+                        
+                        parsedStart = today; // 시작일은 오늘
+                        parsedEnd = baseDate.toISOString().slice(0, 10);
+                    }
+                }
+
+                newStartDate = parsedStart;
+                newEndDate = parsedEnd;
+                
+                // 폼 업데이트
+                setContractForm({ 
+                    site: newSite, 
+                    itemId: newItemId, 
+                    qty: newQty, 
+                    startDate: newStartDate, 
+                    endDate: newEndDate
+                });
+                
+                setNaturalInput(`AI 입력 분석 완료: '${newSite}'에 ${newQty}건의 계약(${items.find(i=>i.id===newItemId)?.name || '품목'})이 (${newStartDate} ~ ${newEndDate}) 예상됩니다.`);
+            };
+
+            // handleAnalyzeRevenue 및 handleContractRiskAssessment 제거됨
+
+
+            // --- Memoized Values ---
+            const uniqueSites = useMemo(() => [...new Set(contracts.map(c => c.site))].sort(), [contracts]);
+            const filteredContracts = contracts.filter(c => c.site.toLowerCase().includes(contractSearchTerm.toLowerCase()));
+            
+            // Effect to reset sitesToRender when selected site or date changes
+            useEffect(() => {
+                if (activeTab === 'invoice' && invoiceSite) {
+                    setSitesToRender([invoiceSite]);
+                } else if (activeTab !== 'invoice') {
+                    setSitesToRender([]);
+                    // Hide analysis when switching away from report tab
+                    setShowAnalysis(false); 
+                }
+            }, [activeTab, invoiceSite, invoiceFullDate]);
+
+
+            // --- Handlers (Local Storage CRUD) ---
+            const requestDelete = (type, id, msg) => setDeleteModal({ isOpen: true, type, targetId: id, message: msg });
+            const confirmDelete = () => {
+                const idToDelete = deleteModal.targetId;
+                if (deleteModal.type === 'contract') {
+                    setContracts(prev => prev.filter(c => c.id !== idToDelete));
+                    if (editingContractId === idToDelete) {
+                        setEditingContractId(null);
+                        setContractForm({ site: '', itemId: '', qty: '', startDate: '', endDate: '' });
+                    }
+                } else {
+                    setItems(prev => prev.filter(i => i.id !== idToDelete));
+                    if (editingItemId === idToDelete) {
+                        setEditingItemId(null);
+                        setMasterForm({ name: '', salesPrice: '', costPrice: '', unit: '' });
+                    }
+                }
+                setDeleteModal({ ...deleteModal, isOpen: false });
+            };
+
+            const handleSaveItem = () => {
+                if (!masterForm.name) return;
+                const newItem = { 
+                    ...masterForm, 
+                    salesPrice: Number(masterForm.salesPrice) || 0, 
+                    costPrice: Number(masterForm.costPrice) || 0, 
+                    unit: masterForm.unit || 'EA'
+                };
+                
+                if (editingItemId) {
+                    setItems(prev => prev.map(i => i.id === editingItemId ? { ...newItem, id: editingItemId } : i));
+                } else {
+                    const newId = String((items.length > 0 ? Math.max(...items.map(p => Number(p.id) || 0)) : 0) + 1);
+                    setItems(prev => [...prev, { ...newItem, id: newId }]);
+                }
+                setEditingItemId(null); 
+                setMasterForm({ name: '', salesPrice: '', costPrice: '', unit: '' });
+            };
+
+            const handleSaveContract = () => {
+                if (!contractForm.site || !contractForm.itemId || !contractForm.startDate || !contractForm.endDate) {
+                    console.log("현장명, 품목, 시작일, 종료일은 필수 입력 항목입니다.");
+                    return;
+                }
+                const newC = { 
+                    site: contractForm.site, 
+                    itemId: String(contractForm.itemId), 
+                    qty: Number(contractForm.qty) || 1, 
+                    startDate: contractForm.startDate, 
+                    endDate: contractForm.endDate
+                };
+                
+                if (editingContractId) {
+                    setContracts(prev => prev.map(c => c.id === editingContractId ? { ...newC, id: editingContractId } : c));
+                } else {
+                    const newId = String((contracts.length > 0 ? Math.max(...contracts.map(p => Number(p.id) || 0)) : 0) + 1);
+                    setContracts(prev => [...prev, { ...newC, id: newId }]);
+                }
+                setEditingContractId(null); 
+                setContractForm({ site: '', itemId: '', qty: '', startDate: '', endDate: '' }); 
+                setNaturalInput('');
+            };
+
+            // --- Excel Logic (Handlers) ---
+            const handleDownloadTemplate = useCallback(() => {
+                if (!window.XLSX) return console.log("기능 로딩 중...");
+                const templateData = [
+                    ["현장명", "품목명", "수량", "시작일(YYYY-MM-DD)", "종료일(YYYY-MM-DD)", "매출단가", "매입단가"],
+                    ["A현장", "스마트 안전모", 10, "2026-01-01", "2026-12-31", 15000, 8000],
+                    ["B현장", "이동형 CCTV", 2, "2026-03-01", "2026-08-31", 150000, 90000]
+                ];
+                const ws = XLSX.utils.aoa_to_sheet(templateData);
+                ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "계약등록양식");
+                XLSX.writeFile(wb, "스마트건설_계약등록양식.xlsx");
+            }, []);
+
+            const handleFileRead = useCallback((e) => {
+                const file = e.target.files[0];
+                if (!file || !window.XLSX) return;
+                setFileParsing(true);
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const data = new Uint8Array(evt.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+                        
+                        if (rawData.length < 2) throw new Error("데이터 없음");
+                        
+                        let headerRowIndex = 0;
+                        for(let i=0; i<Math.min(10, rawData.length); i++) {
+                             // Check for known headers in the first 10 rows
+                             if(rawData[i] && rawData[i].join(' ').includes('현장') && rawData[i].join(' ').includes('품목')) { headerRowIndex = i; break; }
+                        }
+                        const headers = rawData[headerRowIndex].map(h => String(h||'').trim());
+                        const idx = {
+                            site: headers.findIndex(h => h.includes('현장')),
+                            item: headers.findIndex(h => h.includes('품목')),
+                            qty: headers.findIndex(h => h.includes('수량')),
+                            start: headers.findIndex(h => h.includes('시작')),
+                            end: headers.findIndex(h => h.includes('종료')),
+                            sPrice: headers.findIndex(h => h.includes('매출')),
+                            cPrice: headers.findIndex(h => h.includes('매입'))
+                        };
+                        
+                        if (idx.site === -1 || idx.item === -1) throw new Error("필수 열 누락 (현장명, 품목명)");
+
+                        const parsedContracts = [];
+                        const newItemsFound = [];
+
+                        const parseDate = (v) => {
+                            if (!v) return new Date().toISOString().split('T')[0]; // Default to today
+                            if (typeof v === 'number') { 
+                                // Excel Date Number conversion (day zero is 1899-12-30)
+                                return new Date(Math.round((v - 25569) * 86400 * 1000)).toISOString().split('T')[0];
+                            }
+                            let s = String(v).replace(/\./g, '-').trim();
+                            if(s.length===8 && s.includes('-') === false) s = `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+                            const d = new Date(s);
+                            return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+                        };
+
+                        for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+                            const row = rawData[i];
+                            if (!row || !row[idx.site] || !row[idx.item] || String(row[idx.site]).trim().length === 0) continue;
+                            
+                            const rawItem = String(row[idx.item]).trim();
+                            let matched = items.find(it => it.name === rawItem);
+                            
+                            if (!matched) {
+                                let newMatch = newItemsFound.find(it => it.name === rawItem);
+                                if (!newMatch) {
+                                     newMatch = {
+                                        tempId: `new_${newItemsFound.length}`,
+                                        name: rawItem,
+                                        salesPrice: idx.sPrice > -1 ? (Number(row[idx.sPrice]) || 0) : 0,
+                                        costPrice: idx.cPrice > -1 ? (Number(row[idx.cPrice]) || 0) : 0,
+                                        unit: '식',
+                                        isNew: true
+                                    };
+                                    newItemsFound.push(newMatch);
+                                }
+                            }
+
+                            parsedContracts.push({
+                                site: String(row[idx.site]).trim(),
+                                itemName: rawItem,
+                                qty: idx.qty > -1 ? (Number(row[idx.qty]) || 1) : 1,
+                                startDate: idx.start > -1 ? parseDate(row[idx.start]) : new Date().toISOString().split('T')[0],
+                                endDate: idx.end > -1 ? parseDate(row[idx.end]) : new Date().toISOString().split('T')[0],
+                                isNewItem: !matched
+                            });
+                        }
+                        setPreviewData({ contracts: parsedContracts, newItems: newItemsFound });
+                    } catch (err) { 
+                        console.error(err);
+                        setAnalysisResult(`[파일 파싱 오류] ${err.message}. 콘솔을 확인하세요.`); // Use analysis result field as temporary message box
+                        setShowAnalysis(true);
+                    }
+                    finally { setFileParsing(false); }
+                };
+                reader.readAsArrayBuffer(file);
+            }, [items, contracts]); // Added dependencies
+
+            const handleConfirmExcelImport = () => {
+                if (!previewData) return;
+
+                let currentItems = [...items];
+                const existingItemNames = new Set(currentItems.map(i => i.name));
+                let nextItemId = (currentItems.length > 0 ? Math.max(...currentItems.map(p => Number(p.id) || 0)) : 0) + 1;
+                
+                const finalNewItems = previewData.newItems.filter(item => !existingItemNames.has(item.name)).map(item => ({
+                    id: String(nextItemId++),
+                    name: item.name,
+                    salesPrice: item.salesPrice,
+                    costPrice: item.costPrice,
+                    unit: item.unit
+                }));
+                
+                if (finalNewItems.length > 0) {
+                    currentItems = [...currentItems, ...finalNewItems];
+                    setItems(currentItems);
+                }
+
+                const currentItemMap = new Map(currentItems.map(i => [i.name, i.id]));
+                let nextContractId = (contracts.length > 0 ? Math.max(...contracts.map(p => Number(p.id) || 0)) : 0) + 1;
+
+                const finalContracts = previewData.contracts.map(c => {
+                    const itemId = currentItemMap.get(c.itemName);
+                    if (itemId) {
+                        return {
+                            id: String(nextContractId++),
+                            site: c.site,
+                            itemId: itemId, // Local string ID
+                            qty: c.qty,
+                            startDate: c.startDate,
+                            endDate: c.endDate
+                        };
+                    }
+                    return null;
+                }).filter(Boolean);
+                
+                setContracts(prev => [...prev, ...finalContracts]);
+                
+                if (finalContracts.length > 0) {
+                    setAnalysisResult(`${finalContracts.length}건의 계약과 ${finalNewItems.length}건의 신규 품목이 성공적으로 등록되었습니다.`);
+                    setShowAnalysis(true);
+                } else {
+                    setAnalysisResult("등록할 유효한 계약이 없습니다.");
+                    setShowAnalysis(true);
+                }
+
+                setPreviewData(null);
+                setShowBulkModal(false);
+            };
+
+
+            // --- Calc Helpers ---
+            const getMonthsInRange = (start, end) => {
+                const res = [];
+                let cur = new Date(start + "-01");
+                const endD = new Date(end + "-01");
+                let safe = 0;
+                while (cur <= endD && safe < 120) {
+                    res.push(cur.toISOString().slice(0, 7));
+                    cur.setMonth(cur.getMonth() + 1);
+                    safe++;
+                }
+                return res;
+            };
+
+            const months = getMonthsInRange(reportPeriod.start, reportPeriod.end);
+
+            const calculateMonthlyStatus = (siteName, yearMonth) => {
+                const sMonth = new Date(yearMonth + "-01");
+                const eMonth = new Date(sMonth.getFullYear(), sMonth.getMonth() + 1, 0);
+                let sales = 0, cost = 0, profit = 0, details = [];
+                
+                const currentContracts = contracts;
+                const currentItems = items;
+
+                currentContracts.forEach(c => {
+                    if (siteName && c.site !== siteName) return;
+                    const item = currentItems.find(i => String(i.id) === String(c.itemId));
+                    if (!item) return;
+                    
+                    const contractStartDate = new Date(c.startDate);
+                    const contractEndDate = new Date(c.endDate);
+
+                    // 계약 기간이 해당 월과 겹치는지 확인
+                    if (contractStartDate <= eMonth && contractEndDate >= sMonth) {
+                        const s = item.salesPrice * c.qty;
+                        const co = item.costPrice * c.qty;
+                        sales += s; cost += co; profit += (s - co);
+                        details.push({ site: c.site, name: item.name, qty: c.qty, salesPrice: item.salesPrice, costPrice: item.costPrice, val: s });
+                    }
+                });
+                return { sales, cost, profit, details };
+            };
+            
+            // --- Invoice Logic (Core Calculation) ---
+            const getInvoiceItemsForSite = useCallback((site, invoiceDate) => {
+                if (!site || !invoiceDate) return [];
+                const targetDate = new Date(invoiceDate);
+                const yearMonth = targetDate.toISOString().slice(0, 7);
+
+                // calculateMonthlyStatus는 월 단위로 집계된 모든 품목 상세 정보를 반환
+                // 주의: calculateMonthlyStatus는 외부의 contracts와 items state를 사용합니다.
+                const { details } = calculateMonthlyStatus(site, yearMonth);
+
+                // 동일 품목명으로 합치기
+                const consolidatedItems = details.reduce((acc, current) => {
+                    // find item in master to get unit
+                    const masterItem = items.find(i => i.name === current.name);
+                    
+                    const existing = acc.find(item => item.name === current.name);
+                    if (existing) {
+                        existing.qty += current.qty;
+                        existing.amount += current.salesPrice * current.qty;
+                        // Tax is calculated as 10% of amount, rounded down (as per common practice)
+                        existing.tax = Math.floor(existing.amount * 0.1); 
+                    } else {
+                        const amount = current.salesPrice * current.qty;
+                        acc.push({
+                            name: current.name,
+                            spec: masterItem?.unit || 'EA',
+                            qty: current.qty,
+                            unit: masterItem?.unit || 'EA',
+                            price: current.salesPrice,
+                            amount: amount,
+                            tax: Math.floor(amount * 0.1),
+                            note: `대여료 (${yearMonth})`
+                        });
+                    }
+                    return acc;
+                }, []);
+                
+                return consolidatedItems;
+            }, [contracts, items, calculateMonthlyStatus]);
+
+
+            // --- Invoice Logic (Handlers) ---
+            const handleSinglePrint = useCallback(() => {
+                if (!invoiceSite) return console.log("현장을 선택해주세요.");
+                setSitesToRender([invoiceSite]); 
+                // Delay print execution slightly to ensure React state update (sitesToRender) is processed by the browser
+                setTimeout(() => window.print(), 50);
+            }, [invoiceSite, setSitesToRender]); // Added setSitesToRender dependency for completeness
+
+            const handleBulkPrint = useCallback(() => {
+                // 인쇄할 내역이 있는 현장만 필터링
+                const sitesWithData = uniqueSites.filter(site => getInvoiceItemsForSite(site, invoiceFullDate).length > 0);
+                if (sitesWithData.length === 0) return console.log("해당 월에 청구할 내역이 있는 현장이 없습니다.");
+                
+                setSitesToRender(sitesWithData); 
+                // Delay print execution slightly to ensure React state update is processed
+                setTimeout(() => window.print(), 50);
+            }, [uniqueSites, getInvoiceItemsForSite, invoiceFullDate, setSitesToRender]);
+
+
+            // 렌더링 준비 완료 확인 (로컬에서는 항상 true)
+            const isAuthReady = true; 
+            const dataLoading = false; 
+
+            if (!isAuthReady || dataLoading) {
+                // 이 블록은 로컬 환경에서는 실행되지 않아야 하지만, 안전을 위해 남겨둡니다.
+                return (
+                    <div className="flex items-center justify-center min-h-screen">
+                        <div className="flex flex-col items-center gap-4 p-8 bg-white rounded-xl shadow-lg border border-blue-100">
+                            <Icon name="Loader2" size={40} className="animate-spin text-blue-600"/>
+                            <p className="text-lg font-bold text-gray-700">데이터 로딩 중...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- Render ---
+            return (
+                <div className="w-full max-w-7xl mx-auto p-4 min-h-screen">
+                    {/* Delete Modal */}
+                    {deleteModal.isOpen && (
+                            <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 border border-red-100">
+                                    <h3 className="text-lg font-bold text-red-600 flex items-center gap-2 mb-4"><Icon name="AlertTriangle"/> 삭제 확인</h3>
+                                    <p className="text-gray-700 mb-6">{deleteModal.message}</p>
+                                    <div className="flex justify-end gap-3">
+                                        <button onClick={() => setDeleteModal({ ...deleteModal, isOpen: false })} className="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200">취소</button>
+                                        <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 text-white rounded font-bold hover:bg-red-700">삭제</button>
+                                    </div>
+                                </div>
+                            </div>
+                    )}
+
+                    {/* Bulk Modal */}
+                    {showBulkModal && (
+                        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto flex flex-col">
+                                <div className="flex justify-between items-center mb-4 border-b pb-3">
+                                    <h3 className="font-bold text-lg flex items-center gap-2 text-green-700"><Icon name="FileSpreadsheet"/> 엑셀 일괄 등록</h3>
+                                    <button onClick={() => {setShowBulkModal(false); setPreviewData(null);}} className="p-1 text-gray-400 hover:text-gray-700 rounded-full"><Icon name="X"/></button>
+                                </div>
+                                {!previewData ? (
+                                    <div className="space-y-6">
+                                        <div className="bg-gray-50 p-4 rounded border"><h4 className="font-bold text-sm mb-2">1. 양식 다운로드</h4><button onClick={handleDownloadTemplate} className="w-full py-2 bg-white border rounded font-bold flex items-center justify-center gap-2 hover:bg-gray-100"><Icon name="Download"/> 양식 받기</button></div>
+                                        <div className="bg-blue-50 p-4 rounded border border-blue-200"><h4 className="font-bold text-sm text-blue-800 mb-2">2. 파일 업로드</h4><div className="border-2 border-dashed border-blue-300 rounded p-6 text-center bg-white relative">
+                                            {fileParsing ? <div className="flex justify-center"><Icon name="Loader2" className="animate-spin text-blue-600"/></div> : 
+                                            <>
+                                                <input type="file" ref={fileInputRef} onChange={handleFileRead} accept=".xlsx,.xls" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
+                                                <div className="flex flex-col items-center pointer-events-none">
+                                                    <Icon name="Upload" className="w-8 h-8 text-blue-400 mb-2"/>
+                                                    <span className="text-sm font-bold text-gray-700">엑셀 파일 선택</span>
+                                                    <span className="text-xs text-gray-500 mt-1">(.xlsx, .xls 파일만 지원)</span>
+                                                </div>
+                                            </>}
+                                        </div></div>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 flex flex-col">
+                                        <div className="bg-green-50 p-4 rounded mb-4 border border-green-200 flex flex-col sm:flex-row justify-between items-center">
+                                            <div>
+                                                <h4 className="font-bold text-green-800 flex items-center gap-2"><Icon name="Check"/> 분석 성공!</h4>
+                                                <div className="text-sm text-green-700">계약 {previewData.contracts.length}건 / 신규 품목 {previewData.newItems.length}개</div>
+                                            </div>
+                                            <button onClick={handleConfirmExcelImport} className="mt-3 sm:mt-0 px-6 py-2 bg-green-600 text-white rounded font-bold shadow flex items-center gap-2 hover:bg-green-700"><Icon name="Database"/> 등록하기</button>
+                                        </div>
+                                        {previewData.newItems.length > 0 && (
+                                             <div className="bg-orange-50 p-3 rounded text-xs text-orange-800 border border-orange-200 mb-4 font-semibold">
+                                                * 아래 신규 품목은 등록과 동시에 마스터에 자동 추가됩니다: {previewData.newItems.map(i => i.name).join(', ')}
+                                             </div>
+                                        )}
+                                        <div className="border rounded overflow-auto max-h-60">
+                                            <table className="w-full text-xs text-left">
+                                                <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2">현장</th><th className="p-2">품목</th><th className="p-2">수량</th><th className="p-2">기간</th></tr></thead>
+                                                <tbody>{previewData.contracts.slice(0, 20).map((c, i) => <tr key={i} className="border-b hover:bg-gray-50"><td className="p-2">{c.site}</td><td className="p-2">{c.itemName} {c.isNewItem && '🆕'}</td><td className="p-2">{c.qty}</td><td className="p-2">{c.startDate}~{c.endDate}</td></tr>)}</tbody>
+                                            </table>
+                                            {previewData.contracts.length > 20 && <div className="p-2 text-center text-gray-500 text-xs bg-gray-50">... {previewData.contracts.length - 20}건 외</div>}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Header */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6 no-print">
+                        <div className="p-4 sm:p-6 border-b bg-slate-800 text-white flex flex-wrap justify-between items-center">
+                            <div className="mb-2 sm:mb-0">
+                                <h1 className="text-xl sm:text-2xl font-bold flex gap-2 items-center"><Icon name="Building2"/> 스마트 건설안전 통합관리</h1>
+                                <p className="text-slate-300 text-sm flex items-center gap-2 mt-1"><Icon name="Database" size={14}/> 데이터 안전 저장 중 (로컬)</p>
+                            </div>
+                            <div className="flex gap-2 items-center text-sm">
+                                <button onClick={handleManualSave} className={`px-3 py-2 bg-emerald-600 text-white rounded text-sm font-bold flex gap-1 shadow transition-all hover:bg-emerald-700 ${saveMessage ? 'bg-green-500' : ''}`}><Icon name="Save" size={16}/> {saveMessage || '설정 저장'}</button>
+                                <button onClick={() => console.log('설정 기능은 로컬 환경에서 비활성화되었습니다.')} className="p-2 hover:bg-slate-700 rounded"><Icon name="Settings"/></button>
+                                <div className="h-6 w-px bg-slate-600 mx-1"></div>
+                                <button onClick={() => setActiveTab('input')} className={`px-4 py-2 rounded font-bold ${activeTab === 'input' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}>관리</button>
+                                <button onClick={() => setActiveTab('report')} className={`px-4 py-2 rounded font-bold ${activeTab === 'report' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}>보고서</button>
+                                <button onClick={() => setActiveTab('invoice')} className={`px-4 py-2 rounded font-bold ${activeTab === 'invoice' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}>거래명세표</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Content */}
+                    {activeTab === 'input' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-2 space-y-6">
+                                {/* AI Smart Input Block (활성화) */}
+                                <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200 flex flex-col sm:flex-row gap-2 shadow-md">
+                                    <input className="flex-1 p-2 border rounded bg-white text-sm" placeholder="AI 입력: 'A현장에 CCTV 5대 2026년 3월부터 8월까지'" value={naturalInput} onChange={e => setNaturalInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSmartInput()}/>
+                                    <button onClick={handleSmartInput} className="bg-indigo-600 text-white px-4 py-2 rounded font-bold text-sm hover:bg-indigo-700">AI 스마트 입력</button>
+                                </div>
+
+                                <div className={`p-4 rounded-xl border shadow-lg transition-all ${editingContractId ? 'bg-orange-50 border-orange-300' : 'bg-white border-blue-100'}`}>
+                                    <div className="flex justify-between mb-4">
+                                        <h3 className="font-bold text-gray-800 flex items-center gap-2"><Icon name="Calendar"/> {editingContractId ? '계약 수정' : '신규 계약 등록'}</h3>
+                                        {editingContractId && <button onClick={() => {setEditingContractId(null); setContractForm({ site: '', itemId: '', qty: '', startDate: '', endDate: '' }); /* setRiskAssessmentResult(''); REMOVED */ }} className="text-gray-400 hover:text-gray-700"><Icon name="X" size={14}/></button>}
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
+                                        <div className="col-span-2 md:col-span-1"><label className="text-xs font-bold text-gray-500">현장명*</label><input className="w-full p-2 border rounded text-sm" value={contractForm.site} onChange={e => setContractForm({...contractForm, site: e.target.value})} list="site-options" required/></div>
+                                        <div className="col-span-2 md:col-span-1"><label className="text-xs font-bold text-gray-500">품목*</label><select className="w-full p-2 border rounded text-sm" value={contractForm.itemId} onChange={e => setContractForm({...contractForm, itemId: e.target.value})} required>
+                                            <option value="">선택</option>{items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                        </select></div>
+                                        <div className="col-span-1"><label className="text-xs font-bold text-gray-500">수량</label><input type="number" min="1" className="w-full p-2 border rounded text-sm text-right" value={contractForm.qty} onChange={e => setContractForm({...contractForm, qty: e.target.value})} /></div>
+                                        <div className="col-span-2 md:col-span-1"><label className="text-xs font-bold text-gray-500">시작일*</label><input type="date" className="w-full p-2 border rounded text-sm" value={contractForm.startDate} onChange={e => setContractForm({...contractForm, startDate: e.target.value})} required/></div>
+                                        <div className="col-span-2 md:col-span-1"><label className="text-xs font-bold text-gray-500">종료일*</label><input type="date" className="w-full p-2 border rounded text-sm" value={contractForm.endDate} onChange={e => setContractForm({...contractForm, endDate: e.target.value})} required/></div>
+                                        <div className="col-span-2 md:col-span-1 flex items-end"><button onClick={handleSaveContract} className={`w-full text-white p-2 rounded font-bold text-sm h-[38px] transition-colors ${editingContractId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>{editingContractId ? '수정완료' : '등록'}</button></div>
+                                    </div>
+                                    
+                                    {/* --- AI 계약 리스크 평가 UI 블록 제거됨 --- */}
+                                    
+                                    <div className="flex items-center gap-2 mt-6 mb-2 bg-gray-50 p-2 rounded border"><Icon name="Search" size={16} className="text-gray-400"/><input placeholder="현장명 검색..." className="bg-transparent outline-none w-full text-sm" value={contractSearchTerm} onChange={e => setContractSearchTerm(e.target.value)} list="site-options"/></div>
+                                    <div className="overflow-auto max-h-[450px] border rounded-lg bg-white shadow-inner">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-gray-100 border-b sticky top-0 z-10"><tr><th className="p-3">현장</th><th className="p-3">품목</th><th className="p-3 text-right">월 매출</th><th className="p-3 text-right">월 이익</th><th className="p-3 text-center">기간</th><th className="p-3 text-center">관리</th></tr></thead>
+                                            <tbody className="divide-y">
+                                                {filteredContracts.map(c => {
+                                                    const item = items.find(i => String(i.id) === String(c.itemId));
+                                                    const itemSales = item ? item.salesPrice * c.qty : 0;
+                                                    const itemProfit = item ? (item.salesPrice - item.costPrice) * c.qty : 0;
+                                                    return (
+                                                        <tr key={c.id} className={editingContractId === c.id ? 'bg-orange-50' : 'hover:bg-gray-50'}>
+                                                            <td className="p-3 font-bold">{c.site}</td>
+                                                            <td className="p-3 text-gray-600">{item ? item.name : '삭제됨'} ({c.qty})</td>
+                                                            <td className="p-3 text-right">{itemSales.toLocaleString()}</td>
+                                                            <td className="p-3 text-right text-blue-600 font-bold">{itemProfit.toLocaleString()}</td>
+                                                            <td className="p-3 text-center text-xs text-gray-500 leading-tight">{c.startDate}<br/>{c.endDate}</td>
+                                                            <td className="p-3 text-center flex justify-center gap-1">
+                                                                <button onClick={() => { setEditingContractId(c.id); setContractForm({...c, itemId: String(c.itemId)}); /* setRiskAssessmentResult(''); REMOVED */ }} className="p-1.5 text-gray-400 hover:text-blue-600 rounded-full hover:bg-blue-50 transition-colors"><Icon name="PenSquare" size={14}/></button>
+                                                                <button onClick={() => requestDelete('contract', c.id, `계약 내역 (현장: ${c.site}) 삭제`)} className="p-1.5 text-gray-400 hover:text-red-600 rounded-full hover:bg-red-50 transition-colors"><Icon name="Trash2" size={14}/></button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="lg:col-span-1">
+                                <div className="bg-white p-4 rounded-xl border shadow-lg h-full flex flex-col">
+                                    <div className="flex justify-between mb-4"><h3 className="font-bold flex items-center gap-2 text-green-700"><Icon name="Save" className="text-green-600"/> 품목 마스터</h3><button onClick={() => setShowBulkModal(true)} className="text-xs bg-green-50 hover:bg-green-100 text-green-700 px-3 py-1.5 rounded flex items-center gap-1 font-bold border border-green-200"><Icon name="FileSpreadsheet" size={14}/> 엑셀 등록</button></div>
+                                    <div className={`p-3 mb-4 rounded-lg border transition-all ${editingItemId ? 'bg-orange-50 border-orange-300' : 'bg-gray-50 border-gray-200'}`}>
+                                        <div className="flex justify-between mb-2"><span className="text-xs font-bold text-gray-500">{editingItemId ? '품목 수정' : '신규 품목'}</span>{editingItemId && <button onClick={() => {setEditingItemId(null); setMasterForm({ name: '', salesPrice: '', costPrice: '', unit: '' });}} className="text-gray-400 hover:text-gray-700"><Icon name="X" size={12}/></button>}</div>
+                                        <input className="w-full p-2 border rounded mb-2 text-sm bg-white" placeholder="품목명" value={masterForm.name} onChange={e => setMasterForm({...masterForm, name: e.target.value})} />
+                                        <div className="grid grid-cols-2 gap-2 mb-2"><input type="number" className="p-2 border rounded text-sm text-right" placeholder="매출단가" value={masterForm.salesPrice} onChange={e => setMasterForm({...masterForm, salesPrice: e.target.value})} /><input type="number" className="p-2 border rounded text-sm text-right" placeholder="매입단가" value={masterForm.costPrice} onChange={e => setMasterForm({...masterForm, costPrice: e.target.value})} /></div>
+                                        <input className="w-full p-2 border rounded mb-2 text-sm bg-white" placeholder="단위 (예: 개/월, 대/일)" value={masterForm.unit} onChange={e => setMasterForm({...masterForm, unit: e.target.value})} />
+                                        <button onClick={handleSaveItem} className={`w-full p-2 rounded text-white text-sm font-bold shadow-sm transition-colors ${editingItemId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}>{editingItemId ? '수정완료' : '등록'}</button>
+                                    </div>
+                                    <div className="flex-1 overflow-auto border-t pt-2">
+                                        {items.sort((a,b) => a.name.localeCompare(b.name)).map(item => {
+                                            const used = contracts.filter(c => String(c.itemId) === String(item.id)).length;
+                                            return (
+                                            <div key={item.id} onClick={() => { setEditingItemId(item.id); setMasterForm({...item}); }} className={`p-3 border-b cursor-pointer transition-colors ${editingItemId === item.id ? 'bg-orange-50 border-l-4 border-orange-500' : 'hover:bg-gray-50'}`}>
+                                                <div className="flex justify-between"><span className="font-bold text-sm text-gray-800">{item.name}</span><button onClick={(e) => { e.stopPropagation(); if(used>0) return console.log('사용중인 품목은 삭제 불가'); requestDelete('item', item.id, `품목: ${item.name} 삭제`); }} className={`p-1 rounded ${used > 0 ? 'text-gray-300' : 'text-gray-400 hover:text-red-500'}`} disabled={used > 0}><Icon name="Trash2" size={14}/></button></div>
+                                                <div className="flex justify-between text-xs mt-1"><span className="text-blue-600">매출 {item.salesPrice.toLocaleString()} / {item.unit}</span><span className="text-red-500">매입 {item.costPrice.toLocaleString()} / {item.unit}</span></div>
+                                            </div>
+                                        )})}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {activeTab === 'report' && (
+                            <div className="space-y-6">
+                                <div className="bg-white p-4 rounded-xl border shadow-lg flex flex-col md:flex-row gap-4 justify-between items-center">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <div className="flex items-center gap-2 bg-gray-50 p-2 rounded border"><Icon name="Filter" size={16} className="text-gray-500"/><input type="month" value={reportPeriod.start} onChange={e => setReportPeriod({...reportPeriod, start: e.target.value})} className="bg-transparent text-sm"/><span>~</span><input type="month" value={reportPeriod.end} onChange={e => setReportPeriod({...reportPeriod, end: e.target.value})} className="bg-transparent text-sm"/></div>
+                                        <div className="flex bg-gray-100 p-1 rounded-lg shadow-inner">{['sales', 'purchase', 'profit'].map(m => <button key={m} onClick={() => setViewMode(m)} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${viewMode === m ? 'bg-white shadow-md text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}>{m === 'sales' ? '매출' : m === 'purchase' ? '매입' : '순이익'}</button>)}</div>
+                                    </div>
+                                    {/* AI 분석 버튼 제거됨 */}
+                                </div>
+                                {/* AI 분석 결과 표시 영역 제거됨 */}
+                                <div className="bg-white p-6 rounded-xl border shadow-lg overflow-hidden">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm border-collapse">
+                                            <thead><tr className="bg-slate-800 text-white"><th className="p-3 border-r border-slate-600 sticky left-0 bg-slate-800 z-20 min-w-[120px]">현장명</th>{months.map(m => <th key={m} className="p-3 border-r border-slate-600 min-w-[100px] text-center">{m}</th>)}<th className="p-3 bg-slate-900 z-20 min-w-[100px]">합계</th></tr></thead>
+                                            <tbody>
+                                                {uniqueSites.map(site => {
+                                                    let rowSum = 0;
+                                                    return (
+                                                        <tr key={site} className="border-b hover:bg-gray-50">
+                                                            <td className="p-3 border-r font-bold sticky left-0 bg-white z-10 text-gray-800">{site}</td>
+                                                            {months.map(m => {
+                                                                const { sales, cost, profit, details } = calculateMonthlyStatus(site, m);
+                                                                const val = viewMode === 'sales' ? sales : viewMode === 'purchase' ? cost : profit;
+                                                                rowSum += val;
+                                                                return (
+                                                                    <td key={m} className="p-3 text-right border-r group relative cursor-help text-gray-700">
+                                                                        {val !== 0 ? val.toLocaleString() : '-'}
+                                                                        {val !== 0 && (
+                                                                            <div className="absolute hidden group-hover:block z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-72 bg-slate-900 text-white p-3 rounded shadow-xl pointer-events-none text-left">
+                                                                                <div className="font-bold border-b border-gray-600 pb-1 mb-2 text-yellow-400 text-xs">{m} 상세 ({viewMode === 'sales' ? '매출' : viewMode === 'purchase' ? '매입' : '이익'})</div>
+                                                                                <div className="max-h-60 overflow-y-auto no-scrollbar">
+                                                                                    {details.map((d, i) => {
+                                                                                        const calculatedValue = viewMode === 'sales' ? d.val : 
+                                                                                                                viewMode === 'purchase' ? d.costPrice * d.qty : 
+                                                                                                                (d.salesPrice - d.costPrice) * d.qty;
+                                                                                        return (
+                                                                                            <div key={i} className="flex justify-between text-[11px] mb-1 border-b border-gray-700 pb-1 last:border-0">
+                                                                                                <span className="text-gray-300">{d.name} ({d.qty})</span>
+                                                                                                <span className="font-mono text-gray-100">{calculatedValue.toLocaleString()}</span>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                )
+                                                            })}
+                                                            <td className="p-3 text-right font-bold bg-slate-50 text-blue-800 sticky right-0">{rowSum.toLocaleString()}</td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                            <tfoot>
+                                                <tr className="bg-slate-100 font-bold border-t-2 border-slate-300"><td className="p-3 sticky left-0 bg-slate-100 z-10 text-center">합계</td>
+                                                    {months.map(m => {
+                                                        const { sales, cost, profit } = calculateMonthlyStatus(null, m);
+                                                        const total = viewMode === 'sales' ? sales : viewMode === 'purchase' ? cost : profit;
+                                                        return <td key={m} className="p-3 text-right text-blue-700 border-l border-slate-200">{total.toLocaleString()}</td>
+                                                    })}
+                                                    <td className="p-3 text-right bg-slate-200 border-l border-slate-300 sticky right-0">{months.reduce((acc, m) => { const { sales, cost, profit } = calculateMonthlyStatus(null, m); return acc + (viewMode === 'sales' ? sales : viewMode === 'purchase' ? cost : profit); }, 0).toLocaleString()}</td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                    )}
+
+                    {/* --- 3. Invoice Tab --- */}
+                    {activeTab === 'invoice' && (
+                        <div className="space-y-6">
+                            <div className="bg-white p-4 rounded-xl border shadow-lg flex flex-col md:flex-row gap-4 justify-between items-center no-print">
+                                <div className="flex items-center gap-4 w-full">
+                                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded border flex-1">
+                                        <Icon name="Building2" size={16} className="text-gray-500"/>
+                                        <span className="text-sm font-bold whitespace-nowrap">현장:</span>
+                                        <input className="bg-transparent text-sm w-full outline-none" value={invoiceSite} onChange={e => setInvoiceSite(e.target.value)} list="site-options" placeholder="현장 선택..."/>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded border">
+                                        <Icon name="Calendar" size={16} className="text-gray-500"/>
+                                        <span className="text-sm font-bold whitespace-nowrap">청구일:</span>
+                                        <input type="date" value={invoiceFullDate} onChange={e => setInvoiceFullDate(e.target.value)} className="bg-transparent text-sm outline-none"/>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 w-full md:w-auto">
+                                    <button onClick={handleSinglePrint} disabled={!invoiceSite} className="w-1/2 md:w-auto bg-blue-600 text-white px-4 py-2 rounded font-bold text-sm flex gap-2 shadow hover:bg-blue-700 disabled:bg-blue-400 justify-center"><Icon name="Printer" size={16}/> 선택 현장 인쇄</button>
+                                    <button onClick={handleBulkPrint} className="w-1/2 md:w-auto bg-indigo-600 text-white px-4 py-2 rounded font-bold text-sm flex gap-2 shadow hover:bg-indigo-700 justify-center"><Icon name="Printer" size={16}/> 전체 현장 일괄 인쇄</button>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-xl border shadow-lg no-print">
+                                <h3 className="font-bold text-gray-800 mb-2 text-sm flex items-center gap-2 text-orange-600"><Icon name="PenSquare" size={14}/> 공급자 정보 (클릭 후 수정, 저장 버튼 클릭)</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                                    <input className="border p-1 text-sm rounded" placeholder="등록번호" value={supplierInfo.regNo} onChange={e => setSupplierInfo({...supplierInfo, regNo: e.target.value})} onBlur={handleManualSave}/>
+                                    <input className="border p-1 text-sm rounded" placeholder="상호" value={supplierInfo.name} onChange={e => setSupplierInfo({...supplierInfo, name: e.target.value})} onBlur={handleManualSave}/>
+                                    <input className="border p-1 text-sm rounded" placeholder="대표자" value={supplierInfo.owner} onChange={e => setSupplierInfo({...supplierInfo, owner: e.target.value})} onBlur={handleManualSave}/>
+                                    <input className="border p-1 text-sm rounded col-span-2 md:col-span-1" placeholder="업태" value={supplierInfo.type} onChange={e => setSupplierInfo({...supplierInfo, type: e.target.value})} onBlur={handleManualSave}/>
+                                    <input className="border p-1 text-sm rounded col-span-2 md:col-span-1" placeholder="종목" value={supplierInfo.category} onChange={e => setSupplierInfo({...supplierInfo, category: e.target.value})} onBlur={handleManualSave}/>
+                                    <input className="border p-1 text-sm rounded col-span-2 md:col-span-2" placeholder="주소" value={supplierInfo.address} onChange={e => setSupplierInfo({...supplierInfo, address: e.target.value})} onBlur={handleManualSave}/>
+                                </div>
+                            </div>
+
+                            <div id="invoice-section" className="mx-auto" style={{ maxWidth: '210mm' }}>
+                                {/* Render Invoice Documents based on sitesToRender */}
+                                {sitesToRender.length > 0 ? (
+                                    sitesToRender.map(site => (
+                                        <InvoiceDocument 
+                                            key={site} 
+                                            site={site} 
+                                            invoiceDate={invoiceFullDate} 
+                                            supplierInfo={supplierInfo} 
+                                            getInvoiceItemsForSite={getInvoiceItemsForSite} // PASS THE FUNCTION HERE
+                                        />
+                                    ))
+                                ) : (
+                                    <div className="bg-white p-12 shadow-lg mx-auto border border-gray-200 text-center text-gray-500 rounded-xl" style={{ maxWidth: '210mm', minHeight: '297mm' }}>
+                                        현장을 선택하거나 '전체 현장 일괄 인쇄'를 클릭하여 명세표를 생성하세요.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    <datalist id="site-options">{uniqueSites.map(site => <option key={site} value={site} />)}</datalist>
+                </div>
+            );
+        }
+
+        // Local component for rendering a single invoice document (Outside of main component)
+        const InvoiceDocument = ({ site, invoiceDate, supplierInfo, getInvoiceItemsForSite }) => {
+            const invoiceItems = getInvoiceItemsForSite(site, invoiceDate); 
+
+            const totalAmount = invoiceItems.reduce((a,c)=>a+c.amount,0);
+            const totalTax = invoiceItems.reduce((a,c)=>a+c.tax,0);
+            const totalQty = invoiceItems.reduce((a,c)=>a+c.qty,0);
+            const totalGrand = totalAmount + totalTax;
+            
+            const dateObj = new Date(invoiceDate);
+            const year = dateObj.getFullYear();
+            const month = dateObj.getMonth() + 1;
+            const day = dateObj.getDate();
+            
+            // Generate a row with the current date (YYYY-MM-DD)
+            const dateString = `${year}년 ${month}월 ${day}일`;
+            
+            // Check if items should be rendered
+            if (invoiceItems.length === 0) return null;
+
+            return (
+                <div className="invoice-page bg-white p-12 shadow-lg mx-auto border border-gray-300 mb-6" style={{ maxWidth: '210mm', minHeight: '297mm', padding: '10mm' }}> 
+                    <div className="text-center mb-10">
+                        <h1 className="text-4xl font-black border-4 border-black inline-block px-10 py-3 tracking-[1em] shadow-lg">거래명세표</h1>
+                        <p className="mt-3 text-lg font-bold">작성일자: {dateString}</p>
+                    </div>
+                    
+                    {/* 현장 정보와 공급자 정보 (상단 테이블) */}
+                    <div className="flex border-2 border-black mb-1">
+                        {/* 1. 현장 정보 (좌측) - 받는 사람 */}
+                        <div className="w-1/2 p-1 relative border-r border-black flex flex-col justify-center min-h-[120px] bg-blue-50/50">
+                            <div className="text-center p-3">
+                                {/* 현장명이 길어질 경우 글자 크기를 2xl로 조정 (레이아웃 조정 반영) */}
+                                <h2 className="text-2xl font-black border-b-2 border-black mb-2 pb-1 text-blue-900 whitespace-normal break-words">{site} 귀하</h2>
+                                <p className="text-lg font-bold text-gray-700 mt-2">{year}년 {month}월 (청구월)</p>
+                            </div>
+                        </div>
+                        
+                        {/* 2. 공급자 정보 (우측) - 주는 사람 */}
+                        <div className="w-1/2 p-1">
+                            <table className="w-full text-xs border-collapse"><tbody>
+                                <tr>
+                                    {/* rowSpan 4 -> 5로 변경하여 세로 높이를 늘림 (전체 높이 맞추기) */}
+                                    <td rowSpan="5" className="w-5 text-center font-bold border-r border-gray-400 bg-gray-100 px-1">
+                                        <div className="supplier-label">공<br/>급<br/>자</div>
+                                    </td>
+                                    {/* py-1.5 -> py-1로 변경하여 여백 축소 */}
+                                    <td className="border-b border-r border-gray-300 px-1 py-1 text-center bg-gray-100 w-1/4 min-w-[60px]">등록번호</td>
+                                    <td colSpan="3" className="border-b border-gray-300 px-1 py-1 font-bold text-red-800 text-base">{supplierInfo.regNo}</td>
+                                </tr>
+                                <tr>
+                                    <td className="border-b border-r border-gray-300 px-1 py-1 text-center bg-gray-100 w-1/4">상 호</td>
+                                    <td className="border-b border-r border-gray-300 px-1 py-1">{supplierInfo.name}</td>
+                                    <td className="border-b border-r border-gray-300 px-1 py-1 text-center bg-gray-100 min-w-[40px]">성명</td>
+                                    <td className="border-b border-gray-300 px-1 py-1">{supplierInfo.owner}</td>
+                                </tr>
+                                <tr>
+                                    <td className="border-b border-r border-gray-300 px-1 py-1 text-center bg-gray-100">주 소</td>
+                                    <td colSpan="3" className="border-b border-gray-300 px-1 py-1">{supplierInfo.address}</td>
+                                </tr>
+                                <tr>
+                                    <td className="border-b border-r border-gray-300 px-1 py-1 text-center bg-gray-100">업 태</td>
+                                    <td className="border-b border-r border-gray-300 px-1 py-1">{supplierInfo.type}</td>
+                                    <td className="border-b border-r border-gray-300 px-1 py-1 text-center bg-gray-100">종목</td>
+                                    <td className="border-b border-gray-300 px-1 py-1">{supplierInfo.category}</td>
+                                </tr>
+                                <tr>
+                                    {/* 추가된 행: 칸 채우기 위해 1행 추가 및 내용 비우기 */}
+                                    <td colSpan="4" className="px-1 py-1 h-5"></td>
+                                </tr>
+                            </tbody></table>
+                        </div>
+                    </div>
+                    
+                    {/* 합계 금액 표기 */}
+                    <div className="flex border-x-2 border-t-2 border-black p-2 justify-between items-center bg-gray-100/50"><span className="font-bold text-lg">총 합계금액 (VAT 포함)</span><span className="text-3xl font-black text-blue-700">₩ {totalGrand.toLocaleString()}</span></div>
+
+                    <table className="w-full border-2 border-black text-xs mb-4">
+                        <thead className="bg-gray-200 text-center font-bold"><tr><td className="border border-black p-2 w-10">월</td><td className="border border-black p-2 w-10">일</td><td className="border border-black p-2">품 목</td><td className="border border-black p-2 w-16">규 격</td><td className="border border-black p-2 w-12">수량</td><td className="border border-black p-2 w-24">단 가</td><td className="border border-black p-2 w-28">공급가액</td><td className="border border-black p-2 w-24">세 액</td><td className="border border-black p-2 w-20">비 고</td></tr></thead>
+                        <tbody>
+                            {invoiceItems.length > 0 ? invoiceItems.map((item, i) => (
+                                <tr key={i} className="text-center h-10">
+                                    <td className="border border-black p-1">{month}</td><td className="border border-black p-1">{day}</td>
+                                    <td className={`border border-black p-1 text-left pl-2 font-bold item-name-cell`}>{item.name}</td>
+                                    <td className="border border-black p-1">{item.unit}</td><td className="border border-black p-1">{item.qty}</td>
+                                    <td className="border border-black p-1 text-right pr-2">{item.price.toLocaleString()}</td><td className="border border-black p-1 text-right pr-2">{item.amount.toLocaleString()}</td><td className="border border-black p-1 text-right pr-2">{item.tax.toLocaleString()}</td><td className="border border-black p-1 text-xs text-left pl-1"></td>
+                                </tr>
+                            )) : (
+                                <tr><td colSpan="9" className="border border-black p-12 text-center text-gray-400">내역 없음</td></tr>
+                            )}
+                            {/* 빈 행 추가 (총 10행 유지) */}
+                            {Array.from({ length: Math.max(0, 10 - invoiceItems.length) }).map((_, i) => (
+                                <tr key={`empty-${i}`} className="h-10"><td className="border border-black"></td><td className="border border-black"></td><td className="border border-black"></td><td className="border border-black"></td><td className="border border-black"></td><td className="border border-black"></td><td className="border border-black"></td><td className="border border-black"></td><td className="border border-black"></td></tr>
+                            ))}
+                        </tbody>
+                        <tfoot>
+                            <tr className="bg-gray-100 font-black text-center"><td colSpan="4" className="border border-black p-2">총 합계</td><td className="border border-black p-2">{totalQty}</td><td className="border border-black p-2"></td><td className="border border-black p-2 text-right pr-2">{totalAmount.toLocaleString()}</td><td className="border border-black p-2 text-right pr-2">{totalTax.toLocaleString()}</td><td className="border border-black p-2"></td></tr>
+                        </tfoot>
+                    </table>
+                    <div className="text-right text-xs text-gray-600 mt-4">**상기 금액을 정히 영수함.**</div>
+                </div>
+            );
+        };
+
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ConstructionSalesManager />);
+    </script>
+</body>
+</html>
