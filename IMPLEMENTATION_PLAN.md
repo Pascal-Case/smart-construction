@@ -990,7 +990,7 @@ smart-construction/
 - [x] DB 마이그레이션과 health check 성공
 - [x] 외부 CDN 없이 기본 화면이 동작함
 
-### Phase 2. 인증·권한·감사
+### Phase 2. 인증·권한·감사 — 완료 (2026-07-10)
 
 작업:
 
@@ -1002,8 +1002,8 @@ smart-construction/
 
 완료 조건:
 
-- 권한별 허용·차단 통합 테스트 통과
-- 데이터 변경 시 사용자와 변경 시각이 기록됨
+- [x] 권한별 허용·차단 통합 테스트 통과
+- [x] 데이터 변경 시 사용자와 변경 시각이 기록됨
 
 ### Phase 3. 현장·품목 마스터
 
@@ -1271,3 +1271,40 @@ smart-construction/
 - 로컬 `D:\SQLite\sqlite3.exe` 3.53.3 설치를 확인했으며 운영 진단과 무결성 검사에 사용할 수 있다.
 - DB 파일은 `data/app.db`에 저장하고 사용자 PC가 네트워크 공유로 직접 열지 않게 한다.
 - Prisma 7 migration 실행 전에 `db:prepare`가 DB 폴더와 파일을 준비해 Windows의 초기 파일 생성 실패를 방지한다.
+
+### 28.4 Phase 2 완료 결과
+
+- DB 기반 opaque session과 HTTP-only, SameSite cookie 적용
+- 최초 실행 시 단 한 번 ADMIN을 만드는 `/setup` 흐름
+- 로그인·로그아웃·현재 사용자 API
+- `ADMIN`, `MANAGER`, `VIEWER` 역할과 API 인가 검사
+- ADMIN 전용 사용자 생성·역할 변경·비활성화·비밀번호 재설정
+- version 기반 사용자 수정 충돌 방지
+- 마지막 활성 ADMIN 비활성화·강등 차단
+- 비활성화 사용자 세션 일괄 삭제
+- 인증 및 사용자 변경 감사 로그와 ADMIN 조회 화면
+- 인증 화면을 request-time rendering으로 강제해 빌드 시 DB 상태 고정 방지
+- `20260710023230_phase2_auth` migration
+
+### 28.5 Phase 2 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| lint / typecheck / production build | 성공 |
+| Vitest | 2개 파일, 6개 테스트 성공 |
+| 미인증 사용자 관리 API | HTTP 401 |
+| 최초 ADMIN 설정 | HTTP 201 |
+| ADMIN의 사용자 생성·수정 | HTTP 201 / 200 |
+| VIEWER 로그인 | HTTP 200 |
+| VIEWER의 사용자 관리 API | HTTP 403 |
+| 로그아웃 후 현재 사용자 API | HTTP 401 |
+| 감사 로그 | SETUP, LOGIN, CREATE, UPDATE 기록 확인 |
+
+### 28.6 Phase 2 회고
+
+- 잘된 점: UI 표시 권한과 별도로 모든 관리 API가 DB session과 역할을 재검증한다.
+- 잘된 점: 평문 비밀번호와 session token은 DB 및 감사 로그에 저장하지 않는다.
+- 발견·개선: Prisma create에 검증 입력 전체를 전달해 평문 password 필드가 섞인 오류를 실제 HTTP 검증에서 발견했고, 허용 필드만 명시 매핑하도록 수정했다.
+- 발견·개선: 마지막 ADMIN 보호 count를 transaction 밖에서 읽던 경쟁 가능성을 발견해 조회·검사·수정을 한 transaction으로 묶었다.
+- 발견·개선: SQLite 동기 드라이버 조회가 인증 화면을 정적 생성할 수 있어 `connection()`으로 request-time rendering을 명시했다.
+- 다음 Phase 적용: 모든 업무 mutation은 동일한 DAL 권한 검사, version 충돌, transaction 감사 로그 패턴을 재사용한다.
