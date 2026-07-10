@@ -6,7 +6,11 @@ describe("parseServerEnv", () => {
   it("SQLite file URL을 허용한다", () => {
     expect(
       parseServerEnv({ DATABASE_URL: "file:./data/test.db" }),
-    ).toEqual({ DATABASE_URL: "file:./data/test.db" });
+    ).toEqual({
+      DATABASE_URL: "file:./data/test.db",
+      SESSION_COOKIE_SECURE: false,
+      SESSION_TTL_HOURS: 12,
+    });
   });
 
   it("DATABASE_URL 누락을 명확하게 거부한다", () => {
