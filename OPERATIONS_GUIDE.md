@@ -46,6 +46,12 @@
 
 Ready가 true이고 TeamUrls에 사내 IPv4 URL이 표시되어야 한다.
 
+수동으로 실행한 production server를 중지할 때는 포트와 명령줄을 확인하는 script를 사용한다.
+
+    npm run ops:stop -- -Port 3000
+
+프로세스가 응답하지 않을 때만 `-Force`를 추가한다. 다른 프로그램이 해당 포트를 사용하면 script가 중지하지 않고 오류를 표시한다.
+
 ## 4. 고정 IP
 
 권장 순서는 공유기 또는 사내 DHCP 서버에서 server PC의 MAC 주소에 DHCP 예약을 설정하는 것이다. 사내 IT 담당자에게 server PC 이름, network adapter MAC, 현재 IPv4와 subnet prefix, 예약할 IPv4, gateway와 DNS를 전달한다.

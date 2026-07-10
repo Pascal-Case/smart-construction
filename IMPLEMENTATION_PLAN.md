@@ -1822,3 +1822,19 @@ smart-construction/
 - 잘된 점: 운영 script가 migration을 먼저 적용하고 Next production을 시작해 재부팅 후에도 schema와 server 시작 순서가 고정된다.
 - 잘된 점: localhost가 아닌 `0.0.0.0` listener와 실제 LAN IPv4 요청을 함께 확인해 팀 공유 경로의 첫 관문을 검증했다.
 - 남은 확인: 다른 팀원 PC의 접속, Windows 방화벽 실제 적용, 재부팅 자동 시작, 두 사용자 간 실시간 갱신은 해당 PC와 권한이 준비된 뒤 수동 인수한다.
+
+### 28.39 운영 중지 script 회고
+
+- 발견·개선: 운영 server를 작업 관리자에서 PID로 찾지 않아도 되도록 포트 listener와 `smart-construction` Next production 명령줄을 함께 확인하는 `scripts/stop-production.ps1`와 `npm run ops:stop`을 추가했다.
+- 안전 경계: 다른 프로그램이 포트를 사용하면 중지하지 않으며, 강제 종료는 `-Force`를 명시한 경우에만 허용한다.
+
+### 28.40 운영 중지·재기동 검증
+
+| 검증 | 결과 |
+|---|---|
+| `npm run ops:stop -- -Port 3000` | production listener 종료 확인 |
+| 재기동 | migration 적용 후 Next production 시작 |
+| 재기동 readiness | listener·health·DB 모두 true |
+| 재기동 LAN | `192.168.35.135:3000` URL 생성 |
+
+회고: 작업 관리자에서 여러 Node 프로세스를 구분해 수동 종료하는 대신 포트·명령줄 검증을 운영 명령으로 고정해, 중지 후 재기동과 readiness를 같은 절차로 반복할 수 있게 했다.

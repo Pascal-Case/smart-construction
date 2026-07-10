@@ -11,6 +11,7 @@
     "start": "next start",
     "start:lan": "next start -H 0.0.0.0 -p 3000",
     "ops:backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup-database.ps1",
+    "ops:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-production.ps1",
     "ops:tasks:plan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows-tasks.ps1",
     "ops:firewall:plan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/configure-firewall.ps1",
     "ops:ready": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lan-readiness.ps1",
