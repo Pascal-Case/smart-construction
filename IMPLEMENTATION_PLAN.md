@@ -1775,3 +1775,37 @@ smart-construction/
 | 최초 사용자 | 관리자·담당자·조회자 명단 | 개인 계정 로그인 확인 |
 
 실제 환경 변경과 실무 승인은 OPERATIONS_GUIDE.md 순서로 진행하며, 완료 증빙을 확보한 뒤 위 체크와 Phase 9 출력 승인 항목을 닫는다.
+
+### 28.35 Phase 11 실무 인수 보강 결과
+
+별도 `data/acceptance.db`와 production server를 사용해 실제 화면·API 업무 흐름을 다시 인수했다.
+
+| 검증 | 결과 |
+|---|---|
+| 초기 설정/로그인 | ADMIN 계정 생성과 로그인 성공 |
+| 현장 마스터 | 송도 A현장 저장, SITE-0001 조회 |
+| 품목 마스터 | 이동형 CCTV·EA·220,000원·120,000원·별칭 저장 |
+| 공급자 정보 | 등록번호·상호·대표·주소·업태·종목·전화·안내 문구 저장 |
+| 스마트 계약 입력 | 송도 A현장/CCTV/2대/2026-05/220,000원, 신뢰도 96% 분석 후 폼 적용 |
+| 계약 매출 | ACTIVE 계약 1건, 31/31일 일할, 440,000원 생성 |
+| 자유형 매출 | 2026-05-20 긴급 보수 300,000원 직접 입력·확정 |
+| 월별 API 조회 | 2026-05, 매출 740,000원·매입 240,000원·이익 500,000원·2건 |
+| 월별 메모 | 송도 A현장 2026-05 메모 저장·재조회 |
+| 거래명세표 | 5월 후보 2건, ITEMIZED preview·발행 1건, 공급가액 740,000원 |
+| 출력 snapshot | 공급자·수신처·규격·수량·단가·금액·합계 740,000원 유지 |
+| 출력 레이아웃 | invoice page computed box 210mm × 297mm, A4 portrait CSS 확인 |
+| 권한 | MANAGER 로그인 성공, 관리자 메뉴 숨김 및 `/settings/users` 접근 시 홈으로 제한 |
+| 운영 readiness | listener·health·DB 확인 `Ready=True`, 팀 URL 생성 |
+| 운영 backup | acceptance DB online backup 생성, SHA-256 metadata·`quick_check=ok` |
+| 운영 dry-run | 시작/backup 작업 계획과 Domain·Private 방화벽 계획 출력 성공 |
+
+브라우저 자동화 도구는 native `date`/`month` 입력값을 설정하지 못해 5월 기간 조회·후보 발행의 날짜 입력은 인증된 API로 보강 검증했다. 실제 사용자 브라우저의 날짜 선택과 A4 프린터/PDF 여백 승인은 여전히 운영 PC에서 수동 확인해야 한다.
+
+### 28.36 Phase 11 인수 회고
+
+- 잘된 점: 폼 내부 `Button`의 기본 `type`이 `button`인 문제를 AST 계약 테스트로 발견하고 모든 제출 폼에 명시적 `type="submit"`을 적용했다. 초기 설정·로그인·마스터·계약·매출·사용자 폼을 실제 화면에서 다시 저장했다.
+- 잘된 점: 스마트 입력은 분석 결과를 바로 저장하지 않고 계약 폼에 적용한 뒤 사용자가 상태를 `진행`으로 바꾸고 저장하도록 유지했다.
+- 잘된 점: 계약 자동 매출과 자유형 매출을 같은 5월 집계·거래명세표에 함께 포함해 건별 원장과 합계가 일치함을 확인했다.
+- 발견·개선: Windows PowerShell에서 .NET `Path.GetFullPath(path, base)` overload가 지원되지 않아 운영 dry-run이 중단됐다. 공통 `Resolve-SmartConstructionPath`로 상대·절대 경로를 명시적으로 정규화해 작업 스케줄러·backup·restore를 수정했다.
+- 발견·개선: 브라우저 자동화에서 native 날짜 입력을 직접 조작할 수 없었다. 화면의 입력 구조와 메모 modal은 확인하고, 기간·금액·발행은 인증 API와 print snapshot으로 교차 검증했다.
+- 운영 경계: 현재 acceptance DB와 테스트 계정은 인수 증빙용이다. 실제 팀 데이터 이관, server PC 재부팅, 방화벽/작업 스케줄러 `-Apply`, A4 출력 승인은 담당자 승인 후 수행한다.
