@@ -1005,7 +1005,7 @@ smart-construction/
 - [x] 권한별 허용·차단 통합 테스트 통과
 - [x] 데이터 변경 시 사용자와 변경 시각이 기록됨
 
-### Phase 3. 현장·품목 마스터
+### Phase 3. 현장·품목 마스터 — 완료 (2026-07-10)
 
 작업:
 
@@ -1018,9 +1018,9 @@ smart-construction/
 
 완료 조건:
 
-- 같은 검증 규칙으로 파일과 붙여넣기 입력 가능
-- 오류 행을 설명하고 정상 데이터만 의도대로 저장 가능
-- 코드 중복과 이름 충돌 시 자동 덮어쓰지 않음
+- [x] 같은 검증 규칙으로 파일과 붙여넣기 입력 가능
+- [x] 오류 행을 설명하고 정상 데이터만 의도대로 저장 가능
+- [x] 코드 중복과 이름 충돌 시 자동 덮어쓰지 않음
 
 ### Phase 4. 계약과 단가 예외
 
@@ -1308,3 +1308,49 @@ smart-construction/
 - 발견·개선: 마지막 ADMIN 보호 count를 transaction 밖에서 읽던 경쟁 가능성을 발견해 조회·검사·수정을 한 transaction으로 묶었다.
 - 발견·개선: SQLite 동기 드라이버 조회가 인증 화면을 정적 생성할 수 있어 `connection()`으로 request-time rendering을 명시했다.
 - 다음 Phase 적용: 모든 업무 mutation은 동일한 DAL 권한 검사, version 충돌, transaction 감사 로그 패턴을 재사용한다.
+
+### 28.7 Phase 3 완료 결과
+
+- 현장·품목 마스터와 별칭, 업무 코드 순번, import batch 모델 및 `20260710030235_phase3_masters` migration
+- ADMIN·MANAGER의 현장·품목 생성·수정과 VIEWER 포함 전체 사용자의 조회·Excel export
+- 코드·이름·별칭 검색, 사용 상태 필터, 정렬, pagination
+- 코드 미입력 시 `SITE-0001`, `ITEM-0001` 형식 자동 생성
+- 이름·별칭 정규화와 다른 코드 간 충돌 차단
+- version 기반 수정 충돌 감지와 변경 전·후 감사 로그
+- 현장·품목 Excel 양식 다운로드와 전체 export
+- `.xlsx` 파일 및 Excel TSV 복사·붙여넣기의 공통 preview·commit 처리
+- import 행별 CREATE·UPDATE·UNCHANGED·ERROR 분류와 오류 사유 표시
+- 정상 행만 저장하거나 오류 시 전체 취소하는 두 가지 import 모드
+- Excel export 문자열의 수식 주입 방지와 업로드 5MB·5,000행 제한
+
+### 28.8 Phase 3 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| migration | Phase 3 migration 적용 및 10개 테이블 확인 |
+| `git diff --check` / lint / typecheck | 성공 |
+| Vitest | 4개 파일, 12개 테스트 성공 |
+| production build | 22개 route 빌드 성공 |
+| `npm audit` | 취약점 0건 |
+| 현장 생성·수정 | HTTP 201 / 200, 자동 코드 `SITE-0001` 확인 |
+| 중복 현장명 | HTTP 409, 자동 덮어쓰기 차단 |
+| 품목 생성 | HTTP 201 |
+| Excel 붙여넣기 preview·commit | HTTP 200, 정상 1건 저장·충돌 1건 제외 |
+| Excel 양식 export | HTTP 200, 정상 `.xlsx` 생성 |
+| Excel 파일 preview·commit | HTTP 200, 신규 품목 1건 저장 |
+| 현장 전체 Excel export | HTTP 200, 7,185 bytes |
+| VIEWER 현장 조회 | HTTP 200 |
+| VIEWER 품목 생성 | HTTP 403 |
+
+실제 HTTP 검증은 운영 DB와 분리한 `data/phase3-http.db`에서 수행했다. 실행 중인 개발 서버가 SQLite를 점유하면 migration이 잠길 수 있으므로 운영 migration은 애플리케이션 중지 후 수행해야 한다.
+
+### 28.9 Phase 3 회고
+
+- 잘된 점: 파일 업로드와 복사·붙여넣기가 입력 해석 단계만 다르고 동일한 행 검증·preview·transaction commit을 재사용한다.
+- 잘된 점: import commit은 클라이언트 preview 결과를 신뢰하지 않고 원본 파일·붙여넣기 내용을 다시 해석하며, version 충돌과 DB 고유키 충돌을 명시적으로 차단한다.
+- 잘된 점: 직접 CRUD와 대량 import 모두 감사 로그를 같은 transaction 안에서 기록해 데이터와 이력이 어긋나지 않는다.
+- 발견·개선: 최초 구현은 한 import 파일 안의 서로 다른 코드가 같은 신규 이름을 사용하는 경우를 놓쳤다. preview 중 입력 이름·별칭을 즉시 예약하도록 수정해 두 번째 행을 ERROR로 분류한다.
+- 발견·개선: 직접 입력 검증과 Excel 검증의 길이·코드 문자 규칙이 달랐다. Excel에도 코드, 이름, 단위, 메모, 별칭 개수·길이 제한을 적용했다.
+- 발견·개선: PowerShell `Invoke-WebRequest -Form`의 quoted multipart boundary는 Next.js body parser가 거부했다. 브라우저와 동일한 표준 multipart를 보내는 `curl`로 파일 preview·commit을 재검증해 애플리케이션 동작을 확인했다.
+- 운영 메모: 현재 C: 여유 공간이 0이므로 검증 도구의 TEMP와 npm cache를 D: 작업공간으로 우회했다. 장기 운영 전 C: 공간을 확보해야 한다.
+- 다음 Phase 적용: 계약 품목은 품목 표준단가를 최초 제안값으로만 사용하고, 계약 행에는 실제 적용 단가와 예외 사유를 snapshot으로 저장한다.
