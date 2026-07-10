@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 
 import { Badge } from "@/components/ui/badge";
 
-export type EventType = "monthlyMemo.changed" | "site.changed" | "item.changed" | "contract.changed" | "revenue.changed";
+export type EventType = "monthlyMemo.changed" | "site.changed" | "item.changed" | "contract.changed" | "revenue.changed" | "invoice.changed";
 export type RealtimeEvent = { id: number; type: EventType; entityId: string; siteId: string | null; month: string | null; actorId: string | null; occurredAt: string };
 type Listener = (event: RealtimeEvent) => void;
 type RealtimeState = {
@@ -14,7 +14,7 @@ type RealtimeState = {
 };
 
 const RealtimeContext = createContext<RealtimeState>({ status: "connecting", connectionEpoch: 0, subscribe: () => () => undefined });
-const eventTypes: EventType[] = ["monthlyMemo.changed", "site.changed", "item.changed", "contract.changed", "revenue.changed"];
+const eventTypes: EventType[] = ["monthlyMemo.changed", "site.changed", "item.changed", "contract.changed", "revenue.changed", "invoice.changed"];
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<RealtimeState["status"]>("connecting");
