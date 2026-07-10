@@ -1070,7 +1070,7 @@ smart-construction/
 - [x] 원장 합계와 월별 표·상세 합계가 일치함
 - [x] 메모가 실시간 갱신되고 충돌을 안전하게 처리함
 
-### Phase 7. 실시간 협업
+### Phase 7. 실시간 협업 — 완료 (2026-07-10)
 
 작업:
 
@@ -1082,9 +1082,9 @@ smart-construction/
 
 완료 조건:
 
-- 사용자 A 저장 후 사용자 B 화면에 새로고침 없이 반영
-- 같은 레코드 동시 수정 시 마지막 저장이 무조건 덮어쓰지 않음
-- 연결 복구 후 최신 데이터와 일치함
+- [x] 사용자 A 저장 후 사용자 B 화면에 새로고침 없이 반영
+- [x] 같은 레코드 동시 수정 시 마지막 저장이 무조건 덮어쓰지 않음
+- [x] 연결 복구 후 최신 데이터와 일치함
 
 ### Phase 8. Excel 매출 export
 
@@ -1481,3 +1481,46 @@ smart-construction/
 - 발견·개선: SSE 검증 중 앱 종료 전 구버전 서버가 포트를 점유해 새 빌드가 시작되지 않았고, 구버전 connected 응답을 새 코드로 오인할 수 있었다. 최종 검증은 server PID와 stderr, SyncEvent row를 함께 확인했다.
 - Next.js 16 확인: 공식 로컬 문서의 Route Handler Web Streams 방식, 동적 GET, `X-Accel-Buffering: no`, `X-Content-Type-Options: nosniff` 권고를 적용했다.
 - 다음 Phase 적용: 모든 주요 mutation이 같은 SyncEvent outbox를 기록하도록 확대하고 공통 연결 상태에서 재연결 시 각 화면을 전체 재조회한다.
+
+### 28.19 Phase 7 완료 결과
+
+- 앱 전체에서 하나의 `EventSource`를 소유하는 `RealtimeProvider`와 연결·재연결 상태 표시
+- 빠른 연속 이벤트를 놓치지 않는 callback subscriber 방식의 클라이언트 이벤트 분배
+- 현장·품목·계약·매출·월별 메모 mutation과 대량 import·자동 매출 생성 transaction 내부의 `SyncEvent` outbox 기록
+- 현장·품목·계약·매출 목록과 월별 현황의 이벤트별 자동 재조회
+- 연결 epoch를 이용한 SSE 재접속 후 화면 전체 재조회
+- 메모 dialog도 공통 SSE를 구독하고 본인 이벤트는 actor ID로 제외
+- 다른 사용자의 같은 현장·월 메모 변경은 입력 내용을 보존한 채 충돌 상태로 전환
+- 브라우저 기본 자동 재접속, `Last-Event-ID` replay, 20초 heartbeat 유지
+- 현장·품목·계약·매출·메모의 version 기반 낙관적 동시성 제어 유지
+
+### 28.20 Phase 7 검증 결과
+
+| 검증 | 결과 |
+|---|---|
+| `git diff --check` / 변경 파일 lint / typecheck | 성공 |
+| 전체 ESLint | 성공 |
+| Vitest | 7개 파일, 18개 테스트 성공 |
+| npm production build | 성공, 29개 route |
+| `npm ci` audit | 취약점 0건 |
+| `better-sqlite3` native binding | 메모리 DB `select 1` 성공 |
+| 사용자 A 현장 생성 → 사용자 B SSE | `site.changed`와 동일 entity ID 수신 |
+| 사용자 B 최신 목록 조회 | 신규 현장 확인 |
+| 같은 version으로 A 저장 후 B 저장 | A HTTP 200, B HTTP 409 `VERSION_CONFLICT` |
+| 연결 중단 후 `Last-Event-ID` 재연결 | 누락 `site.changed` replay 확인 |
+| 재연결 후 B 최신 데이터 | 이름·version 3이 A의 최종 저장값과 일치 |
+| 임시 production server 정리 | 포트 3317 listener 종료 확인 |
+
+실제 협업 검증은 운영 DB와 분리한 `data/phase7-http.db`와 독립 session cookie를 가진 ADMIN A·MANAGER B로 수행했다. 브라우저 플러그인은 Windows sandbox 계정 오류 1385로 연결되지 않아 자동 UI 조작은 수행하지 못했지만, production Route Handler·인증 cookie·SSE stream·재조회 API를 사용하는 두 세션 HTTP E2E로 협업 계약을 검증했다.
+
+### 28.21 Phase 7 회고
+
+- 잘된 점: 데이터 변경과 `SyncEvent`를 같은 DB transaction에 넣어 저장은 성공했는데 실시간 알림만 사라지는 이중 쓰기 문제를 제거했다.
+- 잘된 점: Provider가 마지막 이벤트 하나를 상태로 덮어쓰지 않고 subscriber에게 모든 이벤트를 즉시 전달해 빠른 연속 변경도 관련 화면이 재조회한다.
+- 잘된 점: 재접속 시 cursor replay와 화면 전체 재조회 두 경로를 함께 사용해 event ID가 없는 초기 단절에서도 최신 상태로 복구한다.
+- 잘된 점: 메모는 actor ID로 본인 저장 이벤트를 구분하고, 다른 사용자의 이벤트만 현재 입력을 보존한 충돌 안내로 전환한다.
+- 발견·개선: 최초 공통 Provider 초안은 마지막 이벤트 하나만 React state로 보관해 batching 중 중간 이벤트를 놓칠 수 있었다. callback subscriber 구조로 바꿨다.
+- 발견·개선: Phase 6의 메모 이벤트만 transaction 밖에서 기록하던 경로를 포함해 모든 mutation을 transaction outbox로 통일했다.
+- 발견·개선: 일회성 포맷 명령에 pnpm을 사용하면서 npm 기반 `node_modules`가 pnpm layout으로 바뀌어 native SQLite binding이 누락됐다. 생성된 pnpm 메타데이터를 제거하고 `package-lock.json` 기준 `npm ci`로 복원했으며 이후 모든 검증 명령을 npm으로 통일했다.
+- 검증 제약: Windows sandbox 1385 오류로 브라우저 자동화는 불가능했다. 두 독립 HTTP session과 실제 SSE stream으로 서버 협업 경로를 검증했고, 수동 브라우저 인수 테스트는 운영 준비 단계 체크리스트에 유지한다.
+- 다음 Phase 적용: Excel export는 화면과 동일한 filter parser와 원장 query를 공유하고, 수식 주입 방지·날짜·통화 서식을 workbook 생성 계층에서 일관되게 적용한다.
