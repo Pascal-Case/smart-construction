@@ -87,7 +87,7 @@ export default async function HomePage() {
         <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl space-y-4">
             <Badge className="border-white/15 bg-white/10 text-teal-50">실무 운영 화면</Badge>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">현장 매출·청구 업무를 한곳에서 관리합니다.</h1>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">현장별 매출관리·거래명세표 청구 업무를 한곳에서 관리해 보세요!</h1>
           </div>
           <div className="flex flex-wrap gap-3">
             <ServerStatusButton />

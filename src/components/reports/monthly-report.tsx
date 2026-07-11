@@ -201,7 +201,7 @@ export function MonthlyReport({
           ))}
           <Button ref={focusModeButtonRef} type="button" variant="outline" onClick={() => focusMode ? closeFocusMode() : setFocusMode(true)} aria-pressed={focusMode}>
             {focusMode ? <Minimize2 data-icon="inline-start" /> : <Maximize2 data-icon="inline-start" />}
-            {focusMode ? "집중 보기 종료" : "집중 보기"}
+            {focusMode ? "넓게 보기 종료" : "넓게 보기"}
           </Button>
         </div>
       </div>
@@ -492,7 +492,7 @@ function DetailDialog({
         </div>
         <div className="flex justify-end gap-2">
           {(canEdit || cell.hasMemo) && <Button type="button" variant="outline" onClick={onMemo}><MessageSquare data-icon="inline-start" />{cell.hasMemo ? "메모 보기" : "메모 입력"}</Button>}
-          {canEdit && <Button type="button" onClick={onRegister}><Plus data-icon="inline-start" />이 현장·월 매출 등록</Button>}
+          {canEdit && <Button type="button" onClick={onRegister}><Plus data-icon="inline-start" />빠른 매출 등록</Button>}
           <Button type="button" onClick={onClose}>닫기</Button>
         </div>
         {children}
