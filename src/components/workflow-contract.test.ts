@@ -44,4 +44,14 @@ describe("registration workflow contract", () => {
     expect(source).toContain("RevenueEditor");
     expect(source).toContain("initialContext");
   });
+
+  it("대시보드는 처리할 매출 예외를 작업 화면으로 연결한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/app/(main)/page.tsx"), "utf8");
+
+    expect(source).toContain("오늘의 조치 데스크");
+    expect(source).toContain("작성 중 매출");
+    expect(source).toContain("0원 매출");
+    expect(source).toContain("확정 후 미발행");
+    expect(source).toContain('/revenues?exception=ZERO');
+  });
 });
