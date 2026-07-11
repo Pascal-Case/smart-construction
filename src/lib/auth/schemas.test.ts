@@ -7,9 +7,11 @@ describe("auth schemas", () => {
     expect(loginIdSchema.parse(" Admin.User ")).toBe("admin.user");
   });
 
-  it("짧거나 숫자가 없는 비밀번호를 거부한다", () => {
-    expect(passwordSchema.safeParse("short1").success).toBe(false);
+  it("영문과 숫자를 포함한 5자 이상 비밀번호만 허용한다", () => {
+    expect(passwordSchema.safeParse("a1b2c").success).toBe(true);
+    expect(passwordSchema.safeParse("a1b2").success).toBe(false);
     expect(passwordSchema.safeParse("onlyletterslong").success).toBe(false);
+    expect(passwordSchema.safeParse("12345").success).toBe(false);
   });
 
   it("세 역할만 사용자 생성에 허용한다", () => {
