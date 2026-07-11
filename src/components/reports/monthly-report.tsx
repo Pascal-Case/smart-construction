@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Maximize2, MessageSquare, Minimize2, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Maximize2, MessageSquare, Minimize2, Plus, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import {
   useRealtimeEvent,
   useRealtimeRefresh,
 } from "@/components/realtime-provider";
+import { RevenueEditor, type RevenueEditorContext, type RevenueEditorItem, type RevenueEditorSite } from "@/components/revenues/revenue-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,7 +76,6 @@ export type MonthlyReportData = {
   monthTotals: Array<{ month: string } & Totals>;
   grandTotals: Totals;
 };
-type SiteOption = { id: string; name: string };
 type Metric = "salesAmount" | "costAmount" | "profit";
 const metricLabels = {
   salesAmount: "매출",
@@ -86,11 +86,13 @@ const metricLabels = {
 export function MonthlyReport({
   initialData,
   sites,
+  items,
   canEdit,
   currentUserId,
 }: {
   initialData: MonthlyReportData;
-  sites: SiteOption[];
+  sites: RevenueEditorSite[];
+  items: RevenueEditorItem[];
   canEdit: boolean;
   currentUserId: string;
 }) {
@@ -111,6 +113,7 @@ export function MonthlyReport({
     siteName: string;
     month: string;
   } | null>(null);
+  const [registration, setRegistration] = useState<RevenueEditorContext | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -279,6 +282,10 @@ export function MonthlyReport({
           onMemo={() => {
             setMemo({ siteId: detail.siteId, siteName: detail.siteName, month: detail.cell.month });
           }}
+          onRegister={() => {
+            setRegistration({ siteId: detail.siteId, siteName: detail.siteName, month: detail.cell.month });
+            setDetail(null);
+          }}
           onClose={() => setDetail(null)}
         >
           {memo && <MemoDialog {...memo} canEdit={canEdit} currentUserId={currentUserId} onClose={() => setMemo(null)} onSaved={() => void load()} />}
@@ -290,6 +297,17 @@ export function MonthlyReport({
           canEdit={canEdit}
           currentUserId={currentUserId}
           onClose={() => setMemo(null)}
+          onSaved={() => void load()}
+        />
+      )}
+      {registration && (
+        <RevenueEditor
+          row={null}
+          draft={null}
+          sites={sites}
+          items={items}
+          initialContext={registration}
+          onClose={() => setRegistration(null)}
           onSaved={() => void load()}
         />
       )}
@@ -383,6 +401,7 @@ function DetailDialog({
   cell,
   canEdit,
   onMemo,
+  onRegister,
   onClose,
   children,
 }: {
@@ -390,6 +409,7 @@ function DetailDialog({
   cell: Cell;
   canEdit: boolean;
   onMemo: () => void;
+  onRegister: () => void;
   onClose: () => void;
   children?: ReactNode;
 }) {
@@ -458,6 +478,7 @@ function DetailDialog({
         </div>
         <div className="flex justify-end gap-2">
           {(canEdit || cell.hasMemo) && <Button type="button" variant="outline" onClick={onMemo}><MessageSquare data-icon="inline-start" />{cell.hasMemo ? "메모 보기" : "메모 입력"}</Button>}
+          {canEdit && <Button type="button" onClick={onRegister}><Plus data-icon="inline-start" />이 현장·월 매출 등록</Button>}
           <Button type="button" onClick={onClose}>닫기</Button>
         </div>
         {children}
