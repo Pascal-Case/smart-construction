@@ -29,7 +29,15 @@ export async function createRevenue(actor: SessionUser, input: RevenueInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       const data = await prepareRevenue(tx, input);
-      const entry = await tx.revenueEntry.create({ data: { ...data, createdById: actor.id, updatedById: actor.id }, include: includeRelations });
+      const confirmed = input.saveStatus === "CONFIRMED";
+      const entry = await tx.revenueEntry.create({ data: {
+        ...data,
+        status: input.saveStatus,
+        confirmedById: confirmed ? actor.id : null,
+        confirmedAt: confirmed ? new Date() : null,
+        createdById: actor.id,
+        updatedById: actor.id,
+      }, include: includeRelations });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "REVENUE", entityId: entry.id, after: entry });
       await recordSyncEvent(tx, { type: "revenue.changed", entityId: entry.id, siteId: entry.siteId, actorId: actor.id });
       return entry;
