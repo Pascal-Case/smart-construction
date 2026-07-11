@@ -35,6 +35,7 @@ export const revenueListQuerySchema = z.object({
   siteId: z.string().default(""),
   sourceType: z.enum(["all", "CONTRACT", "MANUAL", "ADJUSTMENT"]).default("all"),
   status: z.enum(["all", "DRAFT", "CONFIRMED", "CANCELED"]).default("all"),
+  exception: z.enum(["all", "ZERO"]).default("all"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(10).max(100).default(20),
 }).refine((value) => !value.startDate || !value.endDate || value.startDate <= value.endDate, { message: "조회 종료일은 시작일보다 빠를 수 없습니다.", path: ["endDate"] });

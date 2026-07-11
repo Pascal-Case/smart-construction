@@ -29,11 +29,29 @@ describe("registration workflow contract", () => {
   });
 
   it("직접 매출 등록에서 확정과 작성 중 저장 결과를 구분한다", () => {
-    const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+    const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-editor.tsx"), "utf8");
 
     expect(source).toContain('value="DRAFT"');
     expect(source).toContain('value="CONFIRMED"');
     expect(source).toContain("작성 중 저장");
     expect(source).toContain("확정 등록");
+  });
+
+  it("월별 상세에서 선택한 현장과 월을 유지한 채 매출 등록을 시작한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/reports/monthly-report.tsx"), "utf8");
+
+    expect(source).toContain("이 현장·월 매출 등록");
+    expect(source).toContain("RevenueEditor");
+    expect(source).toContain("initialContext");
+  });
+
+  it("대시보드는 처리할 매출 예외를 작업 화면으로 연결한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/app/(main)/page.tsx"), "utf8");
+
+    expect(source).toContain("오늘의 조치 데스크");
+    expect(source).toContain("작성 중 매출");
+    expect(source).toContain("0원 매출");
+    expect(source).toContain("확정 후 미발행");
+    expect(source).toContain('/revenues?exception=ZERO');
   });
 });

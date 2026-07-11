@@ -1,9 +1,12 @@
 import {
   Activity,
+  AlertCircle,
   ArrowUpRight,
   BarChart3,
   Building2,
+  CircleDollarSign,
   FileText,
+  FileWarning,
   ReceiptText,
 } from "lucide-react";
 import Link from "next/link";
@@ -16,6 +19,7 @@ import { PhaseReadyToast } from "@/components/phase-ready-toast";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
+import { buildDashboardActionDesk } from "@/lib/dashboard/action-desk";
 import { formatRecentAction } from "@/lib/dashboard/recent-actions";
 import { buildDashboardSummary, dashboardYearRange } from "@/lib/dashboard/summary";
 import { prisma } from "@/lib/db/prisma";
@@ -32,7 +36,7 @@ export default async function HomePage() {
   if (!user) redirect("/login");
   const { year, startDate, endDate } = dashboardYearRange();
 
-  const [siteCount, revenues, invoiceCount, auditLogs] = await Promise.all([
+  const [siteCount, revenues, invoiceCount, auditLogs, actionRevenues] = await Promise.all([
     prisma.site.count({ where: { isActive: true } }),
     prisma.revenueEntry.findMany({
       where: { revenueDate: { gte: startDate, lt: endDate }, status: { not: RevenueStatus.CANCELED } },
@@ -45,8 +49,24 @@ export default async function HomePage() {
       take: 5,
       select: { id: true, actorName: true, action: true, entityType: true, afterJson: true, createdAt: true },
     }),
+    prisma.revenueEntry.findMany({
+      where: {
+        OR: [
+          { status: RevenueStatus.DRAFT },
+          { salesAmount: 0, status: { not: RevenueStatus.CANCELED } },
+          { status: RevenueStatus.CONFIRMED, invoiceLinks: { none: {} } },
+        ],
+      },
+      select: {
+        revenueDate: true,
+        salesAmount: true,
+        status: true,
+        _count: { select: { invoiceLinks: true } },
+      },
+    }),
   ]);
   const summary = buildDashboardSummary({ year, siteCount, invoiceCount, revenues });
+  const actionDesk = buildDashboardActionDesk(actionRevenues.map((row) => ({ ...row, invoiceLinkCount: row._count.invoiceLinks })));
   const recentActions = auditLogs.map((log) => ({ ...log, message: formatRecentAction(log) }));
 
   const metrics = [
@@ -54,6 +74,11 @@ export default async function HomePage() {
     { label: "총 매출", value: `${summary.totalSales.toLocaleString()}원` },
     { label: "매출이익", value: `${summary.totalProfit.toLocaleString()}원` },
     { label: "명세표 발행 건수", value: `${summary.invoiceCount.toLocaleString()}건` },
+  ];
+  const actionCards = [
+    { label: "작성 중 매출", description: "확정 전 검토가 필요한 매출", href: "/revenues?status=DRAFT", icon: FileWarning, summary: actionDesk.draft, showAmount: true },
+    { label: "0원 매출", description: "금액 또는 단가 확인이 필요한 매출", href: "/revenues?exception=ZERO", icon: AlertCircle, summary: actionDesk.zero, showAmount: false },
+    { label: "확정 후 미발행", description: "거래명세표 발행을 기다리는 매출", href: "/invoices#new-issue", icon: CircleDollarSign, summary: actionDesk.unissued, showAmount: true },
   ];
 
   return (
@@ -68,6 +93,28 @@ export default async function HomePage() {
             <ServerStatusButton />
             <PhaseReadyToast />
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="action-desk-title">
+        <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="text-sm font-semibold text-teal-700">업무 우선순위</p><h2 id="action-desk-title" className="text-xl font-semibold tracking-tight">오늘의 조치 데스크</h2></div>
+          <p className="text-sm text-muted-foreground">예외가 있는 항목만 확인하고 해당 작업 화면으로 이동합니다.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {actionCards.map((action) => (
+            <Link key={action.label} href={action.href} className="group rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+              <Card className={`h-full shadow-sm transition-colors group-hover:border-teal-300 ${action.summary.count ? "border-amber-200 bg-amber-50/40 dark:border-amber-900 dark:bg-amber-950/20" : "bg-card"}`}>
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-200"><action.icon className="size-5" aria-hidden="true" /></div><ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div>
+                  <p className="mt-4 text-sm font-medium">{action.label}</p>
+                  <p className="mt-1 text-3xl font-semibold tabular-nums">{action.summary.count.toLocaleString()}건</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{action.description}</p>
+                  <p className="mt-4 text-xs font-medium text-teal-800 dark:text-teal-200">{action.summary.count ? `${action.showAmount ? `${action.summary.amount.toLocaleString()}원 · ` : ""}가장 오래된 항목 ${formatActionDate(action.summary.oldestDate)}` : "현재 처리할 항목이 없습니다."}</p>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
         </div>
       </section>
 
@@ -100,4 +147,8 @@ export default async function HomePage() {
       </section>
     </div>
   );
+}
+
+function formatActionDate(value: Date | null) {
+  return value?.toLocaleDateString("ko-KR", { timeZone: "UTC", month: "2-digit", day: "2-digit" }) ?? "-";
 }

@@ -6,6 +6,7 @@ export function buildRevenueWhere(query: RevenueListQuery): Prisma.RevenueEntryW
     ...(query.siteId ? { siteId: query.siteId } : {}),
     ...(query.sourceType !== "all" ? { sourceType: query.sourceType } : {}),
     ...(query.status !== "all" ? { status: query.status } : {}),
+    ...(query.exception === "ZERO" ? { AND: [{ salesAmount: 0 }, { status: { not: "CANCELED" } }] } : {}),
     ...(query.startDate || query.endDate ? { revenueDate: {
       ...(query.startDate ? { gte: dbDate(query.startDate) } : {}),
       ...(query.endDate ? { lte: dbDate(query.endDate) } : {}),
