@@ -1,7 +1,8 @@
 "use client";
 
-import { AlertTriangle, MessageSquare, RefreshCw, Search } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Maximize2, MessageSquare, Minimize2, RefreshCw, Search } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import {
@@ -99,7 +100,10 @@ export function MonthlyReport({
   const [siteId, setSiteId] = useState("");
   const [metric, setMetric] = useState<Metric>("salesAmount");
   const [loading, setLoading] = useState(false);
-  const [detail, setDetail] = useState<{ siteName: string; cell: Cell } | null>(
+  const [focusMode, setFocusMode] = useState(false);
+  const focusModeButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusAfterClose = useRef(false);
+  const [detail, setDetail] = useState<{ siteId: string; siteName: string; cell: Cell } | null>(
     null,
   );
   const [memo, setMemo] = useState<{
@@ -132,8 +136,19 @@ export function MonthlyReport({
     ["monthlyMemo.changed", "revenue.changed"],
     () => void load(),
   );
-  return (
-    <div className="space-y-4">
+  useEffect(() => {
+    if (focusMode || !restoreFocusAfterClose.current) return;
+    restoreFocusAfterClose.current = false;
+    const frame = requestAnimationFrame(() => focusModeButtonRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [focusMode]);
+  const closeFocusMode = () => {
+    restoreFocusAfterClose.current = true;
+    setFocusMode(false);
+  };
+  const content = (
+    <>
+      {focusMode && <DialogHeader><DialogTitle className="text-2xl">월별 현황과 메모</DialogTitle><DialogDescription>월별 집계 집중 보기</DialogDescription></DialogHeader>}
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 xl:flex-row xl:items-end">
         <form
           className="grid flex-1 gap-3 sm:grid-cols-4 sm:items-end"
@@ -168,7 +183,7 @@ export function MonthlyReport({
             조회
           </Button>
         </form>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(Object.keys(metricLabels) as Metric[]).map((value) => (
             <Button
               key={value}
@@ -178,6 +193,10 @@ export function MonthlyReport({
               {metricLabels[value]}
             </Button>
           ))}
+          <Button ref={focusModeButtonRef} type="button" variant="outline" onClick={() => focusMode ? closeFocusMode() : setFocusMode(true)} aria-pressed={focusMode}>
+            {focusMode ? <Minimize2 data-icon="inline-start" /> : <Maximize2 data-icon="inline-start" />}
+            {focusMode ? "집중 보기 종료" : "집중 보기"}
+          </Button>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
@@ -202,7 +221,7 @@ export function MonthlyReport({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="sticky left-0 z-10 min-w-48 bg-card">
+              <TableHead className="sticky left-0 z-30 min-w-48 bg-card">
                 현장
               </TableHead>
               {data.months.map((month) => (
@@ -216,7 +235,7 @@ export function MonthlyReport({
           <TableBody>
             {data.rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="sticky left-0 z-10 bg-card">
+                <TableCell className="sticky left-0 z-20 bg-card">
                   <span className="font-medium">{row.name}</span>
                   <span className="block font-mono text-xs text-muted-foreground">
                     {row.code}
@@ -224,58 +243,8 @@ export function MonthlyReport({
                 </TableCell>
                 {row.cells.map((cell) => (
                   <TableCell key={cell.month} className="p-1.5 align-top">
-                    <div className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => setDetail({ siteName: row.name, cell })}
-                        className="w-full rounded-lg border bg-muted/50 p-2 text-right hover:border-teal-300 hover:bg-teal-50"
-                      >
-                        <span className="block font-semibold tabular-nums">
-                          {cell[metric].toLocaleString()}
-                        </span>
-                        <span className="mt-1 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
-                          {cell.count}건
-                          {cell.draftCount > 0 && (
-                            <AlertTriangle className="size-3 text-amber-600" />
-                          )}
-                        </span>
-                      </button>
-                      <div className="pointer-events-none absolute right-0 bottom-full z-30 mb-1 hidden w-64 rounded-lg border bg-card p-3 text-xs shadow-xl group-hover:block">
-                        <p className="font-semibold">
-                          {row.name} · {cell.month}
-                        </p>
-                        <p className="mt-2">
-                          매출 {cell.salesAmount.toLocaleString()}원
-                        </p>
-                        <p>매입 {cell.costAmount.toLocaleString()}원</p>
-                        <p>이익 {cell.profit.toLocaleString()}원</p>
-                        <p className="mt-1 text-muted-foreground">
-                          작성 중 {cell.draftCount}건 · 0원{" "}
-                          {cell.zeroAmountCount}건
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="mt-1 w-full"
-                      onClick={() =>
-                        setMemo({
-                          siteId: row.id,
-                          siteName: row.name,
-                          month: cell.month,
-                        })
-                      }
-                    >
-                      <MessageSquare
-                        data-icon="inline-start"
-                        className={
-                          cell.hasMemo ? "fill-teal-100 text-teal-700" : ""
-                        }
-                      />
-                      {cell.hasMemo ? "메모 보기" : "메모"}
-                    </Button>
+                    <MonthlyCellButton siteName={row.name} cell={cell} metric={metric} onOpen={() => setDetail({ siteId: row.id, siteName: row.name, cell })} />
+                    {cell.hasMemo && <Button type="button" size="icon-sm" variant="ghost" className="mx-auto mt-1 flex text-teal-700 dark:text-teal-300" aria-label={`${row.name} ${cell.month} 메모 보기`} onClick={() => setMemo({ siteId: row.id, siteName: row.name, month: cell.month })}><MessageSquare className="fill-teal-100 dark:fill-teal-950" /></Button>}
                   </TableCell>
                 ))}
                 <TableCell className="text-right font-semibold tabular-nums">
@@ -284,7 +253,7 @@ export function MonthlyReport({
               </TableRow>
             ))}
             <TableRow className="bg-muted/50 font-semibold">
-              <TableCell className="sticky left-0 bg-muted/50">
+              <TableCell className="sticky left-0 z-20 bg-muted/50">
                 월 합계
               </TableCell>
               {data.monthTotals.map((total) => (
@@ -306,10 +275,16 @@ export function MonthlyReport({
         <DetailDialog
           siteName={detail.siteName}
           cell={detail.cell}
+          canEdit={canEdit}
+          onMemo={() => {
+            setMemo({ siteId: detail.siteId, siteName: detail.siteName, month: detail.cell.month });
+          }}
           onClose={() => setDetail(null)}
-        />
+        >
+          {memo && <MemoDialog {...memo} canEdit={canEdit} currentUserId={currentUserId} onClose={() => setMemo(null)} onSaved={() => void load()} />}
+        </DetailDialog>
       )}
-      {memo && (
+      {memo && !detail && (
         <MemoDialog
           {...memo}
           canEdit={canEdit}
@@ -318,18 +293,105 @@ export function MonthlyReport({
           onSaved={() => void load()}
         />
       )}
-    </div>
+    </>
+  );
+
+  if (focusMode) {
+    return <Dialog open onOpenChange={(open) => { if (!open) closeFocusMode(); }}><DialogContent showCloseButton={false} className="inset-2 top-2 left-2 h-[calc(100svh-1rem)] w-[calc(100%-1rem)] max-w-none translate-x-0 translate-y-0 overflow-auto p-4 sm:max-w-none sm:p-6"><div className="space-y-4">{content}</div></DialogContent></Dialog>;
+  }
+
+  return <div className="space-y-4">{content}</div>;
+}
+
+function MonthlyCellButton({
+  siteName,
+  cell,
+  metric,
+  onOpen,
+}: {
+  siteName: string;
+  cell: Cell;
+  metric: Metric;
+  onOpen: () => void;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const tooltipId = useId();
+  const [tooltip, setTooltip] = useState<{ top: number; left: number; above: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!tooltip) return;
+    const hideTooltip = () => setTooltip(null);
+    window.addEventListener("scroll", hideTooltip, true);
+    window.addEventListener("resize", hideTooltip);
+    return () => {
+      window.removeEventListener("scroll", hideTooltip, true);
+      window.removeEventListener("resize", hideTooltip);
+    };
+  }, [tooltip]);
+
+  function showTooltip() {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = 256;
+    setTooltip({
+      top: rect.top >= 150 ? rect.top - 8 : rect.bottom + 8,
+      left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
+      above: rect.top >= 150,
+    });
+  }
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-describedby={tooltip ? tooltipId : undefined}
+        onClick={onOpen}
+        onPointerEnter={showTooltip}
+        onPointerLeave={() => setTooltip(null)}
+        onFocus={showTooltip}
+        onBlur={() => setTooltip(null)}
+        className="w-full rounded-lg border bg-muted/50 p-2 text-right hover:border-teal-300 hover:bg-teal-50 hover:text-slate-900 focus-visible:border-teal-400 dark:hover:border-teal-700 dark:hover:bg-teal-950/60 dark:hover:text-teal-50"
+      >
+        <span className="block font-semibold tabular-nums">{cell[metric].toLocaleString()}</span>
+        <span className="mt-1 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+          {cell.count}건
+          {cell.draftCount > 0 && <AlertTriangle className="size-3 text-amber-600" />}
+        </span>
+      </button>
+      {tooltip && typeof document !== "undefined" && createPortal(
+        <div
+          id={tooltipId}
+          role="tooltip"
+          style={{ top: tooltip.top, left: tooltip.left }}
+          className={`pointer-events-none fixed z-[70] w-64 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-xl ${tooltip.above ? "-translate-y-full" : ""}`}
+        >
+          <p className="font-semibold">{siteName} · {cell.month}</p>
+          <p className="mt-2">매출 {cell.salesAmount.toLocaleString()}원</p>
+          <p>매입 {cell.costAmount.toLocaleString()}원</p>
+          <p>이익 {cell.profit.toLocaleString()}원</p>
+          <p className="mt-1 text-muted-foreground">작성 중 {cell.draftCount}건 · 0원 {cell.zeroAmountCount}건</p>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
 function DetailDialog({
   siteName,
   cell,
+  canEdit,
+  onMemo,
   onClose,
+  children,
 }: {
   siteName: string;
   cell: Cell;
+  canEdit: boolean;
+  onMemo: () => void;
   onClose: () => void;
+  children?: ReactNode;
 }) {
   return (
     <Dialog
@@ -344,7 +406,7 @@ function DetailDialog({
             {siteName} · {cell.month} 상세
           </DialogTitle>
           <DialogDescription>
-            원장 {cell.count}건의 합계입니다.
+            원장 {cell.count}건 · 매출 {cell.salesAmount.toLocaleString()}원 · 매입 {cell.costAmount.toLocaleString()}원 · 이익 {cell.profit.toLocaleString()}원
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60svh] overflow-auto rounded-lg border">
@@ -358,6 +420,7 @@ function DetailDialog({
                 <TableHead>수량·단가</TableHead>
                 <TableHead className="text-right">매출</TableHead>
                 <TableHead className="text-right">매입</TableHead>
+                <TableHead className="text-right">이익</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -385,11 +448,19 @@ function DetailDialog({
                   <TableCell className="text-right">
                     {(row.costAmount ?? 0).toLocaleString()}
                   </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {(row.salesAmount - (row.costAmount ?? 0)).toLocaleString()}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
+        <div className="flex justify-end gap-2">
+          {(canEdit || cell.hasMemo) && <Button type="button" variant="outline" onClick={onMemo}><MessageSquare data-icon="inline-start" />{cell.hasMemo ? "메모 보기" : "메모 입력"}</Button>}
+          <Button type="button" onClick={onClose}>닫기</Button>
+        </div>
+        {children}
       </DialogContent>
     </Dialog>
   );

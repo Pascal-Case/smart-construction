@@ -16,3 +16,8 @@ export function enumerateMonths(startMonth: string, endMonth: string) {
   for (const cursor = new Date(Date.UTC(startYear, startIndex - 1, 1)), end = new Date(Date.UTC(endYear, endIndex - 1, 1)); cursor <= end; cursor.setUTCMonth(cursor.getUTCMonth() + 1)) result.push(cursor.toISOString().slice(0, 7));
   return result;
 }
+
+export function currentYearMonthRange(now = new Date()) {
+  const year = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", year: "numeric" }).format(now);
+  return { startMonth: `${year}-01`, endMonth: `${year}-12` };
+}
