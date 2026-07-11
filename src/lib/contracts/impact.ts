@@ -1,4 +1,5 @@
 import type { ContractInput } from "@/lib/contracts/schemas";
+import { deriveContractPeriod } from "@/lib/contracts/period";
 
 type ExistingLine = {
   id: string; itemId: string; quantity: number; appliedSalesPrice: number; appliedCostPrice: number;
@@ -31,10 +32,11 @@ export function buildContractImpact(
     }
   }
   for (const removed of previous.values()) addMonths(affectedMonths, dateOnly(removed.revenueStartDate), dateOnly(removed.revenueEndDate));
-  const headerChanged = before.siteId !== input.siteId || dateOnly(before.startDate) !== input.startDate || dateOnly(before.endDate) !== input.endDate || before.status !== input.status;
+  const period = deriveContractPeriod(input.lines);
+  const headerChanged = before.siteId !== input.siteId || dateOnly(before.startDate) !== period.startDate || dateOnly(before.endDate) !== period.endDate || before.status !== input.status;
   if (headerChanged) {
     addMonths(affectedMonths, dateOnly(before.startDate), dateOnly(before.endDate));
-    addMonths(affectedMonths, input.startDate, input.endDate);
+    addMonths(affectedMonths, period.startDate, period.endDate);
   }
   return {
     headerChanged,

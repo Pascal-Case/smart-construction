@@ -44,7 +44,7 @@ export function CompanySettingsForm({ initialSetting }: { initialSetting: Compan
     }
   }
 
-  return <form key={setting.version ?? "new"} className="grid gap-4 rounded-xl border bg-white p-5 sm:grid-cols-2" onSubmit={save}>
+  return <form key={setting.version ?? "new"} className="grid gap-4 rounded-xl border bg-card p-5 sm:grid-cols-2" onSubmit={save}>
     <Field label="등록번호" name="businessRegistrationNo" defaultValue={setting.businessRegistrationNo} placeholder="101-81-30747" />
     <Field label="상호(법인명)" name="companyName" defaultValue={setting.companyName} />
     <Field label="대표자 성명" name="representativeName" defaultValue={setting.representativeName} />

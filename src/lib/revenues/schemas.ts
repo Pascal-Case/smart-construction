@@ -17,6 +17,7 @@ export const revenueInputSchema = z.object({
   appliedCostPrice: optionalMoney,
   costAmount: optionalMoney,
   priceOverrideReason: nullableText,
+  saveStatus: z.enum(["DRAFT", "CONFIRMED"]).default("CONFIRMED"),
 }).superRefine((value, context) => {
   if ((value.quantity == null) !== (value.appliedSalesPrice == null)) context.addIssue({ code: "custom", message: "수량과 매출단가는 함께 입력해 주세요.", path: ["quantity"] });
   if (value.sourceType === "MANUAL" && value.salesAmount < 0) context.addIssue({ code: "custom", message: "음수 금액은 조정 유형으로 입력해 주세요.", path: ["salesAmount"] });

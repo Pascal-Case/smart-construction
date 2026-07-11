@@ -1,38 +1,48 @@
 export type ContractRevenueDraft = {
   generatedKey: string; revenueDate: Date; servicePeriodStart: Date; servicePeriodEnd: Date;
-  prorationDays: number; daysInMonth: number; salesAmount: number; costAmount: number;
+  prorationDays: number; allocationBaseDays: number; salesAmount: number; costAmount: number;
 };
 
 export function buildLineRevenueDrafts(line: {
   id: string; quantity: number; appliedSalesPrice: number; appliedCostPrice: number;
   revenueStartDate: Date; revenueEndDate: Date;
 }) {
-  const drafts: ContractRevenueDraft[] = [];
+  const periods: Array<Omit<ContractRevenueDraft, "salesAmount" | "costAmount">> = [];
   const first = monthStart(line.revenueStartDate);
   const last = monthStart(line.revenueEndDate);
+  const allocationBaseDays = daysBetweenInclusive(line.revenueStartDate, line.revenueEndDate);
   for (const month = first; month <= last; month.setUTCMonth(month.getUTCMonth() + 1)) {
     const revenueDate = new Date(month);
     const endOfMonth = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
     const servicePeriodStart = line.revenueStartDate > revenueDate ? new Date(line.revenueStartDate) : new Date(revenueDate);
     const servicePeriodEnd = line.revenueEndDate < endOfMonth ? new Date(line.revenueEndDate) : endOfMonth;
-    const daysInMonth = endOfMonth.getUTCDate();
     const prorationDays = daysBetweenInclusive(servicePeriodStart, servicePeriodEnd);
-    drafts.push({
+    periods.push({
       generatedKey: `${line.id}:${revenueDate.toISOString().slice(0, 7)}`,
       revenueDate,
       servicePeriodStart,
       servicePeriodEnd,
       prorationDays,
-      daysInMonth,
-      salesAmount: proratedAmount(line.quantity, line.appliedSalesPrice, prorationDays, daysInMonth),
-      costAmount: proratedAmount(line.quantity, line.appliedCostPrice, prorationDays, daysInMonth),
+      allocationBaseDays,
     });
   }
-  return drafts;
+  const salesAmounts = allocateByDays(Math.round(line.quantity * line.appliedSalesPrice), periods);
+  const costAmounts = allocateByDays(Math.round(line.quantity * line.appliedCostPrice), periods);
+  return periods.map((period, index) => ({ ...period, salesAmount: salesAmounts[index], costAmount: costAmounts[index] }));
 }
 
-export function proratedAmount(quantity: number, unitPrice: number, appliedDays: number, daysInMonth: number) {
-  return Math.round(quantity * unitPrice * appliedDays / daysInMonth);
+function allocateByDays(totalAmount: number, periods: Array<{ prorationDays: number; allocationBaseDays: number }>) {
+  let cumulativeDays = 0;
+  let allocatedAmount = 0;
+  return periods.map((period, index) => {
+    cumulativeDays += period.prorationDays;
+    const cumulativeAmount = index === periods.length - 1
+      ? totalAmount
+      : Math.round(totalAmount * cumulativeDays / period.allocationBaseDays);
+    const amount = cumulativeAmount - allocatedAmount;
+    allocatedAmount = cumulativeAmount;
+    return amount;
+  });
 }
 
 function monthStart(value: Date) { return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1)); }

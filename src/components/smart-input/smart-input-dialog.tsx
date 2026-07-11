@@ -24,9 +24,10 @@ export function SmartInputDialog({ target, onClose, onApply }: {
   onClose: () => void;
   onApply: (draft: SmartInputAppliedDraft) => void;
 }) {
-  const [input, setInput] = useState(target === "CONTRACT"
-    ? "송도 A현장 CCTV 5대, 26년 3월부터 8월까지, A/S 단가 8만원"
-    : "송도 A현장 CCTV 2대, 2026년 5월 20일, 총 40만원");
+  const [input, setInput] = useState("");
+  const placeholder = target === "CONTRACT"
+    ? "예: 송도 A현장 CCTV 5대, 26년 3월부터 8월까지, A/S 단가 8만원"
+    : "예: 송도 A현장 CCTV 2대, 2026년 5월 20일, 총 40만원";
   const [preview, setPreview] = useState<SmartInputPreview | null>(null);
   const [siteId, setSiteId] = useState("");
   const [itemId, setItemId] = useState("");
@@ -66,13 +67,13 @@ export function SmartInputDialog({ target, onClose, onApply }: {
       </DialogHeader>
       <div className="space-y-2">
         <Label htmlFor={"smart-input-" + target}>업무 문장</Label>
-        <textarea id={"smart-input-" + target} value={input} onChange={(event) => { setInput(event.target.value); setPreview(null); }} rows={4} maxLength={1_000} className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" />
+        <textarea id={"smart-input-" + target} value={input} placeholder={placeholder} onChange={(event) => { setInput(event.target.value); setPreview(null); }} rows={4} maxLength={1_000} className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" />
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>현장·품목 이름 또는 별칭, 수량, 날짜/기간, 단가/총액을 자유롭게 적으세요.</span><span>{input.length}/1,000</span></div>
       </div>
       <div className="flex justify-end"><Button disabled={busy || input.trim().length < 3} onClick={() => void analyze()}><WandSparkles data-icon="inline-start" />{busy ? "분석 중..." : "문장 분석"}</Button></div>
 
       {preview && <div className="space-y-4">
-        <div className="flex items-center justify-between rounded-xl border bg-slate-50 px-4 py-3">
+        <div className="flex items-center justify-between rounded-xl border bg-muted/50 px-4 py-3">
           <div><p className="font-semibold">필드별 분석 결과</p><p className="text-xs text-muted-foreground">잘못 인식된 값은 아래에서 선택하거나 등록 폼에서 수정하세요.</p></div>
           <Badge variant={preview.confidence >= 80 ? "secondary" : "outline"}>신뢰도 {preview.confidence}%</Badge>
         </div>
@@ -104,10 +105,10 @@ function MasterCard({ label, field, value, options, onChange, required }: {
   onChange: (value: string) => void;
   required: boolean;
 }) {
-  return <div className="space-y-2 rounded-xl border bg-white p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}{required ? " *" : ""}</p><StatusBadge status={field.status} /></div><select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-2 text-sm"><option value="">{required ? "선택해 주세요" : "선택 안 함"}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name} ({option.code})</option>)}</select><p className="text-xs text-muted-foreground">{field.message}</p></div>;
+  return <div className="space-y-2 rounded-xl border bg-card p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}{required ? " *" : ""}</p><StatusBadge status={field.status} /></div><select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-2 text-sm"><option value="">{required ? "선택해 주세요" : "선택 안 함"}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name} ({option.code})</option>)}</select><p className="text-xs text-muted-foreground">{field.message}</p></div>;
 }
 function ValueCard({ label, status, value, message }: { label: string; status: SmartFieldStatus; value: string; message: string }) {
-  return <div className="space-y-2 rounded-xl border bg-white p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}</p><StatusBadge status={status} /></div><p className="font-semibold tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{message}</p></div>;
+  return <div className="space-y-2 rounded-xl border bg-card p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}</p><StatusBadge status={status} /></div><p className="font-semibold tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{message}</p></div>;
 }
 function StatusBadge({ status }: { status: SmartFieldStatus }) { return <Badge variant={status === "MATCHED" || status === "DERIVED" ? "secondary" : "outline"}>{statusLabels[status]}</Badge>; }
 function money(value: number | null | undefined) { return value == null ? "-" : value.toLocaleString() + "원"; }

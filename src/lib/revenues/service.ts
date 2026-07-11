@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { generatedKeyAfterUserCancel } from "@/lib/revenues/generation-policy";
 import { buildRevenueWhere } from "@/lib/revenues/query";
 import type { RevenueInput, RevenueListQuery } from "@/lib/revenues/schemas";
 
@@ -29,7 +30,15 @@ export async function createRevenue(actor: SessionUser, input: RevenueInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       const data = await prepareRevenue(tx, input);
-      const entry = await tx.revenueEntry.create({ data: { ...data, createdById: actor.id, updatedById: actor.id }, include: includeRelations });
+      const confirmed = input.saveStatus === "CONFIRMED";
+      const entry = await tx.revenueEntry.create({ data: {
+        ...data,
+        status: input.saveStatus,
+        confirmedById: confirmed ? actor.id : null,
+        confirmedAt: confirmed ? new Date() : null,
+        createdById: actor.id,
+        updatedById: actor.id,
+      }, include: includeRelations });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "REVENUE", entityId: entry.id, after: entry });
       await recordSyncEvent(tx, { type: "revenue.changed", entityId: entry.id, siteId: entry.siteId, actorId: actor.id });
       return entry;
@@ -71,7 +80,7 @@ async function transitionRevenue(actor: SessionUser, id: string, version: number
     if (status === "CONFIRMED" && before.status !== "DRAFT") throw new AuthError("작성 중 매출만 확정할 수 있습니다.", 409, "REVENUE_NOT_DRAFT");
     const result = await tx.revenueEntry.updateMany({ where: { id, version }, data: status === "CONFIRMED"
       ? { status, confirmedById: actor.id, confirmedAt: new Date(), updatedById: actor.id, version: { increment: 1 } }
-      : { status, cancelReason: reason, canceledById: actor.id, canceledAt: new Date(), updatedById: actor.id, version: { increment: 1 } } });
+      : { status, cancelReason: reason, canceledById: actor.id, canceledAt: new Date(), generatedKey: generatedKeyAfterUserCancel(before.sourceType, before.generatedKey), updatedById: actor.id, version: { increment: 1 } } });
     if (!result.count) throw new AuthError("다른 사용자가 먼저 매출 상태를 변경했습니다.", 409, "VERSION_CONFLICT");
     const entry = await tx.revenueEntry.findUniqueOrThrow({ where: { id }, include: includeRelations });
     await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: status === "CONFIRMED" ? "CONFIRM" : "CANCEL", entityType: "REVENUE", entityId: id, before, after: entry });
