@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { buildLineRevenueDrafts, proratedAmount } from "@/lib/revenues/proration";
+import { buildLineRevenueDrafts } from "@/lib/revenues/proration";
 
 describe("revenue proration", () => {
-  it("시작일과 종료일을 포함해 3월 12일, 4월 10일을 계산한다", () => {
-    const rows = buildLineRevenueDrafts({ id: "line-1", quantity: 1, appliedSalesPrice: 310000, appliedCostPrice: 0, revenueStartDate: new Date("2026-03-20T00:00:00Z"), revenueEndDate: new Date("2026-04-10T00:00:00Z") });
-    expect(rows.map((row) => [row.prorationDays, row.daysInMonth, row.salesAmount])).toEqual([[12, 31, 120000], [10, 30, 103333]]);
+  it("7월 31일부터 8월 1일까지의 계약 총액을 이틀에 균등 배분한다", () => {
+    const rows = buildLineRevenueDrafts({ id: "line-1", quantity: 5, appliedSalesPrice: 10000, appliedCostPrice: 4000, revenueStartDate: new Date("2026-07-31T00:00:00Z"), revenueEndDate: new Date("2026-08-01T00:00:00Z") });
+
+    expect(rows.map((row) => [row.prorationDays, row.allocationBaseDays, row.salesAmount, row.costAmount]))
+      .toEqual([[1, 2, 25000, 10000], [1, 2, 25000, 10000]]);
+    expect(rows.reduce((sum, row) => sum + row.salesAmount, 0)).toBe(50000);
   });
 
-  it("윤년 2월과 원 단위 반올림을 반영한다", () => {
-    const row = buildLineRevenueDrafts({ id: "line-2", quantity: 1, appliedSalesPrice: 290000, appliedCostPrice: 0, revenueStartDate: new Date("2028-02-15T00:00:00Z"), revenueEndDate: new Date("2028-02-29T00:00:00Z") })[0];
-    expect([row.prorationDays, row.daysInMonth, row.salesAmount]).toEqual([15, 29, 150000]);
-    expect(proratedAmount(3, 100, 1, 7)).toBe(43);
+  it("반올림 잔액을 마지막 월에 반영해 월 합계가 계약 총액과 일치한다", () => {
+    const rows = buildLineRevenueDrafts({ id: "line-2", quantity: 1, appliedSalesPrice: 100, appliedCostPrice: 0, revenueStartDate: new Date("2026-01-31T00:00:00Z"), revenueEndDate: new Date("2026-02-02T00:00:00Z") });
+
+    expect(rows.map((row) => [row.prorationDays, row.allocationBaseDays, row.salesAmount]))
+      .toEqual([[1, 3, 33], [2, 3, 67]]);
+    expect(rows.reduce((sum, row) => sum + row.salesAmount, 0)).toBe(100);
   });
 });

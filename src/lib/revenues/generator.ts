@@ -6,9 +6,8 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { AUTO_CANCEL_REASON, contractRevenuePolicy } from "@/lib/revenues/generation-policy";
 import { buildLineRevenueDrafts } from "@/lib/revenues/proration";
-
-const AUTO_CANCEL_REASON = "계약 변경으로 자동 매출 생성 대상에서 제외";
 
 type Draft = ReturnType<typeof contractDrafts>[number];
 type Existing = Awaited<ReturnType<Prisma.TransactionClient["revenueEntry"]["findMany"]>>[number];
@@ -23,6 +22,10 @@ export async function generateContractRevenues(actor: SessionUser, contractId: s
     const counts = { create: 0, update: 0, unchanged: 0, protected: 0, cancel: 0 };
     for (const row of preview.rows) {
       if (row.action === "CREATE") {
+        await tx.revenueEntry.create({ data: { ...revenueData(row.draft!), createdById: actor.id, updatedById: actor.id } }); counts.create += 1;
+      } else if (row.action === "RECREATE") {
+        const released = await tx.revenueEntry.updateMany({ where: { id: row.existing!.id, version: row.existing!.version, status: RevenueStatus.CANCELED, generatedKey: row.existing!.generatedKey }, data: { generatedKey: null, updatedById: actor.id, version: { increment: 1 } } });
+        if (!released.count) throw new AuthError("다른 사용자가 취소 매출을 먼저 변경했습니다. 다시 미리보기해 주세요.", 409, "VERSION_CONFLICT");
         await tx.revenueEntry.create({ data: { ...revenueData(row.draft!), createdById: actor.id, updatedById: actor.id } }); counts.create += 1;
       } else if (row.action === "UPDATE") {
         const updated = await tx.revenueEntry.updateMany({ where: { id: row.existing!.id, version: row.existing!.version }, data: { ...revenueData(row.draft!), status: RevenueStatus.DRAFT, cancelReason: null, canceledAt: null, canceledById: null, updatedById: actor.id, version: { increment: 1 } } });
@@ -53,8 +56,9 @@ async function buildPreview(tx: Prisma.TransactionClient, contractId: string) {
   const rows: PreviewRow[] = drafts.map((draft) => {
     const current = byKey.get(draft.generatedKey);
     if (!current) return { action: "CREATE", draft };
-    if (current.status === "CONFIRMED") return { action: "PROTECTED", draft, existing: current, reason: "확정 매출" };
-    if (current.status === "CANCELED" && current.cancelReason !== AUTO_CANCEL_REASON) return { action: "PROTECTED", draft, existing: current, reason: "사용자 취소 매출" };
+    const policy = contractRevenuePolicy(current);
+    if (policy === "PROTECTED") return { action: "PROTECTED", draft, existing: current, reason: "확정 매출" };
+    if (policy === "RECREATE") return { action: "RECREATE", draft, existing: current, reason: "사용자 취소 후 재등록" };
     return { action: sameRevenue(current, draft) && current.status === "DRAFT" ? "UNCHANGED" : "UPDATE", draft, existing: current };
   });
   for (const current of existing) {
@@ -74,9 +78,9 @@ function contractDrafts(contract: { id: string; title: string; siteId: string; l
   })));
 }
 
-function revenueData(draft: Draft) { return { ...draft, sourceType: "CONTRACT" as const, status: "DRAFT" as const }; }
-function sameRevenue(row: Existing, draft: Draft) { return row.siteId === draft.siteId && row.itemId === draft.itemId && row.title === draft.title && row.description === draft.description && row.quantity === draft.quantity && row.unit === draft.unit && row.standardSalesPriceSnapshot === draft.standardSalesPriceSnapshot && row.appliedSalesPrice === draft.appliedSalesPrice && row.salesAmount === draft.salesAmount && row.prorationDays === draft.prorationDays && row.daysInMonth === draft.daysInMonth && row.standardCostPriceSnapshot === draft.standardCostPriceSnapshot && row.appliedCostPrice === draft.appliedCostPrice && row.costAmount === draft.costAmount && row.priceOverrideReason === draft.priceOverrideReason && dateKey(row.revenueDate) === dateKey(draft.revenueDate) && dateKey(row.servicePeriodStart) === dateKey(draft.servicePeriodStart) && dateKey(row.servicePeriodEnd) === dateKey(draft.servicePeriodEnd); }
+function revenueData(draft: Draft) { const { allocationBaseDays, ...data } = draft; return { ...data, daysInMonth: allocationBaseDays, sourceType: "CONTRACT" as const, status: "DRAFT" as const }; }
+function sameRevenue(row: Existing, draft: Draft) { return row.siteId === draft.siteId && row.itemId === draft.itemId && row.title === draft.title && row.description === draft.description && row.quantity === draft.quantity && row.unit === draft.unit && row.standardSalesPriceSnapshot === draft.standardSalesPriceSnapshot && row.appliedSalesPrice === draft.appliedSalesPrice && row.salesAmount === draft.salesAmount && row.prorationDays === draft.prorationDays && row.daysInMonth === draft.allocationBaseDays && row.standardCostPriceSnapshot === draft.standardCostPriceSnapshot && row.appliedCostPrice === draft.appliedCostPrice && row.costAmount === draft.costAmount && row.priceOverrideReason === draft.priceOverrideReason && dateKey(row.revenueDate) === dateKey(draft.revenueDate) && dateKey(row.servicePeriodStart) === dateKey(draft.servicePeriodStart) && dateKey(row.servicePeriodEnd) === dateKey(draft.servicePeriodEnd); }
 function dateKey(value: Date | null) { return value?.toISOString().slice(0, 10) ?? null; }
-type Action = "CREATE" | "UPDATE" | "UNCHANGED" | "PROTECTED" | "CANCEL";
+type Action = "CREATE" | "RECREATE" | "UPDATE" | "UNCHANGED" | "PROTECTED" | "CANCEL";
 type PreviewRow = { action: Action; draft?: Draft; existing?: Existing; reason?: string };
-function countActions(rows: PreviewRow[]) { return { create: rows.filter((row) => row.action === "CREATE").length, update: rows.filter((row) => row.action === "UPDATE").length, unchanged: rows.filter((row) => row.action === "UNCHANGED").length, protected: rows.filter((row) => row.action === "PROTECTED").length, cancel: rows.filter((row) => row.action === "CANCEL").length }; }
+function countActions(rows: PreviewRow[]) { return { create: rows.filter((row) => row.action === "CREATE" || row.action === "RECREATE").length, update: rows.filter((row) => row.action === "UPDATE").length, unchanged: rows.filter((row) => row.action === "UNCHANGED").length, protected: rows.filter((row) => row.action === "PROTECTED").length, cancel: rows.filter((row) => row.action === "CANCEL").length }; }
