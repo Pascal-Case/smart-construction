@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { filterMonthlyDetails, type MonthlyExceptionFilter } from "@/lib/reports/monthly-exceptions";
 import {
   Table,
   TableBody,
@@ -82,6 +83,8 @@ const metricLabels = {
   costAmount: "매입",
   profit: "이익",
 };
+const detailSourceLabels = { CONTRACT: "계약", MANUAL: "직접", ADJUSTMENT: "조정" };
+const detailStatusLabels = { DRAFT: "작성 중", CONFIRMED: "확정", CANCELED: "취소" };
 
 export function MonthlyReport({
   initialData,
@@ -372,9 +375,10 @@ function MonthlyCellButton({
         className="w-full rounded-lg border bg-muted/50 p-2 text-right hover:border-teal-300 hover:bg-teal-50 hover:text-slate-900 focus-visible:border-teal-400 dark:hover:border-teal-700 dark:hover:bg-teal-950/60 dark:hover:text-teal-50"
       >
         <span className="block font-semibold tabular-nums">{cell[metric].toLocaleString()}</span>
-        <span className="mt-1 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
-          {cell.count}건
-          {cell.draftCount > 0 && <AlertTriangle className="size-3 text-amber-600" />}
+        <span className="mt-1 flex flex-wrap items-center justify-end gap-1 text-[11px] text-muted-foreground">
+          <span>{cell.count}건</span>
+          {cell.draftCount > 0 && <span className="inline-flex items-center gap-0.5 text-amber-700 dark:text-amber-300"><AlertTriangle className="size-3" />작성 중 {cell.draftCount}</span>}
+          {cell.zeroAmountCount > 0 && <span className="rounded bg-rose-100 px-1 text-rose-700 dark:bg-rose-950 dark:text-rose-200">0원 {cell.zeroAmountCount}</span>}
         </span>
       </button>
       {tooltip && typeof document !== "undefined" && createPortal(
@@ -413,6 +417,9 @@ function DetailDialog({
   onClose: () => void;
   children?: ReactNode;
 }) {
+  const [filter, setFilter] = useState<MonthlyExceptionFilter>("ALL");
+  const filteredDetails = filterMonthlyDetails(cell.details, filter);
+
   return (
     <Dialog
       open
@@ -429,6 +436,11 @@ function DetailDialog({
             원장 {cell.count}건 · 매출 {cell.salesAmount.toLocaleString()}원 · 매입 {cell.costAmount.toLocaleString()}원 · 이익 {cell.profit.toLocaleString()}원
           </DialogDescription>
         </DialogHeader>
+        <div className="grid gap-2 sm:grid-cols-3" aria-label="월별 매출 검토 필터">
+          <ExceptionFilterButton label="전체 매출" count={cell.count} active={filter === "ALL"} onClick={() => setFilter("ALL")} />
+          <ExceptionFilterButton label="작성 중" count={cell.draftCount} active={filter === "DRAFT"} tone="warn" onClick={() => setFilter("DRAFT")} />
+          <ExceptionFilterButton label="0원 매출" count={cell.zeroAmountCount} active={filter === "ZERO"} tone="danger" onClick={() => setFilter("ZERO")} />
+        </div>
         <div className="max-h-[60svh] overflow-auto rounded-lg border">
           <Table>
             <TableHeader>
@@ -444,10 +456,11 @@ function DetailDialog({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {cell.details.map((row) => (
+              {filteredDetails.length === 0 && <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">선택한 조건에 해당하는 매출이 없습니다.</TableCell></TableRow>}
+              {filteredDetails.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{row.revenueDate.slice(0, 10)}</TableCell>
-                  <TableCell>{row.sourceType}</TableCell>
+                  <TableCell>{detailSourceLabels[row.sourceType]}</TableCell>
                   <TableCell>
                     {row.title}
                     <span className="block text-xs text-muted-foreground">
@@ -455,7 +468,7 @@ function DetailDialog({
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{row.status}</Badge>
+                    <Badge variant={row.status === "CONFIRMED" ? "secondary" : "outline"}>{detailStatusLabels[row.status]}</Badge>
                   </TableCell>
                   <TableCell className="text-xs">
                     {row.quantity == null
@@ -485,6 +498,15 @@ function DetailDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function ExceptionFilterButton({ label, count, active, tone = "default", onClick }: { label: string; count: number; active: boolean; tone?: "default" | "warn" | "danger"; onClick: () => void }) {
+  const toneClass = tone === "warn"
+    ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-50"
+    : tone === "danger"
+      ? "border-rose-300 bg-rose-50 text-rose-950 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-50"
+      : "bg-card";
+  return <button type="button" aria-pressed={active} onClick={onClick} className={`rounded-xl border p-3 text-left transition-shadow hover:shadow-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${toneClass} ${active ? "ring-2 ring-teal-600 ring-offset-2 ring-offset-background" : ""}`}><span className="block text-xs">{label}</span><span className="mt-1 block text-xl font-semibold tabular-nums">{count.toLocaleString()}건</span></button>;
 }
 
 function MemoDialog({
