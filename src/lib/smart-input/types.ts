@@ -11,6 +11,17 @@ export type SmartMasterOption = {
   standardCostPrice?: number;
 };
 
+export type SmartSuggestionType = "SITE" | "ITEM";
+
+export type SmartSuggestionSource = SmartMasterOption & {
+  type: SmartSuggestionType;
+  isActive: boolean;
+};
+
+export type SmartInputSuggestion = Pick<SmartMasterOption, "id" | "code" | "name"> & {
+  type: SmartSuggestionType;
+};
+
 export type SmartMasterField = {
   status: SmartFieldStatus;
   value: SmartMasterOption | null;
