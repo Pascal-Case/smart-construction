@@ -134,7 +134,7 @@ export function MonthlyReport({
   );
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-xl border bg-white p-4 xl:flex-row xl:items-end">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 xl:flex-row xl:items-end">
         <form
           className="grid flex-1 gap-3 sm:grid-cols-4 sm:items-end"
           onSubmit={(event) => {
@@ -198,11 +198,11 @@ export function MonthlyReport({
           warn={data.grandTotals.zeroAmountCount > 0}
         />
       </div>
-      <div className="overflow-x-auto rounded-xl border bg-white">
+      <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="sticky left-0 z-10 min-w-48 bg-white">
+              <TableHead className="sticky left-0 z-10 min-w-48 bg-card">
                 현장
               </TableHead>
               {data.months.map((month) => (
@@ -216,7 +216,7 @@ export function MonthlyReport({
           <TableBody>
             {data.rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="sticky left-0 z-10 bg-white">
+                <TableCell className="sticky left-0 z-10 bg-card">
                   <span className="font-medium">{row.name}</span>
                   <span className="block font-mono text-xs text-muted-foreground">
                     {row.code}
@@ -228,7 +228,7 @@ export function MonthlyReport({
                       <button
                         type="button"
                         onClick={() => setDetail({ siteName: row.name, cell })}
-                        className="w-full rounded-lg border bg-slate-50 p-2 text-right hover:border-teal-300 hover:bg-teal-50"
+                        className="w-full rounded-lg border bg-muted/50 p-2 text-right hover:border-teal-300 hover:bg-teal-50"
                       >
                         <span className="block font-semibold tabular-nums">
                           {cell[metric].toLocaleString()}
@@ -240,7 +240,7 @@ export function MonthlyReport({
                           )}
                         </span>
                       </button>
-                      <div className="pointer-events-none absolute right-0 bottom-full z-30 mb-1 hidden w-64 rounded-lg border bg-white p-3 text-xs shadow-xl group-hover:block">
+                      <div className="pointer-events-none absolute right-0 bottom-full z-30 mb-1 hidden w-64 rounded-lg border bg-card p-3 text-xs shadow-xl group-hover:block">
                         <p className="font-semibold">
                           {row.name} · {cell.month}
                         </p>
@@ -283,8 +283,8 @@ export function MonthlyReport({
                 </TableCell>
               </TableRow>
             ))}
-            <TableRow className="bg-slate-50 font-semibold">
-              <TableCell className="sticky left-0 bg-slate-50">
+            <TableRow className="bg-muted/50 font-semibold">
+              <TableCell className="sticky left-0 bg-muted/50">
                 월 합계
               </TableCell>
               {data.monthTotals.map((total) => (
@@ -550,7 +550,7 @@ function Summary({
 }) {
   return (
     <div
-      className={`rounded-xl border bg-white p-4 ${warn ? "border-amber-300" : ""}`}
+      className={`rounded-xl border bg-card p-4 ${warn ? "border-amber-300" : ""}`}
     >
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-xl font-semibold tabular-nums">

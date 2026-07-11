@@ -75,27 +75,27 @@ export default async function HomePage() {
           <Badge variant="secondary">실시간 DB 기준</Badge>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {metrics.map((metric) => <Card key={metric.label} className="bg-white shadow-sm"><CardContent className="p-5"><p className="text-xs text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{metric.value}</p></CardContent></Card>)}
+          {metrics.map((metric) => <Card key={metric.label} className="bg-card shadow-sm"><CardContent className="p-5"><p className="text-xs text-muted-foreground">{metric.label}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{metric.value}</p></CardContent></Card>)}
         </div>
       </section>
 
       <section aria-labelledby="workflow-title">
         <div className="mb-4"><h2 id="workflow-title" className="text-xl font-semibold tracking-tight">업무 바로가기</h2><p className="mt-1 text-sm text-muted-foreground">기준정보부터 청구서 발행까지 실제 업무 순서로 이동합니다.</p></div>
         <div className="grid gap-4 md:grid-cols-2">
-          {workflows.map((workflow) => <Link key={workflow.href} href={workflow.href} className="group rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"><Card className="h-full bg-white shadow-sm transition-colors group-hover:border-teal-300"><CardHeader><div className="mb-2 flex size-10 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><workflow.icon className="size-5" /></div><CardTitle className="flex items-center justify-between">{workflow.title}<ArrowUpRight className="size-4 text-muted-foreground" /></CardTitle><CardDescription>{workflow.description}</CardDescription></CardHeader></Card></Link>)}
+          {workflows.map((workflow) => <Link key={workflow.href} href={workflow.href} className="group rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"><Card className="h-full bg-card shadow-sm transition-colors group-hover:border-teal-300"><CardHeader><div className="mb-2 flex size-10 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><workflow.icon className="size-5" /></div><CardTitle className="flex items-center justify-between">{workflow.title}<ArrowUpRight className="size-4 text-muted-foreground" /></CardTitle><CardDescription>{workflow.description}</CardDescription></CardHeader></Card></Link>)}
         </div>
       </section>
 
       <Card className="border-amber-200 bg-amber-50/60 shadow-sm">
         <CardHeader><CardTitle>실무 인수에서 확인할 항목</CardTitle><CardDescription>기능 구현과 자동 검증은 완료됐으며 실제 운영 환경 증빙을 남겨야 합니다.</CardDescription></CardHeader>
         <CardContent className="grid gap-3 text-sm md:grid-cols-3">
-          <div className="rounded-lg border bg-white/80 p-3"><Upload className="mb-2 size-4 text-amber-700" /><p className="font-medium">실제 데이터 이관</p><p className="mt-1 text-xs text-muted-foreground">업무 JSON·Excel의 건수와 월 합계를 대조합니다.</p></div>
-          <div className="rounded-lg border bg-white/80 p-3"><Boxes className="mb-2 size-4 text-amber-700" /><p className="font-medium">서버·팀원 PC</p><p className="mt-1 text-xs text-muted-foreground">재부팅 자동 시작과 사내 IP 접속·실시간 갱신을 확인합니다.</p></div>
-          <div className="rounded-lg border bg-white/80 p-3"><FileText className="mb-2 size-4 text-amber-700" /><p className="font-medium">A4 출력 승인</p><p className="mt-1 text-xs text-muted-foreground">실제 공급자 데이터로 PDF 여백·서체·잘림을 승인합니다.</p></div>
+          <div className="rounded-lg border bg-card/80 p-3"><Upload className="mb-2 size-4 text-amber-700" /><p className="font-medium">실제 데이터 이관</p><p className="mt-1 text-xs text-muted-foreground">업무 JSON·Excel의 건수와 월 합계를 대조합니다.</p></div>
+          <div className="rounded-lg border bg-card/80 p-3"><Boxes className="mb-2 size-4 text-amber-700" /><p className="font-medium">서버·팀원 PC</p><p className="mt-1 text-xs text-muted-foreground">재부팅 자동 시작과 사내 IP 접속·실시간 갱신을 확인합니다.</p></div>
+          <div className="rounded-lg border bg-card/80 p-3"><FileText className="mb-2 size-4 text-amber-700" /><p className="font-medium">A4 출력 승인</p><p className="mt-1 text-xs text-muted-foreground">실제 공급자 데이터로 PDF 여백·서체·잘림을 승인합니다.</p></div>
         </CardContent>
       </Card>
 
-      {user.role === "ADMIN" && <div className="flex items-center justify-between rounded-xl border bg-white p-4 text-sm"><div><p className="font-medium">최근 데이터 이관</p><p className="text-xs text-muted-foreground">{lastMigration ? `${lastMigration.sourceName ?? "이름 없음"} · ${lastMigration.createdAt.toLocaleString("ko-KR")}` : "아직 이관 이력이 없습니다."}</p></div><Link href="/settings/migration" className={buttonVariants({ variant: "outline" })}>이관 관리</Link></div>}
+      {user.role === "ADMIN" && <div className="flex items-center justify-between rounded-xl border bg-card p-4 text-sm"><div><p className="font-medium">최근 데이터 이관</p><p className="text-xs text-muted-foreground">{lastMigration ? `${lastMigration.sourceName ?? "이름 없음"} · ${lastMigration.createdAt.toLocaleString("ko-KR")}` : "아직 이관 이력이 없습니다."}</p></div><Link href="/settings/migration" className={buttonVariants({ variant: "outline" })}>이관 관리</Link></div>}
     </div>
   );
 }

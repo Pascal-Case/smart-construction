@@ -5,6 +5,13 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 describe("Button form contract", () => {
+  it("keeps outline button text readable regardless of parent color", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/ui/button.tsx"), "utf8");
+    const outlineVariant = source.match(/outline:\s*\n?\s*"([^"]+)"/)?.[1] ?? "";
+
+    expect(outlineVariant.split(/\s+/)).toContain("text-foreground");
+  });
+
   it("requires every Button inside a form to declare its type", () => {
     const violations: string[] = [];
 

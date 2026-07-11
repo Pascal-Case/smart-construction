@@ -72,7 +72,7 @@ export function SmartInputDialog({ target, onClose, onApply }: {
       <div className="flex justify-end"><Button disabled={busy || input.trim().length < 3} onClick={() => void analyze()}><WandSparkles data-icon="inline-start" />{busy ? "분석 중..." : "문장 분석"}</Button></div>
 
       {preview && <div className="space-y-4">
-        <div className="flex items-center justify-between rounded-xl border bg-slate-50 px-4 py-3">
+        <div className="flex items-center justify-between rounded-xl border bg-muted/50 px-4 py-3">
           <div><p className="font-semibold">필드별 분석 결과</p><p className="text-xs text-muted-foreground">잘못 인식된 값은 아래에서 선택하거나 등록 폼에서 수정하세요.</p></div>
           <Badge variant={preview.confidence >= 80 ? "secondary" : "outline"}>신뢰도 {preview.confidence}%</Badge>
         </div>
@@ -104,10 +104,10 @@ function MasterCard({ label, field, value, options, onChange, required }: {
   onChange: (value: string) => void;
   required: boolean;
 }) {
-  return <div className="space-y-2 rounded-xl border bg-white p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}{required ? " *" : ""}</p><StatusBadge status={field.status} /></div><select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-2 text-sm"><option value="">{required ? "선택해 주세요" : "선택 안 함"}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name} ({option.code})</option>)}</select><p className="text-xs text-muted-foreground">{field.message}</p></div>;
+  return <div className="space-y-2 rounded-xl border bg-card p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}{required ? " *" : ""}</p><StatusBadge status={field.status} /></div><select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-2 text-sm"><option value="">{required ? "선택해 주세요" : "선택 안 함"}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name} ({option.code})</option>)}</select><p className="text-xs text-muted-foreground">{field.message}</p></div>;
 }
 function ValueCard({ label, status, value, message }: { label: string; status: SmartFieldStatus; value: string; message: string }) {
-  return <div className="space-y-2 rounded-xl border bg-white p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}</p><StatusBadge status={status} /></div><p className="font-semibold tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{message}</p></div>;
+  return <div className="space-y-2 rounded-xl border bg-card p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}</p><StatusBadge status={status} /></div><p className="font-semibold tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{message}</p></div>;
 }
 function StatusBadge({ status }: { status: SmartFieldStatus }) { return <Badge variant={status === "MATCHED" || status === "DERIVED" ? "secondary" : "outline"}>{statusLabels[status]}</Badge>; }
 function money(value: number | null | undefined) { return value == null ? "-" : value.toLocaleString() + "원"; }

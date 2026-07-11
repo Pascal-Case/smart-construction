@@ -15,6 +15,7 @@ import Link from "next/link";
 import type { SessionUser } from "@/lib/auth/dto";
 import { LogoutButton } from "@/components/logout-button";
 import { RealtimeProvider, RealtimeStatus } from "@/components/realtime-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
@@ -31,8 +32,8 @@ const navigation = [
 export function AppShell({ children, user }: { children: React.ReactNode; user: SessionUser }) {
   return (
     <RealtimeProvider>
-      <div className="min-h-svh bg-slate-50/70">
-      <header className="sticky top-0 z-40 border-b bg-white/90 backdrop-blur">
+      <div className="min-h-svh bg-background">
+      <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <span className="flex size-9 items-center justify-center rounded-xl bg-teal-700 text-white shadow-sm">
@@ -49,14 +50,15 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               <p className="text-xs text-muted-foreground">{user.role}</p>
             </div>
             <RealtimeStatus />
-            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800">Phase 11</Badge>
+            <ThemeToggle />
+            <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/60 dark:text-teal-200">Phase 11</Badge>
             <LogoutButton />
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid max-w-[1600px] md:grid-cols-[240px_1fr]">
-        <aside className="hidden min-h-[calc(100svh-4rem)] border-r bg-white p-4 md:block">
+        <aside className="hidden min-h-[calc(100svh-4rem)] border-r bg-card p-4 md:block">
           <p className="px-2 pb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
             업무 메뉴
           </p>
@@ -64,10 +66,10 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
             <ul className="space-y-1">
               {navigation.map((item) => (
                 <li key={item.label}>
-                  {item.href ? <Link href={item.href} className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+                  {item.href ? <Link href={item.href} className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-muted">
                     <item.icon className="size-4" aria-hidden="true" />
                     <span className="flex-1">{item.label}</span>
-                    <span className="text-[10px] text-slate-400">{item.phase}</span>
+                    <span className="text-[10px] text-muted-foreground">{item.phase}</span>
                   </Link> : <div className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm text-muted-foreground"><item.icon className="size-4" aria-hidden="true" /><span className="flex-1">{item.label}</span><span className="text-[10px] text-slate-400">{item.phase}</span></div>}
                 </li>
               ))}
@@ -76,16 +78,16 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
           <Separator className="my-4" />
           {user.role === "ADMIN" && (
             <div className="space-y-1">
-              <Link href="/settings/users" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+              <Link href="/settings/users" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-muted">
                 <Settings2 className="size-4" aria-hidden="true" /> 사용자 관리
               </Link>
-              <Link href="/settings/audit" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+              <Link href="/settings/audit" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-muted">
                 <StickyNote className="size-4" aria-hidden="true" /> 감사 로그
               </Link>
-              <Link href="/settings/company" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+              <Link href="/settings/company" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-muted">
                 <FileText className="size-4" aria-hidden="true" /> 공급자 정보
               </Link>
-              <Link href="/settings/migration" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-100">
+              <Link href="/settings/migration" className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm hover:bg-muted">
                 <Upload className="size-4" aria-hidden="true" /> 기존 데이터 이관
               </Link>
             </div>
