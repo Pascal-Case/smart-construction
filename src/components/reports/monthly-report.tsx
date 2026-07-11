@@ -286,6 +286,7 @@ export function MonthlyReport({
             setMemo({ siteId: detail.siteId, siteName: detail.siteName, month: detail.cell.month });
           }}
           onRegister={() => {
+            if (focusMode) closeFocusMode();
             setRegistration({ siteId: detail.siteId, siteName: detail.siteName, month: detail.cell.month });
             setDetail(null);
           }}
@@ -427,7 +428,7 @@ function DetailDialog({
         if (!value) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>
             {siteName} · {cell.month} 상세

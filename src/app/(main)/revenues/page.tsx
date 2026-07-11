@@ -6,7 +6,8 @@ import { listRevenues } from "@/lib/revenues/service";
 
 export default async function RevenuesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await getCurrentUser();
-  const query = revenueListQuerySchema.parse(await searchParams);
+  const parsedQuery = revenueListQuerySchema.safeParse(await searchParams);
+  const query = parsedQuery.success ? parsedQuery.data : revenueListQuerySchema.parse({});
   const [result, sites, items, contracts] = await Promise.all([
     listRevenues(query),
     prisma.site.findMany({ select: { id: true, name: true, isActive: true }, orderBy: { name: "asc" } }),
