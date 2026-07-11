@@ -24,9 +24,10 @@ export function SmartInputDialog({ target, onClose, onApply }: {
   onClose: () => void;
   onApply: (draft: SmartInputAppliedDraft) => void;
 }) {
-  const [input, setInput] = useState(target === "CONTRACT"
-    ? "송도 A현장 CCTV 5대, 26년 3월부터 8월까지, A/S 단가 8만원"
-    : "송도 A현장 CCTV 2대, 2026년 5월 20일, 총 40만원");
+  const [input, setInput] = useState("");
+  const placeholder = target === "CONTRACT"
+    ? "예: 송도 A현장 CCTV 5대, 26년 3월부터 8월까지, A/S 단가 8만원"
+    : "예: 송도 A현장 CCTV 2대, 2026년 5월 20일, 총 40만원";
   const [preview, setPreview] = useState<SmartInputPreview | null>(null);
   const [siteId, setSiteId] = useState("");
   const [itemId, setItemId] = useState("");
@@ -66,7 +67,7 @@ export function SmartInputDialog({ target, onClose, onApply }: {
       </DialogHeader>
       <div className="space-y-2">
         <Label htmlFor={"smart-input-" + target}>업무 문장</Label>
-        <textarea id={"smart-input-" + target} value={input} onChange={(event) => { setInput(event.target.value); setPreview(null); }} rows={4} maxLength={1_000} className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" />
+        <textarea id={"smart-input-" + target} value={input} placeholder={placeholder} onChange={(event) => { setInput(event.target.value); setPreview(null); }} rows={4} maxLength={1_000} className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" />
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>현장·품목 이름 또는 별칭, 수량, 날짜/기간, 단가/총액을 자유롭게 적으세요.</span><span>{input.length}/1,000</span></div>
       </div>
       <div className="flex justify-end"><Button disabled={busy || input.trim().length < 3} onClick={() => void analyze()}><WandSparkles data-icon="inline-start" />{busy ? "분석 중..." : "문장 분석"}</Button></div>
