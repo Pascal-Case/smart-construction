@@ -142,7 +142,7 @@
 - `next build` 후 production server 실행
 - 호스트: `0.0.0.0`
 - 기본 포트: `3000` 또는 사내 협의 포트
-- Windows 작업 스케줄러 또는 NSSM으로 부팅 시 자동 실행
+- 운영자가 `02-start-server.cmd`와 `03-stop-server.cmd`로 server를 수동 실행·종료
 - 서버 PC는 고정 IP 또는 DHCP 예약 사용
 - Windows 방화벽은 사내 서브넷에서 지정 포트만 허용
 - 외부 인터넷 라우터 포트 포워딩 금지
@@ -1140,7 +1140,7 @@ smart-construction/
 - `localStorage` JSON export/import
 - 기존 Excel 이관
 - 중복·누락 검증 보고서
-- Windows 자동 실행
+- Windows 수동 실행·종료 명령
 - 방화벽과 고정 IP
 - 자동 백업·복구 도구
 - 사용자 교육용 간단 매뉴얼
@@ -1148,7 +1148,6 @@ smart-construction/
 완료 조건:
 
 - [ ] 실제 업무 JSON·Excel 이관 전후 건수와 합계 대조 — 도구 격리 검증 완료, 원본 인수 대기
-- [ ] 실제 서버 PC 재부팅 후 서비스 자동 시작 — dry-run 완료, 관리자 적용 대기
 - [ ] 다른 팀원 PC에서 IP 접속 성공 — readiness 완료, 사내 PC 인수 대기
 - [x] 백업 파일로 복구 훈련 성공 — 격리 production DB online backup·restore·건수 대조
 
@@ -1191,7 +1190,7 @@ smart-construction/
 11. 현장별, 월별, 전체, 선택 항목 거래명세표 출력이 가능하다.
 12. 특정 현장·월에 메모를 저장하고 수정자와 수정 시각을 확인할 수 있다.
 13. 월별요약·매출상세·월별특이사항이 포함된 Excel을 내려받을 수 있다.
-14. 서버 PC 재부팅 후 서비스가 자동으로 다시 실행된다.
+14. 운영자가 제공된 수동 명령으로 서버를 안전하게 실행·종료·재기동할 수 있다.
 15. 백업으로 DB를 복원하고 주요 합계가 일치함을 확인할 수 있다.
 16. 부분 월 계약은 시작일과 종료일을 포함한 실제 적용일수로 일할 계산된다.
 17. 5월분 거래명세표를 5월 20일에 발행해도 5월 매출로 집계되고 발행일만 별도로 표시된다.
@@ -1216,7 +1215,7 @@ smart-construction/
 | 일할 계산 경계 오류 | 월 합계 불일치 | 시작·종료일 포함 규칙, 윤년·월말 단위 테스트 |
 | 여러 사용자의 동시 수정 | 데이터 덮어쓰기 | version 충돌 검사, 409 비교 UI |
 | SQLite 파일을 공유 폴더에서 직접 사용 | 잠금·손상 | 서버 로컬 디스크 저장, API로만 접근 |
-| 서버 PC 종료 | 전체 사용자 접속 불가 | 전용 또는 상시 운영 PC, 자동 시작, 상태 안내 |
+| 서버 PC 종료 | 전체 사용자 접속 불가 | 전용 또는 상시 운영 PC, 수동 실행 담당자와 상태 안내 지정 |
 | 발행 후 원본 데이터 변경 | 문서 재현 불가 | invoice snapshot 저장 |
 | Excel 수식 주입 | export 파일 보안 문제 | 위험 접두문자 escaping |
 | 기존 `localStorage` 데이터에 이력 없음 | 과거 단가 복원 불가 | 이관 시점 단가 사용 표시와 원본 백업 |
@@ -1688,7 +1687,7 @@ smart-construction/
 - 발견·개선: 사용자가 ambiguous 또는 missing 품목을 선택한 뒤에는 최초 분석값이 아니라 새 품목의 표준단가로 총액을 다시 계산해야 했다. 초안 변환 함수에서 재계산하도록 보완했다.
 - 발견·개선: 직접 총액과 수량 × 단가가 다를 수 있는 A/S 업무를 오류로 막지 않고 예외 사유를 제안한 뒤 기존 계약·매출 schema가 최종 검증하게 했다.
 - 검증 제약: 브라우저 자동화가 환경 오류로 실행되지 않아 실제 버튼 클릭, 작은 화면 layout, 키보드 조작은 Phase 11 사용자 인수에서 확인한다.
-- 다음 Phase 적용: 기존 localStorage·Excel 원본을 보존한 채 preview·대조 보고서를 거쳐 이관하고, Windows 자동 시작·사내 IP·백업·복구 절차를 실행 가능한 script와 운영 문서로 만든다.
+- 다음 Phase 적용: 기존 localStorage·Excel 원본을 보존한 채 preview·대조 보고서를 거쳐 이관하고, Windows 수동 실행·사내 IP·백업·복구 절차를 실행 가능한 script와 운영 문서로 만든다.
 
 ### 28.31 Phase 11 구현 결과
 
@@ -1712,7 +1711,7 @@ smart-construction/
 - SQLite online backup, SHA-256 metadata, quick_check, 30일 보존 script
 - 서버 중지·확인 switch·복구 직전 backup·실패 rollback·quick_check restore script
 - migration 선적용 후 Next production 실행 script
-- Windows 시작 server task와 매일 backup task dry-run/apply script
+- Windows 수동 server 실행·종료 명령과 매일 backup task dry-run/apply script
 - Domain·Private profile, 지정 subnet만 허용하는 방화벽 dry-run/apply script
 - listener·health·DB·LAN IPv4·팀 접속 URL readiness script
 - 운영 가이드와 담당자 간단 사용자 안내
@@ -1722,7 +1721,7 @@ smart-construction/
 | 검증 | 결과 |
 |---|---|
 | PowerShell AST | 7개 script, syntax error 0 |
-| 작업 스케줄러 dry-run | SYSTEM, 시작 +30초, port 3000, 매일 02:00, 외부 backup 경로 확인 |
+| 작업 스케줄러 dry-run | SYSTEM, 매일 02:00, 외부 backup 경로 확인 |
 | 방화벽 dry-run | TCP 3000, 192.168.0.0/24, Domain·Private만 허용 계획 |
 | Vitest 전체 | 14개 파일, 40개 테스트 성공 |
 | 이관 전용 fixture | JSON·localStorage key·Excel·날짜·단가 충돌 8개 테스트 성공 |
@@ -1757,7 +1756,7 @@ smart-construction/
 - 발견·개선: preview가 반환한 계약 quantity·공급자 field 이름은 레거시 원문과 달라 commit 재검증 시 normalized 형식도 읽도록 양방향 정규화를 추가했다.
 - 발견·개선: 동일 품목이 Excel 여러 행에 다른 단가로 나오면 임의로 합치지 않고 첫 값·경고를 제공한다. 실제 원본에서 행별 계약단가가 필요하면 현행 계약 line 적용단가로 mapping을 확장해야 한다.
 - 발견·개선: restore는 실행 중 server에 덮어쓰지 않도록 listener를 차단하고 확인 switch, 사전 backup, 임시 복제, 실패 rollback을 강제한다.
-- 운영 원칙: 작업 스케줄러와 방화벽 script는 기본 dry-run이며 -Apply 없이는 Windows 상태를 바꾸지 않는다.
+- 운영 원칙: backup 작업 스케줄러와 방화벽 script는 기본 dry-run이며 -Apply 없이는 Windows 상태를 바꾸지 않는다.
 - 검증 제약: browser 자동화는 Windows sandbox 1385 오류로 실행되지 않아 실제 UI click·A4 PDF 육안 확인은 실무 인수에 남겼다.
 
 ### 28.34 실무 인수 대기 항목
@@ -1768,8 +1767,7 @@ smart-construction/
 | 운영 server 확정 | PC 이름, 운영 DB, 별도 backup 경로 | 운영 표 기입 |
 | 고정 IP | 사내 IT 또는 router 관리자, MAC·CIDR | DHCP 예약 또는 승인된 static IP |
 | 방화벽 적용 | 관리자 PowerShell, 실제 사내 CIDR | 규칙 조회와 팀원 PC 접속 |
-| 자동 시작 적용 | 관리자 PowerShell | task LastTaskResult 0 |
-| 재부팅 인수 | server PC 재부팅 권한 | readiness Ready true |
+| 수동 server 운영 | 운영 담당자 | `02-start-server.cmd` 실행 및 `03-stop-server.cmd` 종료 후 재기동 |
 | 실시간 협업 | 팀원 PC 2대, 사용자 2명 | A 저장 후 B 자동 갱신 |
 | 거래명세표 승인 | 실제 공급자 data, A4 printer/PDF | 제공 양식 비교 승인 |
 | 최초 사용자 | 관리자·담당자·조회자 명단 | 개인 계정 로그인 확인 |
@@ -1808,7 +1806,7 @@ smart-construction/
 - 잘된 점: 계약 자동 매출과 자유형 매출을 같은 5월 집계·거래명세표에 함께 포함해 건별 원장과 합계가 일치함을 확인했다.
 - 발견·개선: Windows PowerShell에서 .NET `Path.GetFullPath(path, base)` overload가 지원되지 않아 운영 dry-run이 중단됐다. 공통 `Resolve-SmartConstructionPath`로 상대·절대 경로를 명시적으로 정규화해 작업 스케줄러·backup·restore를 수정했다.
 - 발견·개선: 브라우저 자동화에서 native 날짜 입력을 직접 조작할 수 없었다. 화면의 입력 구조와 메모 modal은 확인하고, 기간·금액·발행은 인증 API와 print snapshot으로 교차 검증했다.
-- 운영 경계: 현재 acceptance DB와 테스트 계정은 인수 증빙용이다. 실제 팀 데이터 이관, server PC 재부팅, 방화벽/작업 스케줄러 `-Apply`, A4 출력 승인은 담당자 승인 후 수행한다.
+- 운영 경계: 현재 acceptance DB와 테스트 계정은 인수 증빙용이다. 실제 팀 데이터 이관, 방화벽/backup 작업 스케줄러 `-Apply`, A4 출력 승인은 담당자 승인 후 수행한다.
 
 ### 28.37 Phase 11 운영 시작 점검
 
@@ -1819,9 +1817,9 @@ smart-construction/
 
 ### 28.38 운영 시작 점검 회고
 
-- 잘된 점: 운영 script가 migration을 먼저 적용하고 Next production을 시작해 재부팅 후에도 schema와 server 시작 순서가 고정된다.
+- 잘된 점: 운영 script가 migration을 먼저 적용하고 Next production을 시작해 수동 재기동 때도 schema와 server 시작 순서가 고정된다.
 - 잘된 점: localhost가 아닌 `0.0.0.0` listener와 실제 LAN IPv4 요청을 함께 확인해 팀 공유 경로의 첫 관문을 검증했다.
-- 남은 확인: 다른 팀원 PC의 접속, Windows 방화벽 실제 적용, 재부팅 자동 시작, 두 사용자 간 실시간 갱신은 해당 PC와 권한이 준비된 뒤 수동 인수한다.
+- 남은 확인: 다른 팀원 PC의 접속, Windows 방화벽 실제 적용, 두 사용자 간 실시간 갱신은 해당 PC와 권한이 준비된 뒤 수동 인수한다.
 
 ### 28.39 운영 중지 script 회고
 

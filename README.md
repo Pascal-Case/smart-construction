@@ -57,6 +57,10 @@ DB 연결 상태는 실행 후 `/api/health`에서 확인할 수 있습니다.
 
 ## 운영 실행
 
+비개발자 운영자는 프로젝트 폴더의 `02-start-server.cmd`를 더블클릭해 server를 시작하고, `03-stop-server.cmd`로 종료합니다. 서비스 자동 시작은 사용하지 않습니다.
+
+PowerShell에서 직접 실행할 때는 다음 명령을 사용합니다.
+
 ```powershell
 npm run build
 powershell -ExecutionPolicy Bypass -File scripts/start-production.ps1
@@ -72,5 +76,5 @@ npm run db:deploy
 
 - `IMPLEMENTATION_PLAN.md`: 전체 단계와 업무 규칙
 - `Smart_Construction_App.html`: 기존 화면 초안
-- OPERATIONS_GUIDE.md: 배포, LAN, 자동 시작, backup·restore, 이관
+- OPERATIONS_GUIDE.md: 배포, LAN, 수동 server 운영, backup·restore, 이관
 - USER_GUIDE.md: 담당자용 화면 사용 안내

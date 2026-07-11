@@ -34,7 +34,17 @@
     SESSION_COOKIE_SECURE="false"
     SESSION_TTL_HOURS="12"
 
-## 3. 수동 production 실행
+## 3. 수동 production 실행·종료
+
+운영자는 프로젝트 폴더에서 다음 파일을 더블클릭해 server를 실행한다.
+
+    02-start-server.cmd
+
+server를 사용하는 동안 열린 명령 창을 닫지 않는다. 종료할 때는 다음 파일을 더블클릭한다.
+
+    03-stop-server.cmd
+
+PowerShell에서 직접 실행해야 할 때는 다음 명령을 사용한다.
 
     powershell -ExecutionPolicy Bypass -File scripts/start-production.ps1 -Port 3000
 
@@ -70,25 +80,21 @@ Windows에 임의 static IP를 직접 넣기 전에 IP 중복과 사내 정책�
 
 Public profile은 열지 않는다. LocalSubnet을 쓸 수 있지만 정확한 CIDR이 더 명확하다.
 
-## 6. 자동 시작과 자동 backup
+## 6. 자동 backup
 
-server와 매일 02:00 backup task 계획을 dry-run으로 확인한다. backup은 가능하면 운영 DB와 다른 disk를 지정한다.
+서비스는 자동 시작하지 않고 `02-start-server.cmd`로 수동 실행한다. 매일 02:00 backup task 계획만 dry-run으로 확인한다. backup은 가능하면 운영 DB와 다른 disk를 지정한다.
 
-    powershell -ExecutionPolicy Bypass -File scripts/install-windows-tasks.ps1 -Port 3000 -BackupTime 02:00 -BackupDirectory E:\SmartConstructionBackups
+    npm run ops:backup-task:plan -- -BackupTime 02:00 -BackupDirectory E:\SmartConstructionBackups
 
 관리자 PowerShell에서 적용한다.
 
-    powershell -ExecutionPolicy Bypass -File scripts/install-windows-tasks.ps1 -Port 3000 -BackupTime 02:00 -BackupDirectory E:\SmartConstructionBackups -Apply
+    npm run ops:backup-task:plan -- -BackupTime 02:00 -BackupDirectory E:\SmartConstructionBackups -Apply
 
-등록되는 task:
+등록되는 task는 `SmartConstruction-Backup` 하나이며 매일 지정 시각 SQLite online backup을 실행한다. 과거에 `SmartConstruction-App` 자동 시작 task가 등록되어 있으면 `-Apply` 실행 시 제거한다.
 
-- SmartConstruction-App: Windows 시작 30초 후 SYSTEM 계정으로 server 실행
-- SmartConstruction-Backup: 매일 지정 시각 SQLite online backup
+적용 후 task 상태를 확인한다.
 
-적용 후 server PC를 재부팅하고 확인한다.
-
-    Get-ScheduledTask -TaskName SmartConstruction-App,SmartConstruction-Backup
-    powershell -ExecutionPolicy Bypass -File scripts/test-lan-readiness.ps1 -Port 3000
+    Get-ScheduledTask -TaskName SmartConstruction-Backup
 
 ## 7. 수동 backup
 
@@ -100,7 +106,7 @@ server와 매일 02:00 backup task 계획을 dry-run으로 확인한다. backup�
 
 restore는 server를 먼저 중지하고 확인 switch가 있어야 실행된다.
 
-    Stop-ScheduledTask -TaskName SmartConstruction-App
+    npm run ops:stop -- -Port 3000
     Get-NetTCPConnection -LocalPort 3000 -State Listen
 
 listener가 없어야 한다.
@@ -117,9 +123,8 @@ restore 순서:
 6. 복원 DB quick_check
 7. 실패 시 직전 DB 되돌림
 
-복구 후 task와 health를 확인한다.
+복구 후 `02-start-server.cmd`로 server를 다시 실행하고 health를 확인한다.
 
-    Start-ScheduledTask -TaskName SmartConstruction-App
     powershell -ExecutionPolicy Bypass -File scripts/test-lan-readiness.ps1 -Port 3000
 
 ## 9. 기존 데이터 이관
@@ -191,7 +196,7 @@ server PC가 아닌 같은 사내망 PC 두 대 이상에서 확인한다.
 
 ## 12. 운영 점검 주기
 
-매일: /api/health, 전일 backup과 metadata, task LastTaskResult
+매일: server 수동 실행 후 /api/health, 전일 backup과 metadata, backup task LastTaskResult
 
 매주: backup quick_check, 남은 disk 용량, server log 오류
 
