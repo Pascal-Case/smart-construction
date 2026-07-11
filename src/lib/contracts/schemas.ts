@@ -20,18 +20,14 @@ export const contractInputSchema = z.object({
   contractNo: z.union([code, z.literal("")]).optional(),
   siteId: z.string().min(1, "현장을 선택해 주세요."),
   title: z.string().trim().min(1, "계약명을 입력해 주세요.").max(100),
-  startDate: z.iso.date(),
-  endDate: z.iso.date(),
   status: z.enum(["DRAFT", "ACTIVE", "ENDED", "CANCELED"]),
   memo: nullableText,
   lines: z.array(contractLineInputSchema).min(1, "계약 품목을 한 개 이상 입력해 주세요.").max(100),
 }).superRefine((value, context) => {
-  if (value.startDate > value.endDate) context.addIssue({ code: "custom", message: "계약 종료일은 시작일보다 빠를 수 없습니다.", path: ["endDate"] });
   const ids = value.lines.flatMap((line) => line.id ? [line.id] : []);
   if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", message: "같은 계약 품목 행이 중복되었습니다.", path: ["lines"] });
   value.lines.forEach((line, index) => {
     if (line.revenueStartDate > line.revenueEndDate) context.addIssue({ code: "custom", message: "매출 종료일은 시작일보다 빠를 수 없습니다.", path: ["lines", index, "revenueEndDate"] });
-    if (line.revenueStartDate < value.startDate || line.revenueEndDate > value.endDate) context.addIssue({ code: "custom", message: "매출 적용기간은 계약기간 안에 있어야 합니다.", path: ["lines", index, "revenueStartDate"] });
   });
 });
 

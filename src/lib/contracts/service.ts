@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { buildContractImpact } from "@/lib/contracts/impact";
+import { deriveContractPeriod } from "@/lib/contracts/period";
 import type { ContractInput, ContractListQuery } from "@/lib/contracts/schemas";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
@@ -48,9 +49,10 @@ export async function createContract(actor: SessionUser, input: ContractInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       const prepared = await prepareAggregate(tx, actor, input);
+      const period = deriveContractPeriod(input.lines);
       const contractNo = input.contractNo ? normalizeCode(input.contractNo) : await nextBusinessCode(tx, "contract");
       const contract = await tx.contract.create({ data: {
-        contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(input.startDate), endDate: dbDate(input.endDate),
+        contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), createdById: actor.id, updatedById: actor.id,
         lines: { create: prepared.map((line, index) => ({ ...line, sortOrder: index, createdById: actor.id, updatedById: actor.id })) },
       }, include: contractInclude });
@@ -76,9 +78,10 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
       const before = await tx.contract.findUnique({ where: { id }, include: contractIncludeAll });
       if (!before) throw new AuthError("계약을 찾을 수 없습니다.", 404, "CONTRACT_NOT_FOUND");
       const prepared = await prepareAggregate(tx, actor, input, before);
+      const period = deriveContractPeriod(input.lines);
       const updated = await tx.contract.updateMany({ where: { id, version: input.version }, data: {
         contractNo: input.contractNo ? normalizeCode(input.contractNo) : before.contractNo,
-        siteId: input.siteId, title: input.title, startDate: dbDate(input.startDate), endDate: dbDate(input.endDate),
+        siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), updatedById: actor.id, version: { increment: 1 },
       } });
       if (!updated.count) throw new AuthError("다른 사용자가 먼저 계약을 수정했습니다. 새로고침 후 다시 시도해 주세요.", 409, "VERSION_CONFLICT");

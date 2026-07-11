@@ -10,6 +10,15 @@ describe("registration workflow contract", () => {
     expect(source).toContain('defaultValue={row?.status ?? "ACTIVE"}');
   });
 
+  it("계약 헤더 기간을 입력받지 않고 품목 매출기간만 사용한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
+
+    expect(source).not.toContain('label="계약 시작일"');
+    expect(source).not.toContain('label="계약 종료일"');
+    expect(source).toContain("매출기간");
+    expect(source).toContain("current.at(-1)");
+  });
+
   it("직접 매출 등록에서 확정과 작성 중 저장 결과를 구분한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
 

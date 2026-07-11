@@ -11,7 +11,7 @@ describe("contract impact", () => {
     const before = { siteId: "site-1", startDate: new Date("2026-03-01T00:00:00Z"), endDate: new Date("2026-05-31T00:00:00Z"), status: "ACTIVE", lines: [
       { id: "line-1", itemId: "item-1", quantity: 1, appliedSalesPrice: 100, appliedCostPrice: 50, revenueStartDate: new Date("2026-03-20T00:00:00Z"), revenueEndDate: new Date("2026-04-10T00:00:00Z"), isActive: true },
     ] };
-    const impact = buildContractImpact(before, { siteId: "site-1", title: "계약", startDate: "2026-03-01", endDate: "2026-05-31", status: "ACTIVE", lines: [
+    const impact = buildContractImpact(before, { siteId: "site-1", title: "계약", status: "ACTIVE", lines: [
       { id: "line-1", itemId: "item-1", quantity: 2, appliedSalesPrice: 100, appliedCostPrice: 50, revenueStartDate: "2026-03-20", revenueEndDate: "2026-05-10" },
     ] });
     expect(impact.modifiedLines).toBe(1);
