@@ -12,25 +12,28 @@ type ParseInput = {
   target: SmartInputTarget;
   sites: SmartMasterOption[];
   items: SmartMasterOption[];
+  selectedSite?: SmartMasterOption;
+  selectedItem?: SmartMasterOption;
   referenceDate?: Date;
 };
 
-export function parseSmartInput({ input, target, sites, items, referenceDate = new Date() }: ParseInput): SmartInputPreview {
+export function parseSmartInput({ input, target, sites, items, selectedSite, selectedItem, referenceDate = new Date() }: ParseInput): SmartInputPreview {
   const normalizedInput = normalizeText(input);
-  const site = matchMaster(input, sites, "현장");
-  const item = matchMaster(input, items, "품목");
+  const site = selectedSite ? selectedMasterField(selectedSite, "현장") : matchMaster(input, sites, "현장");
+  const item = selectedItem ? selectedMasterField(selectedItem, "품목") : matchMaster(input, items, "품목");
   const quantity = parseQuantity(normalizedInput);
   const period = parsePeriod(normalizedInput, referenceDate);
   const explicitUnitPrice = parseMoney(normalizedInput, /(?:a\/?s\s*)?단가\s*([+-]?\d[\d,]*(?:\.\d+)?)\s*(억원|천만원|백만원|만원|천원|원)?/i);
   const explicitTotal = parseMoney(normalizedInput, /(?:총액?|합계|금액)\s*([+-]?\d[\d,]*(?:\.\d+)?)\s*(억원|천만원|백만원|만원|천원|원)?/i);
-  const selectedItem = item.status === "MATCHED" ? item.value : null;
+  const inputUnitPrice = explicitUnitPrice ?? (explicitTotal == null ? parseImplicitUnitPrice(normalizedInput) : null);
+  const matchedItem = item.status === "MATCHED" ? item.value : null;
   let unitPrice: SmartValueField<number>;
-  if (explicitUnitPrice != null) {
-    unitPrice = valueField("MATCHED", explicitUnitPrice, "문장에서 단가를 찾았습니다.");
+  if (inputUnitPrice != null) {
+    unitPrice = valueField("MATCHED", inputUnitPrice, "문장에서 단가를 찾았습니다.");
   } else if (target === "CONTRACT" && explicitTotal != null && quantity.value) {
     unitPrice = valueField("DERIVED", Math.round(explicitTotal / quantity.value), "총액을 수량으로 나누어 단가를 계산했습니다.");
-  } else if (selectedItem?.standardSalesPrice != null) {
-    unitPrice = valueField("DERIVED", selectedItem.standardSalesPrice, "품목의 표준 매출단가를 제안합니다.");
+  } else if (matchedItem?.standardSalesPrice != null) {
+    unitPrice = valueField("DERIVED", matchedItem.standardSalesPrice, "품목의 표준 매출단가를 제안합니다.");
   } else {
     unitPrice = valueField("MISSING", null, "단가를 찾지 못했습니다.");
   }
@@ -42,7 +45,7 @@ export function parseSmartInput({ input, target, sites, items, referenceDate = n
       ? valueField("DERIVED", calculatedTotal, "수량 × 단가로 계산했습니다.")
       : valueField("MISSING", null, "총액을 계산할 정보가 부족합니다.");
   const title = valueField("DERIVED", inferTitle(target, site.value, item.value), "매칭된 마스터로 제목을 제안합니다.");
-  const priceOverrideReason = deriveOverrideReason(normalizedInput, explicitUnitPrice, explicitTotal, calculatedTotal, selectedItem);
+  const priceOverrideReason = deriveOverrideReason(normalizedInput, inputUnitPrice, explicitTotal, calculatedTotal, matchedItem);
   const warnings = collectWarnings({ target, site, item, quantity, period, unitPrice, totalAmount, explicitTotal, calculatedTotal });
   const canApply = target === "CONTRACT"
     ? site.status === "MATCHED" && item.status === "MATCHED" && quantity.value != null && unitPrice.value != null && period.value != null
@@ -69,6 +72,10 @@ export function parseSmartInput({ input, target, sites, items, referenceDate = n
         : valueField("MISSING", null, "표준 계산과 다를 때 사유를 입력해 주세요."),
     },
   };
+}
+
+function selectedMasterField(option: SmartMasterOption, label: string): SmartMasterField {
+  return { status: "MATCHED", value: option, candidates: [option], matchedText: null, message: `사용자가 선택한 ${label}을 적용합니다.` };
 }
 
 function matchMaster(input: string, options: SmartMasterOption[], label: string): SmartMasterField {
@@ -103,6 +110,17 @@ function parseQuantity(input: string): SmartInputPreview["fields"]["quantity"] {
 
 function parsePeriod(input: string, referenceDate: Date): SmartValueField<SmartPeriod> {
   const referenceYear = referenceDate.getUTCFullYear();
+  const shortDayRange = input.match(/(?<![\d/])(\d{1,2})\/(\d{1,2})\s*(?:부터|~)\s*(\d{1,2})\/(\d{1,2})(?![\d/])/);
+  if (shortDayRange) {
+    const startMonth = Number(shortDayRange[1]);
+    const startDay = Number(shortDayRange[2]);
+    const endMonth = Number(shortDayRange[3]);
+    const endDay = Number(shortDayRange[4]);
+    const endYear = endMonth < startMonth || (endMonth === startMonth && endDay < startDay) ? referenceYear + 1 : referenceYear;
+    const start = dateValue(referenceYear, startMonth, startDay);
+    const end = dateValue(endYear, endMonth, endDay);
+    if (start && end && start <= end) return valueField("MATCHED", { startDate: start, endDate: end, precision: "DAY" }, "월/일 시작일과 종료일을 찾고 연도를 적용했습니다.");
+  }
   const dayRange = input.match(/(?:(\d{2,4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일?\s*(?:부터|~)\s*(?:(\d{2,4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일?\s*(?:까지)?/);
   if (dayRange) {
     const startYear = resolveYear(dayRange[1], referenceYear);
@@ -138,6 +156,11 @@ function parsePeriod(input: string, referenceDate: Date): SmartValueField<SmartP
     const value = dateValue(resolveYear(match[1], referenceYear), Number(match[2]), Number(match[3]));
     if (value) return valueField("MATCHED", { startDate: value, endDate: value, precision: "DAY" }, "귀속일을 찾았습니다.");
   }
+  const shortDay = input.match(/(?<![\d/])(\d{1,2})\/(\d{1,2})(?![\d/])/);
+  if (shortDay) {
+    const value = dateValue(referenceYear, Number(shortDay[1]), Number(shortDay[2]));
+    if (value) return valueField("MATCHED", { startDate: value, endDate: value, precision: "DAY" }, "월/일을 찾고 현재 연도를 적용했습니다.");
+  }
   const isoMonth = input.match(/\b(\d{4})-(\d{1,2})\b/);
   const koreanMonth = input.match(/(?:(\d{2,4})\s*년\s*)?(\d{1,2})\s*월/);
   const dottedMonth = input.match(/\b(\d{2,4})\.(\d{1,2})\b/);
@@ -161,9 +184,27 @@ function parseMoney(input: string, pattern: RegExp) {
   return Number.isFinite(value) ? value : null;
 }
 
-function deriveOverrideReason(input: string, explicitUnitPrice: number | null, explicitTotal: number | null, calculatedTotal: number | null, item: SmartMasterOption | null) {
+function parseImplicitUnitPrice(input: string) {
+  const currencyAfterNamedQuantity = parseMoney(
+    input,
+    /수량\s*\d+(?:\.\d+)?[\s,]*(?!총액?|합계|금액|단가)([+-]?\d[\d,]*(?:\.\d+)?)\s*(억원|천만원|백만원|만원|천원|원)(?![a-z가-힣])/i,
+  );
+  if (currencyAfterNamedQuantity != null) return currencyAfterNamedQuantity;
+  const currencyAfterQuantity = parseMoney(
+    input,
+    /(?:\d+(?:\.\d+)?)\s*(?:대|개|ea|식|건)(?![a-z가-힣])[\s,]*(?!총액?|합계|금액|단가)([+-]?\d[\d,]*(?:\.\d+)?)\s*(억원|천만원|백만원|만원|천원|원)(?![a-z가-힣])/i,
+  );
+  if (currencyAfterQuantity != null) return currencyAfterQuantity;
+  const bareAfterQuantity = parseMoney(
+    input,
+    /(?:\d+(?:\.\d+)?)\s*(?:대|개|ea|식|건)(?![a-z가-힣])[\s,]*(?!총액?|합계|금액|단가)([+-]?\d[\d,]*)(?![\d./a-z가-힣~-])/i,
+  );
+  return bareAfterQuantity;
+}
+
+function deriveOverrideReason(input: string, inputUnitPrice: number | null, explicitTotal: number | null, calculatedTotal: number | null, item: SmartMasterOption | null) {
   const asPrice = /a\/?s|에이에스/i.test(input);
-  if (explicitUnitPrice != null && item?.standardSalesPrice != null && explicitUnitPrice !== item.standardSalesPrice) return asPrice ? "A/S 단가" : "문장 입력 단가";
+  if (inputUnitPrice != null && item?.standardSalesPrice != null && inputUnitPrice !== item.standardSalesPrice) return asPrice ? "A/S 단가" : "문장 입력 단가";
   if (explicitTotal != null && calculatedTotal != null && explicitTotal !== calculatedTotal) return asPrice ? "A/S 총액" : "문장 입력 총액";
   return "";
 }

@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   try {
     await requireUser([UserRole.ADMIN, UserRole.MANAGER]);
     const input = smartInputPreviewSchema.parse(await request.json());
-    return Response.json(await previewSmartInput(input.target, input.input));
+    return Response.json(await previewSmartInput(input.target, input.input, { selectedSiteId: input.selectedSiteId, selectedItemId: input.selectedItemId }));
   } catch (error) {
     return errorResponse(error);
   }
