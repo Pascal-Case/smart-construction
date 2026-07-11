@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Phase 11 이후 제품 개선</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --surface-2: #eef3f7;
+      --text: #17202a;
+      --muted: #5f6b76;
+      --line: #d8e0e7;
+      --accent: #146c7e;
+      --accent-soft: #dff2f5;
+      --accent-text: #0d5362;
+      --warn-soft: #fff1d6;
+      --warn-text: #7a4a00;
+      --good-soft: #e3f4e9;
+      --good-text: #21623a;
+      --shadow: 0 10px 30px rgba(18, 37, 52, .07);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10161b;
+        --surface: #182128;
+        --surface-2: #202c34;
+        --text: #edf4f7;
+        --muted: #aebbc4;
+        --line: #33434e;
+        --accent: #70c7d8;
+        --accent-soft: #173b44;
+        --accent-text: #b6edf5;
+        --warn-soft: #44351d;
+        --warn-text: #ffd995;
+        --good-soft: #183828;
+        --good-text: #a9e3be;
+        --shadow: 0 10px 30px rgba(0, 0, 0, .2);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "Noto Sans KR", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.72;
+    }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    code { font-family: Consolas, ui-monospace, monospace; font-size: .92em; }
+    .page { width: min(940px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 72px; }
+    header, section, footer { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
+    header { padding: 38px 42px; }
+    section { margin-top: 22px; padding: 30px 34px; }
+    h1 { margin: 4px 0 12px; font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.12; letter-spacing: -.04em; }
+    h2 { margin: 0 0 18px; font-size: 1.45rem; letter-spacing: -.025em; }
+    h3 { margin: 0; font-size: 1.25rem; letter-spacing: -.02em; }
+    p { max-width: 72ch; margin: 10px 0; }
+    .eyebrow { color: var(--accent); font-size: .75rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    .lede { color: var(--muted); font-size: 1.05rem; }
+    .meta, .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+    .chip { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); font-size: .8rem; font-weight: 700; }
+    .chip.accent { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+    .chip.good { background: var(--good-soft); color: var(--good-text); border-color: transparent; }
+    .chip.warn { background: var(--warn-soft); color: var(--warn-text); border-color: transparent; }
+    nav { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
+    nav a { padding: 8px 12px; border-radius: 10px; background: var(--surface-2); text-decoration: none; font-weight: 700; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 24px; }
+    .stat { padding: 14px; border-radius: 14px; background: var(--surface-2); }
+    .stat strong { display: block; font-size: 1.45rem; }
+    .stat span { color: var(--muted); font-size: .8rem; }
+    .axis-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0; list-style: none; }
+    .axis-list li { padding: 12px 14px; background: var(--surface-2); border-radius: 12px; }
+    .jump-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; list-style: none; margin: 0 0 20px; }
+    .jump-list a { display: block; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; text-decoration: none; font-weight: 700; }
+    article.idea { padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); margin-top: 16px; }
+    .idea-head { display: flex; align-items: flex-start; gap: 14px; }
+    .rank { flex: 0 0 auto; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-text); font-weight: 900; }
+    dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 14px; margin: 18px 0 0; }
+    dt { color: var(--muted); font-size: .78rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    dd { margin: 0; }
+    .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 18px 0; }
+    .flow span { display: grid; place-items: center; min-height: 62px; padding: 9px; text-align: center; border-radius: 12px; background: var(--surface-2); font-size: .84rem; font-weight: 750; }
+    .flow span.em { background: var(--accent-soft); color: var(--accent-text); }
+    .callout { padding: 16px 18px; border-radius: 14px; background: var(--accent-soft); color: var(--accent-text); margin-top: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .07em; }
+    footer { margin-top: 22px; padding: 18px 24px; color: var(--muted); font-size: .8rem; }
+    @media (max-width: 700px) {
+      .page { width: min(100% - 20px, 940px); padding-top: 18px; }
+      header, section { padding: 24px 20px; border-radius: 14px; }
+      .stats, .axis-list, .jump-list, .flow { grid-template-columns: 1fr; }
+      dl { grid-template-columns: 1fr; gap: 3px; }
+      dd { margin-bottom: 8px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="eyebrow">Product Ideation</div>
+      <h1>Phase 11 이후 제품 개선</h1>
+      <p class="lede">기능을 더 쌓기보다, 이미 구현된 계약·매출·청구 데이터를 “오늘 해야 할 일”과 “빠르게 검토할 초안”으로 재구성하는 방향이 가장 큰 효과를 냅니다.</p>
+      <div class="meta">
+        <span class="chip">작성일 <time datetime="2026-07-11">2026-07-11</time></span>
+        <span class="chip">토픽 post-phase11-product-improvements</span>
+        <span class="chip">방식 repo-grounded</span>
+        <span class="chip accent">초점 편의성 · 텍스트 입력 · 대시보드 · 반복 업무</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><strong>40+</strong><span>초기 후보</span></div>
+        <div class="stat"><strong>5</strong><span>최종 추천</span></div>
+        <div class="stat"><strong>4</strong><span>검토 축</span></div>
+        <div class="stat"><strong>1위</strong><span>오늘의 마감 데스크</span></div>
+      </div>
+      <nav aria-label="문서 목차">
+        <a href="#grounding-context">Grounding Context</a>
+        <a href="#topic-axes">Topic Axes</a>
+        <a href="#ranked-ideas">Ranked Ideas</a>
+        <a href="#rejection-summary">Rejection Summary</a>
+      </nav>
+    </header>
+
+    <section id="grounding-context">
+      <div class="eyebrow">Evidence</div>
+      <h2>Grounding Context</h2>
+      <p><strong>Codebase Context.</strong> 현재 대시보드는 연간 KPI와 차트, 링크 없는 최근 활동을 보여줍니다. 반면 작성 중·0원 매출, 확정 후 미발행, 종료 임박 계약, 이관 후 매출 미생성처럼 실제 조치가 필요한 데이터는 계약·매출·월별·명세표 화면에 흩어져 있습니다.</p>
+      <p>스마트 입력은 안전한 preview-first 구조를 이미 갖췄지만 단일 문장·단일 품목 중심이고, 분석 결과에서 현장·품목 이외의 수량·기간·금액은 바로 교정하기 어렵습니다. 주요 목록 필터는 로컬 상태라 새로고침·뒤로가기·공유 시 사라지며, 매출 상태 변경은 주로 단건 처리입니다.</p>
+      <p>외부 사례도 같은 방향을 지지합니다. <a href="https://trackwip.com/">TrackWIP</a>과 <a href="https://construction.autodesk.com/tools/construction-iq/">Autodesk Construction IQ</a>는 현금·위험 영향에 따라 조치를 우선순위화합니다. <a href="https://linear.app/docs/custom-views">Linear</a>와 <a href="https://learn.microsoft.com/en-au/dynamics365/business-central/ui-views-faq">Business Central</a>은 동적으로 갱신되는 저장 뷰를 운영 자산으로 사용하며, <a href="https://www.metabase.com/docs/latest/questions/alerts">Metabase</a>는 결과가 있을 때만 알리는 방식으로 소음을 줄입니다.</p>
+      <div class="callout"><strong>핵심 판단:</strong> 이 제품의 다음 단계는 “더 많은 보고서”보다 “예외를 찾아 바로 처리하는 흐름”입니다.</div>
+    </section>
+
+    <section id="topic-axes">
+      <div class="eyebrow">Surface Map</div>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>대시보드와 조치 큐</strong><br>현황을 다음 행동으로 연결</li>
+        <li><strong>스마트·텍스트 입력</strong><br>입력보다 교정과 검토 시간을 단축</li>
+        <li><strong>목록·필터·일괄 처리</strong><br>월말 반복 클릭과 누락을 감소</li>
+        <li><strong>내비게이션·개인화</strong><br>조회 맥락을 저장하고 공유</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <div class="eyebrow">Shortlist</div>
+      <h2>Ranked Ideas</h2>
+      <ul class="jump-list">
+        <li><a href="#idea-1">1. 오늘의 마감 데스크</a></li>
+        <li><a href="#idea-2">2. 스마트 입력 2.0</a></li>
+        <li><a href="#idea-3">3. 월마감 워크벤치</a></li>
+        <li><a href="#idea-4">4. 업무 렌즈</a></li>
+        <li><a href="#idea-5">5. 안전 일괄 처리</a></li>
+      </ul>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-head"><span class="rank">1</span><div><h3>오늘의 마감 데스크</h3><div class="chips"><span class="chip accent">대시보드·조치 큐</span><span class="chip good">신뢰도 94%</span><span class="chip">복잡도 Medium</span></div></div></div>
+        <p><strong>Description:</strong> 첫 화면의 중심을 연간 차트에서 “오늘 처리하면 청구·현금화가 진행되는 예외”로 옮깁니다. 작성 중·0원 매출, 확정됐지만 미발행, 종료 임박 계약, 이관 후 매출 미생성을 영향 금액·경과일·마감 임박도 순으로 보여주고 클릭하면 해당 필터가 적용된 작업 화면으로 이동합니다. 정상 항목은 표시하지 않아 조용한 날에는 화면도 조용합니다.</p>
+        <div class="flow" aria-label="오늘의 마감 데스크 개념 흐름"><span>분산된 상태 데이터</span><span>금액·기한·차단 단계 계산</span><span class="em">오늘의 우선 조치</span><span>처리 화면 딥링크</span></div>
+        <dl>
+          <dt>Axis</dt><dd>대시보드와 조치 큐</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> 기존 대시보드는 연간 집계 중심이지만 필요한 상태 데이터는 이미 여러 API에 존재합니다. <strong>external:</strong> TrackWIP·Autodesk의 cash-impact 우선순위, Metabase의 result-only alert 패턴과 일치합니다.</dd>
+          <dt>Rationale</dt><dd>사용자가 여러 화면을 돌아다니며 누락을 찾는 시간을 줄이고 대시보드를 매일 여는 업무 시작점으로 만듭니다.</dd>
+          <dt>Downsides</dt><dd>“중요도” 기준을 잘못 정하면 사용자가 큐를 신뢰하지 않습니다. 첫 버전은 설명 가능한 규칙과 수동 정렬을 제공해야 합니다.</dd>
+          <dt>Best first cut</dt><dd>작성 중·0원·미발행 세 가지 큐와 기존 목록 딥링크만 먼저 제공.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head"><span class="rank">2</span><div><h3>스마트 입력 2.0: 다건 초안 인박스</h3><div class="chips"><span class="chip accent">스마트·텍스트 입력</span><span class="chip good">신뢰도 92%</span><span class="chip warn">복잡도 High</span></div></div></div>
+        <p><strong>Description:</strong> 스마트 입력을 단건 폼 보조 기능에서 “메신저·회의 메모·여러 줄 텍스트를 안전한 업무 초안으로 바꾸는 인박스”로 확장합니다. 원문과 추출 필드를 나란히 보여주고 수량·단가·총액·기간까지 바로 교정하며, 선택한 초안만 저장합니다. 반복 교정 표현은 자동 반영하지 않고 관리자 승인형 별칭 후보로 축적합니다.</p>
+        <div class="flow" aria-label="스마트 입력 2.0 개념 흐름"><span>여러 줄 원문 붙여넣기</span><span>계약·매출 초안 분리</span><span class="em">원문 대조·필드 교정</span><span>선택 저장·별칭 후보</span></div>
+        <dl>
+          <dt>Axis</dt><dd>스마트·텍스트 입력</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> 현재 단일 textarea, 텍스트 수정 시 preview 초기화, 현장·품목만 가능한 교정 표면이 명확한 마찰입니다. <strong>reasoned:</strong> 기존 preview-first 원칙을 유지하면서 입력 단위를 “한 문장”에서 “검토 가능한 초안 묶음”으로 확장할 수 있습니다.</dd>
+          <dt>Rationale</dt><dd>실제 업무 언어를 시스템 폼에 맞춰 다시 타이핑하는 시간을 줄이면서 자동 저장으로 인한 금액 오류는 방지합니다.</dd>
+          <dt>Downsides</dt><dd>다품목·다문장 분리 규칙과 편집 UI가 커집니다. 한 번에 모두 만들기보다 필드 직접 교정 → 여러 줄 분리 → 별칭 피드백 순으로 확장하는 편이 안전합니다.</dd>
+          <dt>Best first cut</dt><dd>기존 preview 카드에서 수량·단가·총액·기간 직접 수정과 재계산부터 제공.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head"><span class="rank">3</span><div><h3>월마감 워크벤치</h3><div class="chips"><span class="chip accent">목록·업무 흐름</span><span class="chip good">신뢰도 90%</span><span class="chip warn">복잡도 High</span></div></div></div>
+        <p><strong>Description:</strong> 월별 현황을 읽기 전용 표에서 단계형 마감 흐름으로 바꿉니다. 계약상 예상 매출과 실제 생성·확정·발행 금액을 대사하고, 작성 중·0원·예외단가를 점검한 뒤 안전한 일괄 확정과 명세표 발행까지 연결합니다. 각 단계의 남은 건수와 차단 사유가 0이 되어야 “마감 가능”으로 표시합니다.</p>
+        <div class="flow" aria-label="월마감 워크벤치 개념 흐름"><span>예상 vs 실제 대사</span><span>예외 점검</span><span class="em">안전한 일괄 확정</span><span>명세표 발행·완료</span></div>
+        <dl>
+          <dt>Axis</dt><dd>목록·필터·일괄 처리</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> 계약 생성 preview, 월별 집계, 원장 상태, 명세표 후보·발행은 이미 존재하지만 서로 분리돼 있습니다. 계획의 월 단위 확정·다중 처리도 현재 UI에는 완성되지 않았습니다.</dd>
+          <dt>Rationale</dt><dd>숙련자의 머릿속 체크리스트를 제품 흐름으로 고정해 담당자가 바뀌어도 동일한 품질로 마감하게 합니다.</dd>
+          <dt>Downsides</dt><dd>여러 도메인을 연결하므로 테스트 범위가 큽니다. 마감 “상태”를 별도 저장할지, 계산 결과로만 표현할지 먼저 결정해야 합니다.</dd>
+          <dt>Best first cut</dt><dd>월별 화면에 예상·생성·확정·발행 금액 대사표와 예외 딥링크만 추가.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head"><span class="rank">4</span><div><h3>업무 렌즈: 저장·공유되는 동적 뷰</h3><div class="chips"><span class="chip accent">내비게이션·개인화</span><span class="chip good">신뢰도 88%</span><span class="chip">복잡도 Medium</span></div></div></div>
+        <p><strong>Description:</strong> 계약·매출·월별·명세표의 필터와 정렬을 URL에 담고 이름을 붙여 개인 또는 팀 뷰로 저장합니다. “이번 달 미확정”, “송도 미발행”, “종료 30일 이내 계약”처럼 시간이 지나도 자동 갱신되는 뷰를 사이드바나 대시보드에 고정하고 링크로 공유합니다.</p>
+        <dl>
+          <dt>Axis</dt><dd>내비게이션·개인화</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> 주요 목록 필터는 로컬 상태라 조건이 보존되지 않지만 감사·인쇄 화면에는 URL 기반 선례가 있습니다. <strong>external:</strong> Linear·Business Central의 saved dynamic views와 직접 대응합니다.</dd>
+          <dt>Rationale</dt><dd>매일 반복하는 필터 조합을 개인 노하우로 버리지 않고 팀이 공유할 수 있는 운영 자산으로 만듭니다.</dd>
+          <dt>Downsides</dt><dd>초기부터 개인/팀 권한, 대시보드 핀, 상세 서랍까지 모두 넣으면 범위가 커집니다.</dd>
+          <dt>Best first cut</dt><dd>URL search params 동기화와 “현재 조건 링크 복사”부터 시작한 뒤 이름 저장을 추가.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head"><span class="rank">5</span><div><h3>Git staging식 안전 일괄 처리</h3><div class="chips"><span class="chip accent">목록·일괄 처리</span><span class="chip good">신뢰도 91%</span><span class="chip">복잡도 Medium</span></div></div></div>
+        <p><strong>Description:</strong> 여러 매출을 선택해 즉시 확정·취소하는 대신 먼저 작업 바구니에 담고, 변경 전후 diff와 `처리 가능·이미 변경됨·보호됨·오류` 분류를 확인한 후 한 번에 실행합니다. commit 직전에 각 행의 version을 재검증해 충돌 행만 제외하거나 전체 취소할 수 있게 합니다.</p>
+        <dl>
+          <dt>Axis</dt><dd>목록·필터·일괄 처리</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> import의 preview→commit, 명세표의 ID 배열 선택, 레코드별 version 충돌 제어가 이미 있어 공통 안전 계약을 만들 기반이 있습니다.</dd>
+          <dt>Rationale</dt><dd>월말 수십 건의 반복 클릭을 줄이면서 “대량 작업은 위험하다”는 운영 불안을 낮춥니다.</dd>
+          <dt>Downsides</dt><dd>월마감 워크벤치와 일부 겹칩니다. 먼저 독립적인 공통 bulk-action 계약으로 만들면 이후 마감 흐름이 이를 재사용할 수 있습니다.</dd>
+          <dt>Best first cut</dt><dd>매출 다중 확정만 지원하고, preview에서 충돌·불가 사유를 표시.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <div class="eyebrow">Cuts and merges</div>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead><tr><th>#</th><th>검토한 아이디어</th><th>제외·통합 이유</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>모바일 현장 포착 루프</td><td>모바일 입력 빈도와 오프라인 수요의 직접 근거가 없어 투자 우선순위 보류.</td></tr>
+          <tr><td>2</td><td>전역 업무 실행기</td><td>현재 내비게이션 실패 근거가 약하고 업무 렌즈와 상당 부분 중복.</td></tr>
+          <tr><td>3</td><td>차트 없는 3문장 대시보드</td><td>오늘의 마감 데스크에 통합. “3문장”은 유용한 표현 실험이지 제품 방향은 아님.</td></tr>
+          <tr><td>4</td><td>결과형 예외 알림</td><td>오늘의 마감 데스크에 앱 내 카드로 통합. 외부 알림은 운영 복잡도 대비 이른 단계.</td></tr>
+          <tr><td>5</td><td>별칭 건강도·원문 대조 편집</td><td>각각 독립 기능보다 스마트 입력 2.0의 구성 요소로 묶는 편이 강함.</td></tr>
+          <tr><td>6</td><td>회계 대사·마감 체크리스트</td><td>월마감 워크벤치의 핵심 구조로 통합.</td></tr>
+          <tr><td>7</td><td>최근 활동 대신 중단한 곳부터</td><td>가치는 있으나 사용자별 작업 복원 데이터 모델이 필요해 효과 대비 우선순위 하향.</td></tr>
+          <tr><td>8</td><td>야간 검토안 자동 준비</td><td>수동 서버 운영 방침과 맞지 않고, 먼저 수동 마감 흐름의 가치를 검증해야 함.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="composition-signal">Composed <time datetime="2026-07-11T20:07:14+09:00">2026-07-11T20:07:14+09:00</time> by ce-ideate from the current smart-construction repository and the user prompt.</footer>
+  </main>
+</body>
+</html>
