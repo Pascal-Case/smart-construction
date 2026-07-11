@@ -40,7 +40,7 @@ describe("registration workflow contract", () => {
   it("월별 상세에서 선택한 현장과 월을 유지한 채 매출 등록을 시작한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/reports/monthly-report.tsx"), "utf8");
 
-    expect(source).toContain("이 현장·월 매출 등록");
+    expect(source).toContain("빠른 매출 등록");
     expect(source).toContain("RevenueEditor");
     expect(source).toContain("initialContext");
   });
