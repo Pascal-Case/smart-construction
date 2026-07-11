@@ -78,3 +78,7 @@ npm run db:deploy
 - `Smart_Construction_App.html`: 기존 화면 초안
 - OPERATIONS_GUIDE.md: 배포, LAN, 수동 server 운영, backup·restore, 이관
 - USER_GUIDE.md: 담당자용 화면 사용 안내
+
+## 라이선스
+
+이 프로젝트는 [MIT License](./LICENSE)로 배포됩니다.
