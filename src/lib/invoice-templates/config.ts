@@ -41,6 +41,15 @@ export type InvoiceTemplateConfig = {
   columns: InvoiceTemplateColumn[];
 };
 
+export type InvoiceTemplateView = {
+  id: string;
+  name: string;
+  isSystem: boolean;
+  config: InvoiceTemplateConfig;
+  version: number;
+  updatedAt: string | null;
+};
+
 const baseStyle = (fontSizePt: number, fontWeight: InvoiceTemplateStyle["fontWeight"]): InvoiceTemplateStyle => ({
   fontFamily: "Malgun Gothic",
   fontSizePt,

@@ -5,7 +5,7 @@ import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
-import { cloneDefaultInvoiceTemplateConfig, INVOICE_TEMPLATE_SYSTEM_ID } from "@/lib/invoice-templates/config";
+import { cloneDefaultInvoiceTemplateConfig, INVOICE_TEMPLATE_SYSTEM_ID, type InvoiceTemplateView } from "@/lib/invoice-templates/config";
 import {
   decodeInvoiceTemplateConfig,
   invoiceTemplateConfigSchema,
@@ -15,15 +15,6 @@ import {
 } from "@/lib/invoice-templates/schemas";
 
 const SYSTEM_TEMPLATE_NAME = "시스템 기본";
-
-export type InvoiceTemplateView = {
-  id: string;
-  name: string;
-  isSystem: boolean;
-  config: ReturnType<typeof decodeInvoiceTemplateConfig>;
-  version: number;
-  updatedAt: string | null;
-};
 
 export type ResolvedInvoiceTemplate = InvoiceTemplateView & { configJson: string };
 
