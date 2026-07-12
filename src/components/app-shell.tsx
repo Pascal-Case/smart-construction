@@ -48,32 +48,32 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
 
   return (
     <RealtimeProvider>
-      <div className="min-h-svh bg-background">
-      <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
+      <div className="app-shell-root min-h-svh bg-background">
+      <header className="app-header sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6">
           <Link href="/" aria-label="대시보드로 이동" className="flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-teal-700 text-white shadow-sm">
+            <span className="app-brand-mark flex size-9 items-center justify-center rounded-xl bg-teal-700 text-white shadow-sm">
               <HardHat className="size-5" aria-hidden="true" />
             </span>
-            <div>
-              <p className="font-semibold tracking-tight">스마트 건설안전</p>
-              <p className="text-xs text-muted-foreground">매출·청구 관리 시스템</p>
+            <div className="app-brand-copy min-w-0">
+              <p className="app-brand-title font-semibold tracking-tight">스마트 건설안전</p>
+              <p className="app-brand-subtitle text-xs text-muted-foreground">매출·청구 관리 시스템</p>
             </div>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="app-header-actions flex items-center gap-2">
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium">{user.name}</p>
               <p className="text-xs text-muted-foreground">{user.role}</p>
             </div>
-            <RealtimeStatus />
+            <span className="app-realtime-status"><RealtimeStatus /></span>
             <ThemeToggle />
-            <LogoutButton />
+            <span className="app-logout"><LogoutButton /></span>
           </div>
         </div>
       </header>
 
-      <div className={cn("mx-auto grid max-w-[1600px] transition-[grid-template-columns]", sidebarCollapsed ? "md:grid-cols-[72px_1fr]" : "md:grid-cols-[240px_1fr]")}>
-        <aside className="hidden min-h-[calc(100svh-4rem)] border-r bg-card p-4 md:block">
+      <div className={cn("app-shell-grid mx-auto grid max-w-[1600px] transition-[grid-template-columns]", sidebarCollapsed ? "md:grid-cols-[72px_1fr]" : "md:grid-cols-[240px_1fr]")}>
+        <aside className="app-sidebar hidden min-h-[calc(100svh-4rem)] border-r bg-card p-4 md:block">
           <div className={cn("mb-2 flex items-center", sidebarCollapsed ? "justify-center" : "justify-between px-2")}>
             {!sidebarCollapsed && <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">업무 메뉴</p>}
             <Button type="button" size="icon-sm" variant="ghost" aria-label={sidebarCollapsed ? "좌측 메뉴 펼치기" : "좌측 메뉴 접기"} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>
@@ -100,7 +100,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
           )}
         </aside>
 
-        <main className="min-w-0 p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="app-main min-w-0 p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
       </div>
     </RealtimeProvider>

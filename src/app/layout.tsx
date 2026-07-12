@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { Providers } from "@/components/providers";
+import { DESIGN_THEME_BOOTSTRAP_SCRIPT } from "@/lib/design-theme";
 
 import "./globals.css";
 
@@ -19,6 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: DESIGN_THEME_BOOTSTRAP_SCRIPT }} />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>
