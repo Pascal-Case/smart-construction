@@ -1,0 +1,121 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { UserRole } from "@/generated/prisma/client";
+import { DEFAULT_INVOICE_TEMPLATE_CONFIG } from "@/lib/invoice-templates/config";
+
+const mocks = vi.hoisted(() => ({
+  transaction: vi.fn(),
+  companyFindUnique: vi.fn(),
+  invoiceFindUnique: vi.fn(),
+  invoiceFindMany: vi.fn(),
+  invoiceCreate: vi.fn(),
+  invoiceUpdateMany: vi.fn(),
+  revenueFindMany: vi.fn(),
+  revenueUpdateMany: vi.fn(),
+  contractFindMany: vi.fn(),
+  lineCreate: vi.fn(),
+  linkCreateMany: vi.fn(),
+  resolveTemplate: vi.fn(),
+  nextInvoiceNo: vi.fn(),
+  recordAudit: vi.fn(),
+  recordSyncEvent: vi.fn(),
+}));
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/db/prisma", () => ({ prisma: { $transaction: mocks.transaction } }));
+vi.mock("@/lib/invoice-templates/service", () => ({ resolveInvoiceTemplate: mocks.resolveTemplate }));
+vi.mock("@/lib/masters/sequence", () => ({ nextInvoiceNo: mocks.nextInvoiceNo }));
+vi.mock("@/lib/audit/record", () => ({ recordAudit: mocks.recordAudit }));
+vi.mock("@/lib/events/bus", () => ({ recordSyncEvent: mocks.recordSyncEvent }));
+
+import { previewReplacementInvoice, replaceInvoice } from "@/lib/invoices/service";
+
+const actor = { id: "u1", loginId: "manager", name: "매니저", role: UserRole.MANAGER, isActive: true, version: 1 };
+const source = {
+  id: "invoice-old",
+  invoiceNo: "I-OLD",
+  siteId: "site-1",
+  periodStart: new Date("2026-07-01T00:00:00.000Z"),
+  periodEnd: new Date("2026-07-31T23:59:59.999Z"),
+  issueDate: new Date("2026-07-20T00:00:00.000Z"),
+  displayMode: "AGGREGATED" as const,
+  memo: null,
+  status: "ISSUED" as const,
+  version: 2,
+  recipientName: "강남 현장",
+};
+const entries = [
+  candidate("r1", "기존 계약", 100_000, "invoice-old"),
+  candidate("r2", "추가 계약", 200_000, null),
+];
+const settings = { sourceVersion: 2, issueDate: "2026-07-25", displayMode: "ITEMIZED" as const, memo: "7월 전체", templateId: "system-default", templateVersion: 1 };
+
+describe("invoice replacement service", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const tx = {
+      companySetting: { findUnique: mocks.companyFindUnique },
+      invoiceDocument: { findUnique: mocks.invoiceFindUnique, findMany: mocks.invoiceFindMany, create: mocks.invoiceCreate, updateMany: mocks.invoiceUpdateMany },
+      revenueEntry: { findMany: mocks.revenueFindMany, updateMany: mocks.revenueUpdateMany },
+      contract: { findMany: mocks.contractFindMany },
+      invoiceLine: { create: mocks.lineCreate },
+      invoiceRevenueLink: { createMany: mocks.linkCreateMany },
+    };
+    mocks.transaction.mockImplementation(async (callback) => callback(tx));
+    mocks.companyFindUnique.mockResolvedValue({ id: "default", businessRegistrationNo: "123", companyName: "공급사", representativeName: "대표", address: "서울", businessType: "건설", businessItem: "임대", phone: "02", defaultMessage: "공급합니다" });
+    mocks.invoiceFindUnique.mockImplementation(({ where }: { where: { id: string } }) => where.id === source.id ? source : { ...source, id: "invoice-new", invoiceNo: "I-NEW", status: "ISSUED", version: 1, lines: [], site: { code: "S1" }, supersededBy: null, supersedes: [{ id: source.id, invoiceNo: source.invoiceNo }] });
+    mocks.invoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, version: source.version }]);
+    mocks.revenueFindMany.mockResolvedValue(entries);
+    mocks.contractFindMany.mockResolvedValue([{ id: "contract-missing", contractNo: "C-NEW", title: "말일 추가 계약" }]);
+    mocks.resolveTemplate.mockResolvedValue({ id: "system-default", version: 1, name: "기본", config: DEFAULT_INVOICE_TEMPLATE_CONFIG, configJson: JSON.stringify(DEFAULT_INVOICE_TEMPLATE_CONFIG) });
+    mocks.nextInvoiceNo.mockResolvedValue("I-NEW");
+    mocks.invoiceCreate.mockResolvedValue({ id: "invoice-new", invoiceNo: "I-NEW", siteId: "site-1", subtotal: 300_000, taxAmount: 30_000, totalAmount: 330_000 });
+    mocks.lineCreate.mockImplementation(({ data }: { data: { itemName: string } }) => Promise.resolve({ id: `line-${data.itemName}` }));
+    mocks.linkCreateMany.mockResolvedValue({ count: 1 });
+    mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.revenueUpdateMany.mockResolvedValue({ count: 2 });
+  });
+
+  it("previews every confirmed revenue in the source period and reports missing-contract warnings", async () => {
+    const preview = await previewReplacementInvoice(source.id, settings);
+
+    expect(preview.expectedRevenueEntryIds).toEqual(["r1", "r2"]);
+    expect(preview.document).toMatchObject({ siteId: "site-1", subtotal: 300_000, periodStart: "2026-07-01", periodEnd: "2026-07-31" });
+    expect(preview.warnings).toEqual([{ id: "contract-missing", contractNo: "C-NEW", title: "말일 추가 계약" }]);
+  });
+
+  it("atomically creates a new snapshot, supersedes the current document, and moves active revenue pointers", async () => {
+    const document = await replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1", "r2"] });
+
+    expect(document).toMatchObject({ id: "invoice-new", invoiceNo: "I-NEW" });
+    expect(mocks.invoiceUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: { in: [source.id] }, status: "ISSUED" },
+      data: expect.objectContaining({ status: "SUPERSEDED", supersededByInvoiceId: "invoice-new" }),
+    }));
+    expect(mocks.revenueUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { currentInvoiceDocumentId: "invoice-new" } }));
+    expect(mocks.recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "REPLACE", entityId: "invoice-new" }));
+  });
+
+  it("rejects issue when the confirmed revenue set changed after preview", async () => {
+    await expect(replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1"] })).rejects.toMatchObject({ status: 409, code: "INVOICE_REPLACEMENT_CHANGED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+});
+
+function candidate(id: string, title: string, salesAmount: number, currentInvoiceDocumentId: string | null) {
+  return {
+    id,
+    siteId: "site-1",
+    revenueDate: new Date("2026-07-01T00:00:00.000Z"),
+    title,
+    description: null,
+    quantity: 1,
+    unit: "식",
+    appliedSalesPrice: salesAmount,
+    salesAmount,
+    sourceType: "CONTRACT" as const,
+    currentInvoiceDocumentId,
+    site: { code: "S1", name: "강남 현장", address: "서울" },
+    item: { name: title },
+  };
+}
