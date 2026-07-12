@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { INVOICE_TEMPLATE_SYSTEM_ID } from "@/lib/invoice-templates/config";
+
 const dateRange = z.object({
   startDate: z.iso.date(),
   endDate: z.iso.date(),
@@ -20,6 +22,8 @@ export const invoiceIssueInputSchema = z.object({
   issueDate: z.iso.date(),
   displayMode: z.enum(["AGGREGATED", "ITEMIZED"]),
   memo: z.string().trim().max(500).optional().nullable(),
+  templateId: z.string().min(1).default(INVOICE_TEMPLATE_SYSTEM_ID),
+  templateVersion: z.number().int().positive().default(1),
 }).superRefine((value, context) => {
   if (value.periodStart > value.periodEnd) context.addIssue({ code: "custom", message: "종료일은 시작일보다 빠를 수 없습니다.", path: ["periodEnd"] });
 });

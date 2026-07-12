@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { resolveInvoiceTemplate } from "@/lib/invoice-templates/service";
 import { buildInvoiceDrafts, type InvoiceSourceEntry } from "@/lib/invoices/calculation";
 import type { InvoiceCandidateQuery, InvoiceIssueInput, InvoiceListQuery } from "@/lib/invoices/schemas";
 import { nextInvoiceNo } from "@/lib/masters/sequence";
@@ -47,11 +48,15 @@ export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
 }
 
 export async function previewInvoices(input: InvoiceIssueInput) {
-  const [setting, entries] = await prisma.$transaction(async (tx) => Promise.all([
+  const [setting, entries, template] = await prisma.$transaction(async (tx) => Promise.all([
     requireCompanySetting(tx),
     loadSelectedEntries(tx, input),
+    resolveInvoiceTemplate(input.templateId, input.templateVersion, tx),
   ]));
-  return { documents: buildInvoiceDrafts(entries.map(toSourceEntry), input.displayMode).map((document) => ({ ...document, issueDate: input.issueDate, periodStart: input.periodStart, periodEnd: input.periodEnd, displayMode: input.displayMode, memo: input.memo ?? null, supplier: companySnapshot(setting) })) };
+  return {
+    template,
+    documents: buildInvoiceDrafts(entries.map(toSourceEntry), input.displayMode).map((document) => ({ ...document, issueDate: input.issueDate, periodStart: input.periodStart, periodEnd: input.periodEnd, displayMode: input.displayMode, memo: input.memo ?? null, supplier: companySnapshot(setting), templateConfig: template.config })),
+  };
 }
 
 export async function issueInvoices(actor: SessionUser, input: InvoiceIssueInput) {
@@ -59,6 +64,7 @@ export async function issueInvoices(actor: SessionUser, input: InvoiceIssueInput
     return await prisma.$transaction(async (tx) => {
       const setting = await requireCompanySetting(tx);
       const entries = await loadSelectedEntries(tx, input);
+      const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
       const drafts = buildInvoiceDrafts(entries.map(toSourceEntry), input.displayMode);
       const issueDate = dbDate(input.issueDate);
       const issuedAt = new Date();
@@ -88,6 +94,10 @@ export async function issueInvoices(actor: SessionUser, input: InvoiceIssueInput
           taxAmount: draft.taxAmount,
           totalAmount: draft.totalAmount,
           memo: input.memo?.trim() || null,
+          templateIdSnapshot: template.id,
+          templateVersionSnapshot: template.version,
+          templateName: template.name,
+          templateConfigJson: template.configJson,
           createdById: actor.id,
           issuedById: actor.id,
           issuedAt,
@@ -106,7 +116,7 @@ export async function issueInvoices(actor: SessionUser, input: InvoiceIssueInput
           } });
           await tx.invoiceRevenueLink.createMany({ data: line.revenueEntryIds.map((revenueEntryId) => ({ invoiceDocumentId: document.id, invoiceLineId: savedLine.id, revenueEntryId })) });
         }
-        await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo, siteId: draft.siteId, revenueEntryIds: draft.lines.flatMap((line) => line.revenueEntryIds), subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount } });
+        await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo, siteId: draft.siteId, revenueEntryIds: draft.lines.flatMap((line) => line.revenueEntryIds), subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount, templateId: template.id, templateVersion: template.version } });
         await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, actorId: actor.id });
         documents.push(await getInvoiceDocument(document.id, tx));
       }
