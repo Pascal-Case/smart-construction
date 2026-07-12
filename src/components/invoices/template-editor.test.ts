@@ -5,12 +5,20 @@ import { moveInvoiceBlock, moveInvoiceColumn, resizeInvoiceBlock, updateInvoiceC
 
 describe("invoice template editor state", () => {
   it("moves and resizes blocks on the grid without crossing the A4 boundary", () => {
-    const moved = moveInvoiceBlock(DEFAULT_INVOICE_TEMPLATE_CONFIG, "title", 30, -10);
-    expect(moved.blocks.title).toMatchObject({ x: 0, y: 0 });
+    const moved = moveInvoiceBlock(DEFAULT_INVOICE_TEMPLATE_CONFIG, "memo", 30, 50);
+    expect(moved.blocks.memo).toMatchObject({ x: 0, y: 32 });
 
-    const resized = resizeInvoiceBlock(DEFAULT_INVOICE_TEMPLATE_CONFIG, "title", 30, 40);
-    expect(resized.blocks.title.width).toBe(24);
-    expect(resized.blocks.title.height).toBe(34);
+    const resized = resizeInvoiceBlock(DEFAULT_INVOICE_TEMPLATE_CONFIG, "memo", 30, 40);
+    expect(resized.blocks.memo.width).toBe(24);
+    expect(resized.blocks.memo.height).toBe(9);
+  });
+
+  it("rejects moves and resizes that overlap another block", () => {
+    const moved = moveInvoiceBlock(DEFAULT_INVOICE_TEMPLATE_CONFIG, "recipient", 0, -3);
+    expect(moved.blocks.recipient).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG.blocks.recipient);
+
+    const resized = resizeInvoiceBlock(DEFAULT_INVOICE_TEMPLATE_CONFIG, "title", 0, 1);
+    expect(resized.blocks.title).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG.blocks.title);
   });
 
   it("reorders columns and updates their presentation values", () => {

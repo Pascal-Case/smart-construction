@@ -379,57 +379,64 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
 
 .invoice-page {
   position: relative;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  grid-template-rows: repeat(34, minmax(0, 1fr));
   width: 210mm;
-  min-height: 297mm;
+  height: 297mm;
   padding: 8mm;
   background: white;
   color: #111827;
   box-shadow: 0 18px 45px rgb(15 23 42 / 12%);
   box-sizing: border-box;
   font-family: "Malgun Gothic", "Noto Sans KR", sans-serif;
+  overflow: hidden;
 }
 
 .invoice-title {
-  margin: 0 auto 2mm;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
   text-align: center;
-  font-size: 9mm;
-  font-weight: 700;
-  letter-spacing: 3mm;
+  letter-spacing: 0.25em;
+  overflow: hidden;
 }
 
-.invoice-number {
-  margin-bottom: 1.5mm;
-  text-align: right;
-  font-size: 2.6mm;
-}
-
-.invoice-parties {
-  display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  min-height: 39mm;
-  border: 0.45mm solid #111;
+.invoice-title small {
+  position: absolute;
+  right: 1mm;
+  bottom: 0.5mm;
+  font-size: 7pt;
+  font-weight: 400;
+  letter-spacing: normal;
 }
 
 .invoice-recipient {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 3mm 5mm;
-  border-right: 0.35mm solid #111;
-  font-size: 3mm;
+  min-width: 0;
+  min-height: 0;
+  padding: 2mm 4mm;
+  border: 0.35mm solid;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .invoice-date {
   margin: 0 0 4mm;
   text-align: center;
-  font-size: 3.8mm;
+  font-size: 1.15em;
 }
 
 .invoice-recipient-name {
   margin: 0;
   padding-bottom: 1.5mm;
   border-bottom: 0.25mm solid #111;
-  font-size: 4.2mm;
+  font-size: 1.3em;
   font-weight: 700;
 }
 
@@ -440,7 +447,7 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
 
 .invoice-recipient-address {
   margin: 1.5mm 0 0;
-  font-size: 2.7mm;
+  font-size: 0.9em;
 }
 
 .invoice-message {
@@ -451,24 +458,29 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
 .invoice-supplier,
 .invoice-lines {
   width: 100%;
+  height: 100%;
   border-collapse: collapse;
   table-layout: fixed;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .invoice-supplier {
-  font-size: 2.55mm;
+  min-width: 0;
+  min-height: 0;
+  border: 0.35mm solid;
 }
 
 .invoice-supplier th,
 .invoice-supplier td {
-  height: 7.5mm;
-  padding: 0.8mm 1.2mm;
-  border: 0.2mm solid #111;
+  height: 20%;
+  padding: 0.4mm 0.8mm;
+  border: 0.2mm solid;
   overflow-wrap: anywhere;
 }
 
 .invoice-supplier th:not(.invoice-supplier-vertical) {
-  width: 19mm;
+  width: 17mm;
   text-align: center;
   font-weight: 600;
 }
@@ -476,21 +488,21 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
 .invoice-supplier-vertical {
   width: 5mm;
   padding: 0 !important;
-  font-size: 3mm;
+  font-size: 1em;
   line-height: 1.45;
 }
 
 .invoice-lines {
-  margin-top: 2mm;
-  border: 0.45mm solid #111;
-  font-size: 2.75mm;
+  min-width: 0;
+  min-height: 0;
+  border: 0.35mm solid;
 }
 
 .invoice-lines th,
 .invoice-lines td {
-  height: 9.6mm;
+  height: var(--invoice-row-height, 9.6mm);
   padding: 1mm 1.2mm;
-  border: 0.2mm solid #111;
+  border: 0.2mm solid;
   overflow-wrap: anywhere;
 }
 
@@ -500,35 +512,32 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
   font-weight: 700;
 }
 
-.invoice-lines th:nth-child(1) { width: 25%; }
-.invoice-lines th:nth-child(2) { width: 25%; }
-.invoice-lines th:nth-child(3) { width: 8%; }
-.invoice-lines th:nth-child(4) { width: 8%; }
-.invoice-lines th:nth-child(5) { width: 15%; }
-.invoice-lines th:nth-child(6) { width: 19%; }
 .invoice-lines .number { text-align: right; font-variant-numeric: tabular-nums; }
 .invoice-blank-row td { color: transparent; }
 
-.invoice-lines tfoot th,
-.invoice-lines tfoot td {
-  height: 8mm;
-  font-size: 3.2mm;
-  font-weight: 700;
-  text-align: center;
-}
-
-.invoice-total {
-  text-align: right !important;
-  padding-right: 3mm !important;
+.invoice-total-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 0;
+  padding: 1mm 3mm;
+  border: 0.35mm solid;
+  box-sizing: border-box;
+  overflow: hidden;
   font-variant-numeric: tabular-nums;
 }
 
 .invoice-bottom {
   display: flex;
   justify-content: space-between;
-  min-height: 6mm;
-  padding-top: 1.5mm;
-  font-size: 2.6mm;
+  align-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 1mm 2mm;
+  border: 0.35mm solid;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 @media print {

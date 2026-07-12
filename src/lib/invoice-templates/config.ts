@@ -96,8 +96,12 @@ export function calculateRowsPerPage(config: InvoiceTemplateConfig) {
   const table = config.blocks.table;
   const tableHeightMm = (table.height / INVOICE_GRID_ROWS) * INVOICE_PAGE_CONTENT_HEIGHT_MM;
   const headerHeightMm = 8;
-  const rowHeightMm = Math.max(9.6, table.style.fontSizePt * 0.45 + 4);
+  const rowHeightMm = calculateInvoiceRowHeightMm(config);
   return Math.max(1, Math.floor((tableHeightMm - headerHeightMm) / rowHeightMm));
+}
+
+export function calculateInvoiceRowHeightMm(config: InvoiceTemplateConfig) {
+  return Math.max(9.6, config.blocks.table.style.fontSizePt * 0.45 + 4);
 }
 
 export function cloneDefaultInvoiceTemplateConfig() {

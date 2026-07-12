@@ -6,7 +6,7 @@ export function moveInvoiceBlock(config: InvoiceTemplateConfig, key: InvoiceBloc
   const block = next.blocks[key];
   block.x = clamp(block.x + deltaX, 0, INVOICE_GRID_COLUMNS - block.width);
   block.y = clamp(block.y + deltaY, 0, INVOICE_GRID_ROWS - block.height);
-  return next;
+  return overlapsAnotherBlock(next, key) ? structuredClone(config) : next;
 }
 
 export function resizeInvoiceBlock(config: InvoiceTemplateConfig, key: InvoiceBlockKey, deltaWidth: number, deltaHeight: number) {
@@ -14,7 +14,7 @@ export function resizeInvoiceBlock(config: InvoiceTemplateConfig, key: InvoiceBl
   const block = next.blocks[key];
   block.width = clamp(block.width + deltaWidth, 1, INVOICE_GRID_COLUMNS - block.x);
   block.height = clamp(block.height + deltaHeight, 1, INVOICE_GRID_ROWS - block.y);
-  return next;
+  return overlapsAnotherBlock(next, key) ? structuredClone(config) : next;
 }
 
 export function updateInvoiceBlockStyle(config: InvoiceTemplateConfig, key: InvoiceBlockKey, patch: Partial<InvoiceTemplateStyle>) {
@@ -40,4 +40,13 @@ export function updateInvoiceColumn(config: InvoiceTemplateConfig, key: InvoiceC
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function overlapsAnotherBlock(config: InvoiceTemplateConfig, key: InvoiceBlockKey) {
+  const block = config.blocks[key];
+  return Object.entries(config.blocks).some(([otherKey, other]) => otherKey !== key
+    && block.x < other.x + other.width
+    && block.x + block.width > other.x
+    && block.y < other.y + other.height
+    && block.y + block.height > other.y);
 }
