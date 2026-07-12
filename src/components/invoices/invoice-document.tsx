@@ -5,6 +5,7 @@ import {
   calculateInvoiceRowHeightMm,
   cloneDefaultInvoiceTemplateConfig,
   INVOICE_COLUMN_LABELS,
+  normalizeVisibleColumnWidths,
   type InvoiceBlockKey,
   type InvoiceColumnKey,
   type InvoiceTemplateConfig,
@@ -53,7 +54,7 @@ function InvoicePage({ document, config, lines, rowsPerPage, pageIndex, pageCoun
   const issueDate = formatKoreanDate(document.issueDate);
   const blanks = Math.max(0, rowsPerPage - lines.length);
   const lastPage = pageIndex === pageCount - 1;
-  const columns = config.columns.filter((column) => column.visible);
+  const columns = normalizeVisibleColumnWidths(config.columns);
   return <article className="invoice-page">
     <section className="invoice-title" style={blockStyle(config, "title")}>
       <span>거 래 명 세 표</span>
@@ -72,8 +73,8 @@ function InvoicePage({ document, config, lines, rowsPerPage, pageIndex, pageCoun
       <tr><th>업태</th><td>{document.supplierBusinessType}</td><th>종목</th><td>{document.supplierBusinessItem}</td></tr>
       <tr><th>전화번호</th><td colSpan={3}>{document.supplierPhone}</td></tr>
     </tbody></table>
-    <table className="invoice-lines" style={{ ...blockStyle(config, "table"), "--invoice-row-height": `${calculateInvoiceRowHeightMm(config)}mm` } as CSSProperties}>
-      <colgroup>{columns.map((column) => <col key={column.key} style={{ width: `${column.width}%` }} />)}</colgroup>
+    <table className="invoice-lines" style={{ ...blockStyle(config, "table"), "--invoice-row-height": `${calculateInvoiceRowHeightMm(config)}mm`, "--invoice-table-border-color": config.blocks.table.style.borderColor } as CSSProperties}>
+      <colgroup>{columns.map((column) => <col key={column.key} style={{ width: `${column.normalizedWidth}%` }} />)}</colgroup>
       <thead><tr>{columns.map((column) => <th key={column.key}>{INVOICE_COLUMN_LABELS[column.key]}</th>)}</tr></thead>
       <tbody>
         {lines.map((line, index) => <tr key={line.id ?? `${pageIndex}-${index}`}>{columns.map((column) => <td key={column.key} className={isNumeric(column.key) ? "number" : undefined}>{formatCell(line, column.key)}</td>)}</tr>)}

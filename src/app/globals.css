@@ -496,6 +496,7 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
   min-width: 0;
   min-height: 0;
   border: 0.35mm solid;
+  border-color: var(--invoice-table-border-color, currentColor);
 }
 
 .invoice-lines th,
@@ -503,6 +504,7 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
   height: var(--invoice-row-height, 9.6mm);
   padding: 1mm 1.2mm;
   border: 0.2mm solid;
+  border-color: var(--invoice-table-border-color, currentColor);
   overflow-wrap: anywhere;
 }
 
@@ -531,11 +533,10 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
 .invoice-bottom {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   min-width: 0;
   min-height: 0;
-  padding: 1mm 2mm;
-  border: 0.35mm solid;
+  padding-top: 1.5mm;
   box-sizing: border-box;
   overflow: hidden;
 }

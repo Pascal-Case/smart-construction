@@ -28,6 +28,7 @@ export function TemplateEditor({ config, onChange, readOnly = false }: { config:
   const dragRef = useRef<DragState | null>(null);
   const validation = useMemo(() => invoiceTemplateConfigSchema.safeParse(config), [config]);
   const block = config.blocks[selected];
+  const visibleColumnWeight = config.columns.filter((column) => column.visible).reduce((sum, column) => sum + column.width, 0);
 
   function startPointer(key: InvoiceBlockKey, mode: "move" | "resize", event: PointerEvent<HTMLElement>) {
     if (readOnly) return;
@@ -84,9 +85,10 @@ export function TemplateEditor({ config, onChange, readOnly = false }: { config:
         <ColorField label="테두리" value={block.style.borderColor} disabled={readOnly} onChange={(borderColor) => onChange(updateInvoiceBlockStyle(config, selected, { borderColor }))} />
       </div>
       <div className="space-y-2 border-t pt-4"><p className="font-semibold">품목표 열</p>
+        <div className="rounded-lg bg-muted/60 px-3 py-2 text-xs"><span className="flex items-center justify-between"><span>표시 열 비율 합계</span><strong>{visibleColumnWeight}</strong></span><p className="mt-1 text-muted-foreground">합계와 관계없이 출력 시 100% 기준으로 자동 환산합니다.</p></div>
         {config.columns.map((column, index) => <div key={column.key} className="grid grid-cols-[1fr_4.5rem_auto] items-center gap-2 rounded-lg border p-2 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" disabled={readOnly || column.key === "itemName" || column.key === "supplyAmount"} checked={column.visible} onChange={(event) => onChange(updateInvoiceColumn(config, column.key, { visible: event.target.checked }))} />{INVOICE_COLUMN_LABELS[column.key]}</label>
-          <Input aria-label={`${INVOICE_COLUMN_LABELS[column.key]} 너비`} disabled={readOnly} type="number" min={5} max={60} value={column.width} onChange={(event) => onChange(updateInvoiceColumn(config, column.key, { width: Number(event.target.value) }))} />
+          <Input aria-label={`${INVOICE_COLUMN_LABELS[column.key]} 비율`} disabled={readOnly} type="number" min={5} max={60} value={column.width} onChange={(event) => onChange(updateInvoiceColumn(config, column.key, { width: Number(event.target.value) }))} />
           <div className="flex"><Button type="button" size="icon-sm" variant="ghost" disabled={readOnly || index === 0} onClick={() => onChange(moveInvoiceColumn(config, column.key, -1))}><ArrowUp /><span className="sr-only">앞으로</span></Button><Button type="button" size="icon-sm" variant="ghost" disabled={readOnly || index === config.columns.length - 1} onClick={() => onChange(moveInvoiceColumn(config, column.key, 1))}><ArrowDown /><span className="sr-only">뒤로</span></Button></div>
         </div>)}
       </div>

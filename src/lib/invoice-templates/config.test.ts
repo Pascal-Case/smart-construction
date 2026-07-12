@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_INVOICE_TEMPLATE_CONFIG, calculateRowsPerPage, normalizeTemplateName } from "@/lib/invoice-templates/config";
+import { DEFAULT_INVOICE_TEMPLATE_CONFIG, calculateRowsPerPage, normalizeTemplateName, normalizeVisibleColumnWidths } from "@/lib/invoice-templates/config";
 import { decodeInvoiceTemplateConfig, decodeInvoiceTemplateSnapshot, invoiceTemplateConfigSchema } from "@/lib/invoice-templates/schemas";
 
 describe("invoice template config", () => {
@@ -55,5 +55,21 @@ describe("invoice template config", () => {
   it("falls back to the immutable default when an old snapshot is corrupt", () => {
     expect(decodeInvoiceTemplateSnapshot("{not-json")).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG);
     expect(decodeInvoiceTemplateSnapshot(JSON.stringify({ schemaVersion: 999 }))).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG);
+  });
+
+  it("treats visible column widths as relative weights and excludes hidden columns", () => {
+    const config = structuredClone(DEFAULT_INVOICE_TEMPLATE_CONFIG);
+    config.columns.find((column) => column.key === "quantity")!.width = 25;
+    config.columns.find((column) => column.key === "unit")!.visible = false;
+    config.columns.find((column) => column.key === "unitPrice")!.visible = false;
+    config.columns.find((column) => column.key === "supplyAmount")!.width = 55;
+
+    expect(config.columns.filter((column) => column.visible).reduce((sum, column) => sum + column.width, 0)).toBe(130);
+    expect(invoiceTemplateConfigSchema.safeParse(config).success).toBe(true);
+
+    const normalized = normalizeVisibleColumnWidths(config.columns);
+    expect(normalized.reduce((sum, column) => sum + column.normalizedWidth, 0)).toBeCloseTo(100);
+    expect(normalized.find((column) => column.key === "unit")).toBeUndefined();
+    expect(normalized.find((column) => column.key === "supplyAmount")?.normalizedWidth).toBeCloseTo(42.3077, 3);
   });
 });

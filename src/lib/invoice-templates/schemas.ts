@@ -65,9 +65,6 @@ export const invoiceTemplateConfigSchema = z.object({
   if (new Set(keys).size !== INVOICE_COLUMN_KEYS.length || INVOICE_COLUMN_KEYS.some((key) => !keys.includes(key))) {
     context.addIssue({ code: "custom", path: ["columns"], message: "모든 열을 중복 없이 포함해야 합니다." });
   }
-  if (config.columns.reduce((sum, column) => sum + column.width, 0) !== 100) {
-    context.addIssue({ code: "custom", path: ["columns"], message: "열 너비 합계는 100이어야 합니다." });
-  }
   for (const requiredKey of ["itemName", "supplyAmount"] as const) {
     if (!config.columns.find((column) => column.key === requiredKey)?.visible) {
       context.addIssue({ code: "custom", path: ["columns"], message: "품명과 금액 열은 숨길 수 없습니다." });

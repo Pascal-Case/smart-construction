@@ -55,6 +55,18 @@ describe("invoice print document", () => {
     expect(html.indexOf("금 액")).toBeLessThan(html.indexOf("품 명"));
     expect(html).not.toContain("규 격");
   });
+
+  it("keeps empty printable rows and gives them a border color independent from transparent text", () => {
+    const document = fixture({
+      lines: [{ itemName: "하이바", specification: "07/15 ~ 08/14", quantity: 3, unit: "EA", unitPrice: 50_000, supplyAmount: 82_258 }],
+      subtotal: 82_258,
+    });
+
+    const html = renderToStaticMarkup(<InvoiceDocumentPages documents={[document]} />);
+
+    expect(html.match(/class="invoice-blank-row"/g)).toHaveLength(11);
+    expect(html).toContain("--invoice-table-border-color:#111111");
+  });
 });
 
 function fixture(overrides: Partial<InvoicePrintDocument> = {}): InvoicePrintDocument {

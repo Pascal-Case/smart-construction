@@ -104,6 +104,13 @@ export function calculateInvoiceRowHeightMm(config: InvoiceTemplateConfig) {
   return Math.max(9.6, config.blocks.table.style.fontSizePt * 0.45 + 4);
 }
 
+export function normalizeVisibleColumnWidths(columns: InvoiceTemplateColumn[]) {
+  const visibleColumns = columns.filter((column) => column.visible);
+  const totalWeight = visibleColumns.reduce((sum, column) => sum + column.width, 0);
+  if (!totalWeight) return [];
+  return visibleColumns.map((column) => ({ ...column, normalizedWidth: (column.width / totalWeight) * 100 }));
+}
+
 export function cloneDefaultInvoiceTemplateConfig() {
   return structuredClone(DEFAULT_INVOICE_TEMPLATE_CONFIG);
 }
