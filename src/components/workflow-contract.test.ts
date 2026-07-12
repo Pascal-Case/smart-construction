@@ -51,7 +51,7 @@ describe("registration workflow contract", () => {
     expect(source).toContain("오늘의 조치 데스크");
     expect(source).toContain("작성 중 매출");
     expect(source).toContain("0원 매출");
-    expect(source).toContain("확정 후 미발행");
+    expect(source).toContain("마감 후 미발행");
     expect(source).toContain('/revenues?exception=ZERO');
   });
 

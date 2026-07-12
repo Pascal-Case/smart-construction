@@ -344,7 +344,7 @@ export function InvoiceManager({
 
   return <div className="space-y-6">
     <div className="flex justify-end">
-      <Button variant="outline" render={<Link href="/invoices/templates" />}>
+      <Button variant="outline" nativeButton={false} render={<Link href="/invoices/templates" />}>
         <Settings2 data-icon="inline-start" />
         {canIssue ? "템플릿 관리" : "템플릿 보기"}
       </Button>
@@ -380,8 +380,8 @@ export function InvoiceManager({
             <span className="font-medium">후보 {candidates.total}개 회차</span>
             <span className="ml-3 text-muted-foreground">선택 {selected.length}개 · {selectedSupply.toLocaleString()}원</span>
           </div>
-          <Button size="sm" variant="outline" onClick={selectAll}>
-            {selected.length === candidates.rows.length ? "전체 해제" : "전체 선택"}
+          <Button size="sm" variant="outline" disabled={candidates.rows.length === 0} onClick={selectAll}>
+            {candidates.rows.length > 0 && selected.length === candidates.rows.length ? "전체 해제" : "전체 선택"}
           </Button>
         </div>
         <div className="max-h-96 overflow-auto rounded-lg border">
@@ -452,7 +452,7 @@ export function InvoiceManager({
             <TableCell><Badge variant="outline">{row.displayMode === "AGGREGATED" ? "합산" : "건별"}</Badge></TableCell>
             <TableCell className="text-right"><div className="flex justify-end gap-1">
               {canIssue && row.status === "ISSUED" && <Button size="sm" variant="outline" onClick={() => openReplacement(row)}><RefreshCw data-icon="inline-start" />대체 발행</Button>}
-              <Button size="sm" variant="ghost" render={<a href={`/invoices/print?ids=${row.id}`} target="_blank" rel="noreferrer" />}><Printer data-icon="inline-start" />재출력</Button>
+              <Button size="sm" variant="ghost" nativeButton={false} render={<a href={`/invoices/print?ids=${row.id}`} target="_blank" rel="noreferrer" />}><Printer data-icon="inline-start" />재출력</Button>
             </div></TableCell>
           </TableRow>)}</TableBody>
         </Table>
