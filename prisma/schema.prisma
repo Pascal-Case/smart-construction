@@ -58,6 +58,11 @@ enum InvoiceDisplayMode {
   ITEMIZED
 }
 
+enum MonthlyCloseState {
+  OPEN
+  CLOSED
+}
+
 model User {
   id           String     @id @default(cuid())
   loginId      String     @unique
@@ -126,6 +131,8 @@ model Site {
   revenueEntries   RevenueEntry[]
   monthlyMemos     MonthlyMemo[]
   invoiceDocuments InvoiceDocument[]
+  monthlyCloses    MonthlyClose[]
+  closeReviews     MonthlyCloseExceptionReview[]
 
   @@index([name])
   @@index([customerName])
@@ -319,6 +326,80 @@ model MonthlyMemo {
   @@index([siteId, updatedAt])
 }
 
+model MonthlyClose {
+  id             String            @id @default(cuid())
+  siteId         String
+  month          String
+  state          MonthlyCloseState @default(OPEN)
+  latestCycleNo  Int               @default(0)
+  version        Int               @default(1)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  site           Site              @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  cycles         MonthlyCloseCycle[]
+  reopens        MonthlyCloseReopen[]
+
+  @@unique([siteId, month])
+  @@index([month, state])
+  @@index([siteId, updatedAt])
+}
+
+model MonthlyCloseCycle {
+  id                   String               @id @default(cuid())
+  monthlyCloseId       String
+  cycleNo              Int
+  revenueCount         Int
+  totalSalesAmount     Int
+  totalCostAmount      Int
+  revenueFingerprint   String
+  exceptionFingerprint String
+  snapshotJson         String
+  closedById           String
+  closedByName         String
+  closedAt             DateTime
+  createdAt            DateTime             @default(now())
+  monthlyClose         MonthlyClose         @relation(fields: [monthlyCloseId], references: [id], onDelete: Restrict)
+  reopens              MonthlyCloseReopen[]
+  invoiceDocument      InvoiceDocument?     @relation("InvoiceCloseCycle")
+
+  @@unique([monthlyCloseId, cycleNo])
+  @@index([closedAt])
+}
+
+model MonthlyCloseReopen {
+  id             String            @id @default(cuid())
+  monthlyCloseId String
+  fromCycleId    String
+  reason         String
+  reopenedById   String
+  reopenedByName String
+  reopenedAt     DateTime
+  createdAt      DateTime          @default(now())
+  monthlyClose   MonthlyClose      @relation(fields: [monthlyCloseId], references: [id], onDelete: Restrict)
+  fromCycle      MonthlyCloseCycle @relation(fields: [fromCycleId], references: [id], onDelete: Restrict)
+
+  @@index([monthlyCloseId, reopenedAt])
+  @@index([fromCycleId])
+}
+
+model MonthlyCloseExceptionReview {
+  id             String   @id @default(cuid())
+  siteId         String
+  month          String
+  exceptionKey   String
+  fingerprint    String
+  reason         String
+  reviewedById   String
+  reviewedByName String
+  reviewedAt     DateTime
+  createdAt      DateTime @default(now())
+  site           Site     @relation(fields: [siteId], references: [id], onDelete: Restrict)
+
+  @@unique([siteId, month, exceptionKey, fingerprint])
+  @@index([month, reviewedAt])
+  @@index([siteId, month])
+}
+
 model SyncEvent {
   id        Int      @id @default(autoincrement())
   type      String
@@ -396,6 +477,7 @@ model InvoiceDocument {
   issuedAt                       DateTime
   supersededAt                   DateTime?
   supersededByInvoiceId          String?
+  monthlyCloseCycleId            String?              @unique
   createdAt                      DateTime             @default(now())
   updatedAt                      DateTime             @updatedAt
   site                           Site                 @relation(fields: [siteId], references: [id], onDelete: Restrict)
@@ -404,6 +486,7 @@ model InvoiceDocument {
   currentRevenueEntries          RevenueEntry[]       @relation("CurrentInvoiceRevenues")
   supersededBy                   InvoiceDocument?      @relation("InvoiceReplacement", fields: [supersededByInvoiceId], references: [id], onDelete: Restrict)
   supersedes                     InvoiceDocument[]     @relation("InvoiceReplacement")
+  monthlyCloseCycle              MonthlyCloseCycle?    @relation("InvoiceCloseCycle", fields: [monthlyCloseCycleId], references: [id], onDelete: Restrict)
 
   @@index([siteId, issueDate])
   @@index([status, issuedAt])
