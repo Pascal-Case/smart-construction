@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_INVOICE_TEMPLATE_CONFIG, calculateRowsPerPage, normalizeTemplateName } from "@/lib/invoice-templates/config";
-import { decodeInvoiceTemplateConfig, invoiceTemplateConfigSchema } from "@/lib/invoice-templates/schemas";
+import { decodeInvoiceTemplateConfig, decodeInvoiceTemplateSnapshot, invoiceTemplateConfigSchema } from "@/lib/invoice-templates/schemas";
 
 describe("invoice template config", () => {
   it("keeps the system default inside the A4 grid with 12 printable rows", () => {
@@ -42,5 +42,18 @@ describe("invoice template config", () => {
     expect(normalizeTemplateName("ＢＩ Blue")).toBe("bi blue");
     expect(decodeInvoiceTemplateConfig(null)).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG);
     expect(decodeInvoiceTemplateConfig(JSON.stringify(DEFAULT_INVOICE_TEMPLATE_CONFIG))).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG);
+  });
+
+  it("rejects a table too short for its header and first row", () => {
+    const config = structuredClone(DEFAULT_INVOICE_TEMPLATE_CONFIG);
+    config.blocks.table.height = 1;
+    config.blocks.total.y = 9;
+    config.blocks.memo.y = 11;
+    expect(invoiceTemplateConfigSchema.safeParse(config).success).toBe(false);
+  });
+
+  it("falls back to the immutable default when an old snapshot is corrupt", () => {
+    expect(decodeInvoiceTemplateSnapshot("{not-json")).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG);
+    expect(decodeInvoiceTemplateSnapshot(JSON.stringify({ schemaVersion: 999 }))).toEqual(DEFAULT_INVOICE_TEMPLATE_CONFIG);
   });
 });

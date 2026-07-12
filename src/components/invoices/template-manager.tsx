@@ -46,7 +46,7 @@ export function TemplateManager({ initialTemplates, canEdit }: { initialTemplate
     if (!cloneName.trim()) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/invoice-templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: cloneName, config: selected.config }) });
+      const response = await fetch("/api/invoice-templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: cloneName, config }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "템플릿을 복제하지 못했습니다.");
       const created: InvoiceTemplateView = body.template;

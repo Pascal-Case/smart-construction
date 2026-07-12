@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 import {
+  calculateInvoiceRowHeightMm,
   cloneDefaultInvoiceTemplateConfig,
   INVOICE_BLOCK_KEYS,
   INVOICE_COLUMN_KEYS,
   INVOICE_FONT_FAMILIES,
   INVOICE_GRID_COLUMNS,
   INVOICE_GRID_ROWS,
+  INVOICE_PAGE_CONTENT_HEIGHT_MM,
   INVOICE_TEMPLATE_SCHEMA_VERSION,
   normalizeTemplateName,
 } from "@/lib/invoice-templates/config";
@@ -71,6 +73,10 @@ export const invoiceTemplateConfigSchema = z.object({
       context.addIssue({ code: "custom", path: ["columns"], message: "품명과 금액 열은 숨길 수 없습니다." });
     }
   }
+  const tableHeightMm = (config.blocks.table.height / INVOICE_GRID_ROWS) * INVOICE_PAGE_CONTENT_HEIGHT_MM;
+  if (tableHeightMm < 8 + calculateInvoiceRowHeightMm(config)) {
+    context.addIssue({ code: "custom", path: ["blocks", "table", "height"], message: "품목표는 헤더와 최소 1개 행이 들어갈 높이가 필요합니다." });
+  }
 });
 
 const templateName = z.string().trim().min(1, "템플릿 이름을 입력해 주세요.").max(80);
@@ -87,6 +93,14 @@ export function decodeInvoiceTemplateConfig(value: string | null | undefined) {
   if (!value) return cloneDefaultInvoiceTemplateConfig();
   const parsed: unknown = JSON.parse(value);
   return invoiceTemplateConfigSchema.parse(parsed);
+}
+
+export function decodeInvoiceTemplateSnapshot(value: string | null | undefined) {
+  try {
+    return decodeInvoiceTemplateConfig(value);
+  } catch {
+    return cloneDefaultInvoiceTemplateConfig();
+  }
 }
 
 export type InvoiceTemplateCreateInput = z.infer<typeof invoiceTemplateCreateSchema>;
