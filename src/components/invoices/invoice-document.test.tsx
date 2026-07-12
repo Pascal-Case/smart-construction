@@ -67,6 +67,20 @@ describe("invoice print document", () => {
     expect(html.match(/class="invoice-blank-row"/g)).toHaveLength(11);
     expect(html).toContain("--invoice-table-border-color:#111111");
   });
+
+  it("marks every printed page of a superseded document without changing its snapshot rows", () => {
+    const document = fixture({
+      status: "SUPERSEDED",
+      supersededByInvoiceNo: "INV-202607-0002",
+      lines: Array.from({ length: 13 }, (_, index) => ({ itemName: `품목 ${index + 1}`, specification: null, quantity: 1, unit: "EA", unitPrice: 1_000, supplyAmount: 1_000 })),
+    });
+
+    const html = renderToStaticMarkup(<InvoiceDocumentPages documents={[document]} />);
+
+    expect(html.match(/대체된 과거 발행본/g)).toHaveLength(2);
+    expect(html.match(/INV-202607-0002/g)).toHaveLength(2);
+    expect(html).toContain("품목 13");
+  });
 });
 
 function fixture(overrides: Partial<InvoicePrintDocument> = {}): InvoicePrintDocument {

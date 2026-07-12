@@ -50,6 +50,7 @@ enum RevenueStatus {
 enum InvoiceStatus {
   DRAFT
   ISSUED
+  SUPERSEDED
 }
 
 enum InvoiceDisplayMode {
@@ -285,17 +286,20 @@ model RevenueEntry {
   updatedById                String
   createdAt                  DateTime             @default(now())
   updatedAt                  DateTime             @updatedAt
+  currentInvoiceDocumentId   String?
   site                       Site                 @relation(fields: [siteId], references: [id], onDelete: Restrict)
   contract                   Contract?            @relation(fields: [contractId], references: [id], onDelete: Restrict)
   contractLine               ContractLine?        @relation(fields: [contractLineId], references: [id], onDelete: Restrict)
   item                       Item?                @relation(fields: [itemId], references: [id], onDelete: Restrict)
   invoiceLinks               InvoiceRevenueLink[]
+  currentInvoiceDocument     InvoiceDocument?     @relation("CurrentInvoiceRevenues", fields: [currentInvoiceDocumentId], references: [id], onDelete: SetNull)
 
   @@index([revenueDate, status])
   @@index([siteId, revenueDate])
   @@index([sourceType, status])
   @@index([contractId])
   @@index([contractLineId])
+  @@index([currentInvoiceDocumentId])
 }
 
 model MonthlyMemo {
@@ -390,15 +394,21 @@ model InvoiceDocument {
   createdById                    String
   issuedById                     String
   issuedAt                       DateTime
+  supersededAt                   DateTime?
+  supersededByInvoiceId          String?
   createdAt                      DateTime             @default(now())
   updatedAt                      DateTime             @updatedAt
   site                           Site                 @relation(fields: [siteId], references: [id], onDelete: Restrict)
   lines                          InvoiceLine[]
   revenueLinks                   InvoiceRevenueLink[]
+  currentRevenueEntries          RevenueEntry[]       @relation("CurrentInvoiceRevenues")
+  supersededBy                   InvoiceDocument?      @relation("InvoiceReplacement", fields: [supersededByInvoiceId], references: [id], onDelete: Restrict)
+  supersedes                     InvoiceDocument[]     @relation("InvoiceReplacement")
 
   @@index([siteId, issueDate])
   @@index([status, issuedAt])
   @@index([periodStart, periodEnd])
+  @@index([supersededByInvoiceId])
 }
 
 model InvoiceLine {
@@ -422,13 +432,15 @@ model InvoiceRevenueLink {
   id                String          @id @default(cuid())
   invoiceDocumentId String
   invoiceLineId     String
-  revenueEntryId    String          @unique
+  revenueEntryId    String
   invoiceDocument   InvoiceDocument @relation(fields: [invoiceDocumentId], references: [id], onDelete: Cascade)
   invoiceLine       InvoiceLine     @relation(fields: [invoiceLineId], references: [id], onDelete: Cascade)
   revenueEntry      RevenueEntry    @relation(fields: [revenueEntryId], references: [id], onDelete: Restrict)
 
   @@index([invoiceDocumentId])
   @@index([invoiceLineId])
+  @@index([revenueEntryId])
+  @@unique([invoiceDocumentId, revenueEntryId])
 }
 
 model SystemSetting {

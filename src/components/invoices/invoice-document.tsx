@@ -37,6 +37,8 @@ export type InvoicePrintDocument = {
   supplyMessage: string;
   subtotal: number;
   memo: string | null;
+  status?: "DRAFT" | "ISSUED" | "SUPERSEDED";
+  supersededByInvoiceNo?: string | null;
   lines: InvoicePrintLine[];
   templateConfig?: InvoiceTemplateConfig;
 };
@@ -56,6 +58,7 @@ function InvoicePage({ document, config, lines, rowsPerPage, pageIndex, pageCoun
   const lastPage = pageIndex === pageCount - 1;
   const columns = normalizeVisibleColumnWidths(config.columns);
   return <article className="invoice-page">
+    {document.status === "SUPERSEDED" && <div className="invoice-superseded-banner">대체된 과거 발행본 · 최신본 {document.supersededByInvoiceNo ?? "확인 필요"}</div>}
     <section className="invoice-title" style={blockStyle(config, "title")}>
       <span>거 래 명 세 표</span>
       <small>No. {document.invoiceNo}{pageCount > 1 ? ` · ${pageIndex + 1}/${pageCount}` : ""}</small>

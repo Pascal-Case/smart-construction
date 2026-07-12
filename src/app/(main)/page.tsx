@@ -54,19 +54,19 @@ export default async function HomePage() {
         OR: [
           { status: RevenueStatus.DRAFT },
           { salesAmount: 0, status: { not: RevenueStatus.CANCELED } },
-          { status: RevenueStatus.CONFIRMED, invoiceLinks: { none: {} } },
+          { status: RevenueStatus.CONFIRMED, currentInvoiceDocumentId: null },
         ],
       },
       select: {
         revenueDate: true,
         salesAmount: true,
         status: true,
-        _count: { select: { invoiceLinks: true } },
+        currentInvoiceDocumentId: true,
       },
     }),
   ]);
   const summary = buildDashboardSummary({ year, siteCount, invoiceCount, revenues });
-  const actionDesk = buildDashboardActionDesk(actionRevenues.map((row) => ({ ...row, invoiceLinkCount: row._count.invoiceLinks })));
+  const actionDesk = buildDashboardActionDesk(actionRevenues.map((row) => ({ ...row, hasCurrentInvoice: row.currentInvoiceDocumentId != null })));
   const recentActions = auditLogs.map((log) => ({ ...log, message: formatRecentAction(log) }));
 
   const metrics = [

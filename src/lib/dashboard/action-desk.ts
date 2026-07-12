@@ -2,7 +2,7 @@ type DashboardActionRevenue = {
   revenueDate: Date;
   salesAmount: number;
   status: string;
-  invoiceLinkCount: number;
+  hasCurrentInvoice: boolean;
 };
 
 type ActionSummary = { count: number; amount: number; oldestDate: Date | null };
@@ -11,7 +11,7 @@ export function buildDashboardActionDesk(rows: DashboardActionRevenue[]) {
   return {
     draft: summarize(rows.filter((row) => row.status === "DRAFT")),
     zero: summarize(rows.filter((row) => row.status !== "CANCELED" && row.salesAmount === 0)),
-    unissued: summarize(rows.filter((row) => row.status === "CONFIRMED" && row.invoiceLinkCount === 0)),
+    unissued: summarize(rows.filter((row) => row.status === "CONFIRMED" && !row.hasCurrentInvoice)),
   };
 }
 
