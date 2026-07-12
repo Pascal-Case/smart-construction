@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, FileCheck2, LockKeyhole, RefreshCw, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { MonthCloseException } from "@/lib/monthly-close/types";
 
-type ControlRoomData = {
+export type ControlRoomData = {
   month: string;
   rows: MonthCloseControlRoomRow[];
   summary: {
@@ -35,10 +35,10 @@ type ControlRoomData = {
 
 type ReviewTarget = { siteId: string; siteName: string; exception: MonthCloseException };
 
-export function MonthCloseControlRoom({ canClose, isAdmin }: { canClose: boolean; isAdmin: boolean }) {
-  const [month, setMonth] = useState(() => localMonthKey(new Date()));
+export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isAdmin }: { initialMonth: string; initialData: ControlRoomData; canClose: boolean; isAdmin: boolean }) {
+  const [month, setMonth] = useState(initialMonth);
   const [view, setView] = useState<MonthCloseView>("exceptions");
-  const [data, setData] = useState<ControlRoomData | null>(null);
+  const [data, setData] = useState<ControlRoomData | null>(initialData);
   const [selected, setSelected] = useState<string[]>([]);
   const [reviewTarget, setReviewTarget] = useState<ReviewTarget | null>(null);
   const [reviewReason, setReviewReason] = useState("");
@@ -46,7 +46,7 @@ export function MonthCloseControlRoom({ canClose, isAdmin }: { canClose: boolean
   const [reopenReason, setReopenReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  async function load() {
     setBusy(true);
     try {
       const response = await fetch(`/api/monthly-closes?${new URLSearchParams({ month, view: "all" })}`);
@@ -60,12 +60,11 @@ export function MonthCloseControlRoom({ canClose, isAdmin }: { canClose: boolean
     } finally {
       setBusy(false);
     }
-  }, [month]);
+  }
 
-  useEffect(() => { void load(); }, [load]);
   useRealtimeRefresh(["monthlyClose.changed", "contract.changed", "revenue.changed", "invoice.changed"], () => { void load(); });
 
-  const rows = useMemo(() => sortControlRoomRows(filterControlRoomRows(data?.rows ?? [], view)), [data, view]);
+  const rows = sortControlRoomRows(filterControlRoomRows(data?.rows ?? [], view));
   const eligibleRows = (data?.rows ?? []).filter((row) => row.close?.state !== "CLOSED" && row.evaluation.canClose);
   const selectedRows = (data?.rows ?? []).filter((row) => selected.includes(row.site.id) && row.close?.state !== "CLOSED");
 
@@ -158,9 +157,9 @@ export function MonthCloseControlRoom({ canClose, isAdmin }: { canClose: boolean
 
   return <div className="space-y-5">
     <section className="flex flex-wrap items-end justify-between gap-3 rounded-xl border bg-card p-4">
-      <div className="w-full max-w-xs space-y-1.5"><Label>귀속월</Label><Input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setSelected([]); }} /></div>
+      <div className="w-full max-w-xs space-y-1.5"><Label>귀속월</Label><Input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setData(null); setSelected([]); }} /></div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={busy} onClick={() => void load()}><RefreshCw data-icon="inline-start" />새로고침</Button>
+        <Button variant="outline" disabled={busy} onClick={() => void load()}><RefreshCw data-icon="inline-start" />조회</Button>
         {canClose && <Button variant="outline" disabled={busy || selectedRows.length === 0} onClick={() => void closeRows(selectedRows)}><LockKeyhole data-icon="inline-start" />선택 마감</Button>}
         {canClose && <Button disabled={busy || eligibleRows.length === 0} onClick={() => void closeRows(eligibleRows)}><FileCheck2 data-icon="inline-start" />가능한 현장 모두 마감</Button>}
       </div>
@@ -220,9 +219,4 @@ function exceptionLabel(exception: MonthCloseException) {
     INVOICE_HISTORY: "발행 이력",
     REPLACEMENT_REQUIRED: "대체 발행",
   }[exception.kind];
-}
-
-function localMonthKey(value: Date) {
-  const offset = value.getTimezoneOffset() * 60_000;
-  return new Date(value.getTime() - offset).toISOString().slice(0, 7);
 }

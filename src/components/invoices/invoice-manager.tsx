@@ -2,7 +2,7 @@
 
 import { Eye, FileCheck2, Printer, RefreshCw, Search, Settings2 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { InvoiceDocumentPages, type InvoicePrintDocument } from "@/components/invoices/invoice-document";
@@ -124,6 +124,7 @@ type InvoiceManagerProps = {
   isAdmin: boolean;
   initialMonth?: string;
   initialSiteId?: string;
+  initialCandidates?: CandidateData | null;
 };
 
 export function InvoiceManager({
@@ -135,10 +136,11 @@ export function InvoiceManager({
   isAdmin,
   initialMonth,
   initialSiteId = "",
+  initialCandidates = null,
 }: InvoiceManagerProps) {
   const today = localDateKey(new Date());
   const [data, setData] = useState(initialData);
-  const [candidates, setCandidates] = useState<CandidateData | null>(null);
+  const [candidates, setCandidates] = useState<CandidateData | null>(initialCandidates);
   const [selected, setSelected] = useState<string[]>([]);
   const [month, setMonth] = useState(initialMonth ?? today.slice(0, 7));
   const [siteId, setSiteId] = useState(initialSiteId);
@@ -151,7 +153,7 @@ export function InvoiceManager({
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const loadCandidates = useCallback(async () => {
+  async function loadCandidates() {
     setBusy(true);
     try {
       const params = new URLSearchParams({ month, siteId });
@@ -167,17 +169,13 @@ export function InvoiceManager({
     } finally {
       setBusy(false);
     }
-  }, [month, siteId]);
+  }
 
   async function loadInvoices(page = data.page) {
     const response = await fetch(`/api/invoices?page=${page}&pageSize=20`);
     const body = await response.json();
     if (response.ok) setData(body);
   }
-
-  useEffect(() => {
-    if (initialMonth || initialSiteId) void loadCandidates();
-  }, [initialMonth, initialSiteId, loadCandidates]);
 
   useRealtimeRefresh(["invoice.changed", "monthlyClose.changed"], () => {
     void loadInvoices();
@@ -486,7 +484,7 @@ export function InvoiceManager({
           <div className="rounded-lg border bg-muted/40 p-3 text-sm"><strong>재마감 매출 {replacement.preview.expectedRevenueEntryIds.length}건</strong>{replacement.preview.warnings.length > 0 && <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900"><p className="font-medium">확정 매출이 없는 진행 계약이 있습니다.</p><ul className="mt-1 list-disc pl-5">{replacement.preview.warnings.map((warning) => <li key={warning.id}>{warning.contractNo} · {warning.title}</li>)}</ul><p className="mt-1 text-xs">필요한 계약 매출을 생성·확정하고 재마감한 뒤 다시 미리보기하세요.</p></div>}</div>
           <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={[toPrintPreview(replacement.preview.document, 0)]} /></div>
         </> : <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">월을 되돌려 수정한 뒤 재마감한 회차가 있어야 대체 발행할 수 있습니다.</div>}
-        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setReplacement(null)}>취소</Button>{replacement.preview ? <><Button variant="outline" disabled={busy} onClick={() => updateReplacement({ preview: null })}>설정 변경</Button><Button disabled={busy} onClick={() => void replaceCurrentInvoice()}><FileCheck2 data-icon="inline-start" />{busy ? "대체 발행 중..." : "재마감 회차로 대체 발행"}</Button></> : <Button disabled={busy} onClick={() => void showReplacementPreview()}><Eye data-icon="inline-start" />대체 발행 미리보기</Button>}</div>
+        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setReplacement(null)}>취소</Button>{replacement.preview ? <><Button variant="outline" disabled={busy} onClick={() => updateReplacement({ preview: null })}>설정 변경</Button><Button disabled={busy} onClick={() => void replaceCurrentInvoice()}><FileCheck2 data-icon="inline-start" />{busy ? "대체 발행 중..." : "재마감 회차로 월 전체 대체 발행"}</Button></> : <Button disabled={busy} onClick={() => void showReplacementPreview()}><Eye data-icon="inline-start" />대체 발행 미리보기</Button>}</div>
       </DialogContent>
     </Dialog>}
   </div>;
