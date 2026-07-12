@@ -2,30 +2,29 @@ import { z } from "zod";
 
 import { INVOICE_TEMPLATE_SYSTEM_ID } from "@/lib/invoice-templates/config";
 
-const dateRange = z.object({
-  startDate: z.iso.date(),
-  endDate: z.iso.date(),
+const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "월은 YYYY-MM 형식이어야 합니다.");
+
+const candidateQuery = z.object({
+  month,
   siteId: z.string().default(""),
-}).superRefine((value, context) => {
-  if (value.startDate > value.endDate) context.addIssue({ code: "custom", message: "종료일은 시작일보다 빠를 수 없습니다.", path: ["endDate"] });
-  const start = new Date(`${value.startDate}T00:00:00.000Z`);
-  const end = new Date(`${value.endDate}T00:00:00.000Z`);
-  if ((end.getTime() - start.getTime()) / 86_400_000 > 366) context.addIssue({ code: "custom", message: "한 번에 최대 1년까지 조회할 수 있습니다.", path: ["endDate"] });
 });
 
-export const invoiceCandidateQuerySchema = dateRange;
+export const invoiceCandidateQuerySchema = candidateQuery;
 
 export const invoiceIssueInputSchema = z.object({
-  revenueEntryIds: z.array(z.string().min(1)).min(1, "발행할 매출을 선택해 주세요.").max(500, "한 번에 최대 500건까지 발행할 수 있습니다."),
-  periodStart: z.iso.date(),
-  periodEnd: z.iso.date(),
+  cycles: z.array(z.object({
+    cycleId: z.string().min(1),
+    expectedCloseVersion: z.number().int().positive(),
+    expectedRevenueFingerprint: z.string().regex(/^[a-f0-9]{64}$/i),
+  })).min(1, "발행할 마감 회차를 선택해 주세요.").max(500),
   issueDate: z.iso.date(),
   displayMode: z.enum(["AGGREGATED", "ITEMIZED"]),
   memo: z.string().trim().max(500).optional().nullable(),
   templateId: z.string().min(1).default(INVOICE_TEMPLATE_SYSTEM_ID),
   templateVersion: z.number().int().positive().default(1),
 }).superRefine((value, context) => {
-  if (value.periodStart > value.periodEnd) context.addIssue({ code: "custom", message: "종료일은 시작일보다 빠를 수 없습니다.", path: ["periodEnd"] });
+  const ids = value.cycles.map((cycle) => cycle.cycleId);
+  if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", message: "중복된 마감 회차가 포함되어 있습니다.", path: ["cycles"] });
 });
 
 export const invoiceReplacementPreviewInputSchema = z.object({

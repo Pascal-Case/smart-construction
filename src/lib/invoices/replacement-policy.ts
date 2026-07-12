@@ -10,3 +10,12 @@ export function sameRevenueSet(expected: string[], actual: string[]) {
   const actualIds = new Set(actual);
   return expected.every((id) => actualIds.has(id));
 }
+
+export function sameRevenueState(
+  expectedIds: string[],
+  expectedAmount: number,
+  actualIds: string[],
+  actualAmount: number,
+) {
+  return expectedAmount === actualAmount && sameRevenueSet(expectedIds, actualIds);
+}

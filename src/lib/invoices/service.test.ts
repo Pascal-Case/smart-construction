@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   invoiceFindMany: vi.fn(),
   invoiceCreate: vi.fn(),
   invoiceUpdateMany: vi.fn(),
+  closeCycleFindUnique: vi.fn(),
+  closeFindMany: vi.fn(),
   revenueFindMany: vi.fn(),
   revenueUpdateMany: vi.fn(),
   contractFindMany: vi.fn(),
@@ -28,7 +30,7 @@ vi.mock("@/lib/masters/sequence", () => ({ nextInvoiceNo: mocks.nextInvoiceNo })
 vi.mock("@/lib/audit/record", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/events/bus", () => ({ recordSyncEvent: mocks.recordSyncEvent }));
 
-import { previewReplacementInvoice, replaceInvoice } from "@/lib/invoices/service";
+import { issueInvoices, previewReplacementInvoice, replaceInvoice } from "@/lib/invoices/service";
 
 const actor = { id: "u1", loginId: "manager", name: "매니저", role: UserRole.MANAGER, isActive: true, version: 1 };
 const source = {
@@ -56,6 +58,8 @@ describe("invoice replacement service", () => {
     const tx = {
       companySetting: { findUnique: mocks.companyFindUnique },
       invoiceDocument: { findUnique: mocks.invoiceFindUnique, findMany: mocks.invoiceFindMany, create: mocks.invoiceCreate, updateMany: mocks.invoiceUpdateMany },
+      monthlyCloseCycle: { findUnique: mocks.closeCycleFindUnique },
+      monthlyClose: { findMany: mocks.closeFindMany },
       revenueEntry: { findMany: mocks.revenueFindMany, updateMany: mocks.revenueUpdateMany },
       contract: { findMany: mocks.contractFindMany },
       invoiceLine: { create: mocks.lineCreate },
@@ -74,6 +78,8 @@ describe("invoice replacement service", () => {
     mocks.linkCreateMany.mockResolvedValue({ count: 1 });
     mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
     mocks.revenueUpdateMany.mockResolvedValue({ count: 2 });
+    mocks.closeCycleFindUnique.mockResolvedValue(closeCycle());
+    mocks.closeFindMany.mockResolvedValue([{ id: "close-1", month: "2026-07", cycles: [{ id: "cycle-1" }] }]);
   });
 
   it("previews every confirmed revenue in the source period and reports missing-contract warnings", async () => {
@@ -100,7 +106,56 @@ describe("invoice replacement service", () => {
     await expect(replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1"] })).rejects.toMatchObject({ status: 409, code: "INVOICE_REPLACEMENT_CHANGED" });
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
+
+  it("issues the complete latest close cycle and stores its provenance", async () => {
+    mocks.revenueFindMany.mockResolvedValue(entries.map((entry) => ({ ...entry, currentInvoiceDocumentId: null })));
+    const results = await issueInvoices(actor, issueInput());
+
+    expect(results[0]).toMatchObject({ cycleId: "cycle-1", outcome: "ISSUED" });
+    expect(mocks.invoiceCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ monthlyCloseCycleId: "cycle-1", periodStart: new Date("2026-07-01T00:00:00.000Z") }),
+    }));
+  });
+
+  it("returns a blocked result when the close cycle became stale", async () => {
+    mocks.closeCycleFindUnique.mockResolvedValue({ ...closeCycle(), monthlyClose: { ...closeCycle().monthlyClose, state: "OPEN" } });
+    expect(await issueInvoices(actor, issueInput())).toMatchObject([
+      { cycleId: "cycle-1", outcome: "BLOCKED", error: { code: "INVOICE_CLOSE_CHANGED" } },
+    ]);
+  });
 });
+
+function issueInput() {
+  return {
+    cycles: [{ cycleId: "cycle-1", expectedCloseVersion: 2, expectedRevenueFingerprint: "a".repeat(64) }],
+    issueDate: "2026-07-25",
+    displayMode: "AGGREGATED" as const,
+    memo: null,
+    templateId: "system-default",
+    templateVersion: 1,
+  };
+}
+
+function closeCycle() {
+  return {
+    id: "cycle-1",
+    cycleNo: 1,
+    revenueCount: 2,
+    totalSalesAmount: 300_000,
+    revenueFingerprint: "a".repeat(64),
+    snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }),
+    invoiceDocument: null,
+    monthlyClose: {
+      id: "close-1",
+      siteId: "site-1",
+      month: "2026-07",
+      state: "CLOSED",
+      latestCycleNo: 1,
+      version: 2,
+      site: { code: "S1", name: "강남 현장", address: "서울" },
+    },
+  };
+}
 
 function candidate(id: string, title: string, salesAmount: number, currentInvoiceDocumentId: string | null) {
   return {

@@ -4,16 +4,18 @@ import { DEFAULT_INVOICE_TEMPLATE_CONFIG, INVOICE_TEMPLATE_SYSTEM_ID } from "@/l
 import { invoiceIssueInputSchema, invoiceReplacementIssueInputSchema, invoiceReplacementPreviewInputSchema } from "@/lib/invoices/schemas";
 
 const baseInput = {
-  revenueEntryIds: ["revenue-1"],
-  periodStart: "2026-07-01",
-  periodEnd: "2026-07-31",
+  cycles: [{
+    cycleId: "cycle-1",
+    expectedCloseVersion: 2,
+    expectedRevenueFingerprint: "a".repeat(64),
+  }],
   issueDate: "2026-07-12",
   displayMode: "AGGREGATED" as const,
   memo: null,
 };
 
 describe("invoice template snapshot input", () => {
-  it("defaults legacy issue requests to the immutable system template", () => {
+  it("defaults close-cycle issue requests to the immutable system template", () => {
     expect(invoiceIssueInputSchema.parse(baseInput)).toMatchObject({
       templateId: INVOICE_TEMPLATE_SYSTEM_ID,
       templateVersion: 1,

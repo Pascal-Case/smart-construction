@@ -31,63 +31,97 @@ const candidateSelect = {
 type CandidateRow = Prisma.RevenueEntryGetPayload<{ select: typeof candidateSelect }>;
 
 export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
-  const where: Prisma.RevenueEntryWhereInput = {
-    status: "CONFIRMED",
-    revenueDate: { gte: dbDate(query.startDate), lte: endOfDay(query.endDate) },
-    ...(query.siteId ? { siteId: query.siteId } : {}),
-    currentInvoiceDocumentId: null,
-  };
-  const [total, rows] = await prisma.$transaction([
-    prisma.revenueEntry.count({ where }),
-    prisma.revenueEntry.findMany({ where, select: candidateSelect, orderBy: [{ site: { name: "asc" } }, { revenueDate: "asc" }, { createdAt: "asc" }], take: 500 }),
-  ]);
+  const closes = await prisma.monthlyClose.findMany({
+    where: { month: query.month, state: "CLOSED", ...(query.siteId ? { siteId: query.siteId } : {}) },
+    include: {
+      site: { select: { id: true, code: true, name: true } },
+      cycles: { orderBy: { cycleNo: "desc" }, take: 1, include: { invoiceDocument: { select: { id: true, invoiceNo: true, status: true } } } },
+    },
+    orderBy: { site: { name: "asc" } },
+  });
+  const rows = closes.flatMap((close) => {
+    const cycle = close.cycles[0];
+    if (!cycle || cycle.invoiceDocument) return [];
+    return [{
+      cycleId: cycle.id,
+      closeId: close.id,
+      closeVersion: close.version,
+      month: close.month,
+      siteId: close.siteId,
+      siteCode: close.site.code,
+      siteName: close.site.name,
+      revenueCount: cycle.revenueCount,
+      supplyAmount: cycle.totalSalesAmount,
+      revenueFingerprint: cycle.revenueFingerprint,
+    }];
+  });
   return {
-    rows: rows.map((row) => ({ ...toSourceEntry(row), revenueDate: row.revenueDate.toISOString(), sourceType: row.sourceType })),
-    total,
-    truncated: total > rows.length,
-    totals: { supplyAmount: rows.reduce((sum, row) => sum + row.salesAmount, 0), taxAmount: rows.reduce((sum, row) => sum + Math.round(row.salesAmount * 0.1), 0) },
+    rows,
+    total: rows.length,
+    truncated: false,
+    totals: { supplyAmount: rows.reduce((sum, row) => sum + row.supplyAmount, 0), taxAmount: rows.reduce((sum, row) => sum + Math.round(row.supplyAmount * 0.1), 0) },
   };
 }
 
 export async function previewInvoices(input: InvoiceIssueInput) {
-  const [setting, entries, template] = await prisma.$transaction(async (tx) => Promise.all([
-    requireCompanySetting(tx),
-    loadSelectedEntries(tx, input),
-    resolveInvoiceTemplate(input.templateId, input.templateVersion, tx),
-  ]));
-  return {
-    template,
-    documents: buildInvoiceDrafts(entries.map(toSourceEntry), input.displayMode).map((document) => ({ ...document, issueDate: input.issueDate, periodStart: input.periodStart, periodEnd: input.periodEnd, displayMode: input.displayMode, memo: input.memo ?? null, supplier: companySnapshot(setting), templateConfig: template.config })),
-  };
+  return prisma.$transaction(async (tx) => {
+    const setting = await requireCompanySetting(tx);
+    const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
+    const contexts = [];
+    for (const target of input.cycles) contexts.push(await loadIssueCycle(tx, target));
+    return {
+      template,
+      documents: contexts.map((context) => {
+        const document = buildInvoiceDrafts(context.entries.map(toSourceEntry), input.displayMode)[0];
+        return {
+          ...document,
+          closeCycleId: context.cycle.id,
+          issueDate: input.issueDate,
+          periodStart: context.month + "-01",
+          periodEnd: monthEnd(context.month),
+          displayMode: input.displayMode,
+          memo: input.memo ?? null,
+          supplier: companySnapshot(setting),
+          templateConfig: template.config,
+        };
+      }),
+    };
+  });
 }
 
 export async function issueInvoices(actor: SessionUser, input: InvoiceIssueInput) {
-  try {
-    return await prisma.$transaction(async (tx) => {
+  const results = [];
+  for (const target of input.cycles) {
+    try {
+      const document = await prisma.$transaction(async (tx) => {
       const setting = await requireCompanySetting(tx);
-      const entries = await loadSelectedEntries(tx, input);
       const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
-      const drafts = buildInvoiceDrafts(entries.map(toSourceEntry), input.displayMode);
+      const context = await loadIssueCycle(tx, target);
+      const draft = buildInvoiceDrafts(context.entries.map(toSourceEntry), input.displayMode)[0];
       const issuedAt = new Date();
-      const documents: Awaited<ReturnType<typeof getInvoiceDocument>>[] = [];
-      for (const draft of drafts) {
-        const supplier = companySnapshot(setting);
-        const document = await createInvoiceSnapshot(tx, actor, draft, input, supplier, template, issuedAt);
-        const revenueEntryIds = draft.lines.flatMap((line) => line.revenueEntryIds);
-        const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: revenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
-        if (assigned.count !== revenueEntryIds.length) throw new AuthError("선택한 매출 중 이미 발행된 건이 있습니다. 후보를 다시 조회해 주세요.", 409, "INVOICE_CANDIDATE_CHANGED");
-        const invoiceNo = document.invoiceNo;
-        await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo, siteId: draft.siteId, revenueEntryIds: draft.lines.flatMap((line) => line.revenueEntryIds), subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount, templateId: template.id, templateVersion: template.version } });
-        await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, actorId: actor.id });
-        documents.push(await getInvoiceDocument(document.id, tx));
+      const snapshotInput = { periodStart: context.month + "-01", periodEnd: monthEnd(context.month), issueDate: input.issueDate, displayMode: input.displayMode, memo: input.memo };
+      const document = await createInvoiceSnapshot(tx, actor, draft, snapshotInput, companySnapshot(setting), template, issuedAt, context.cycle.id);
+      const revenueEntryIds = draft.lines.flatMap((line) => line.revenueEntryIds);
+      const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: revenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
+      if (assigned.count !== revenueEntryIds.length) throw new AuthError("마감 회차의 일부 매출이 이미 발행되었습니다.", 409, "INVOICE_CYCLE_CHANGED");
+      await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, monthlyCloseCycleId: context.cycle.id, siteId: draft.siteId, revenueEntryIds, subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount, templateId: template.id, templateVersion: template.version } });
+      await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, month: context.month, actorId: actor.id });
+      return getInvoiceDocument(document.id, tx);
+      });
+      results.push({ cycleId: target.cycleId, outcome: "ISSUED" as const, document });
+    } catch (error) {
+      if (error instanceof AuthError) {
+        results.push({ cycleId: target.cycleId, outcome: "BLOCKED" as const, error: { code: error.code, message: error.message } });
+        continue;
       }
-      return documents;
-    });
-  } catch (error) {
-    if (error instanceof AuthError) throw error;
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new AuthError("선택한 매출 중 이미 발행된 건이 있습니다. 후보를 다시 조회해 주세요.", 409, "INVOICE_CANDIDATE_CHANGED");
-    throw error;
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        results.push({ cycleId: target.cycleId, outcome: "ALREADY_ISSUED" as const });
+        continue;
+      }
+      throw error;
+    }
   }
+  return results;
 }
 
 export async function previewReplacementInvoice(invoiceId: string, input: InvoiceReplacementPreviewInput) {
@@ -135,7 +169,7 @@ export async function replaceInvoice(actor: SessionUser, invoiceId: string, inpu
       displayMode: input.displayMode,
       memo: input.memo,
     };
-    const document = await createInvoiceSnapshot(tx, actor, draft, snapshotInput, companySnapshot(setting), template, issuedAt);
+    const document = await createInvoiceSnapshot(tx, actor, draft, snapshotInput, companySnapshot(setting), template, issuedAt, context.latestCycle?.id);
     const activeInvoiceIds = context.activeDocuments.map((active) => active.id);
     const superseded = await tx.invoiceDocument.updateMany({
       where: { id: { in: activeInvoiceIds }, status: "ISSUED" },
@@ -187,12 +221,46 @@ export async function getInvoiceDocuments(ids: string[]) {
   return uniqueIds.map((id) => byId.get(id)!);
 }
 
-async function loadSelectedEntries(tx: Prisma.TransactionClient, input: InvoiceIssueInput) {
-  const ids = [...new Set(input.revenueEntryIds)];
-  if (ids.length !== input.revenueEntryIds.length) throw new AuthError("중복된 매출 선택이 포함되어 있습니다.", 400, "DUPLICATE_REVENUE_SELECTION");
-  const rows = await tx.revenueEntry.findMany({ where: { id: { in: ids }, status: "CONFIRMED", revenueDate: { gte: dbDate(input.periodStart), lte: endOfDay(input.periodEnd) }, currentInvoiceDocumentId: null }, select: candidateSelect, orderBy: [{ site: { name: "asc" } }, { revenueDate: "asc" }, { createdAt: "asc" }] });
-  if (rows.length !== ids.length) throw new AuthError("선택한 매출이 변경되었거나 이미 발행되었습니다. 후보를 다시 조회해 주세요.", 409, "INVOICE_CANDIDATE_CHANGED");
-  return rows;
+async function loadIssueCycle(
+  tx: Prisma.TransactionClient,
+  target: InvoiceIssueInput["cycles"][number],
+) {
+  const cycle = await tx.monthlyCloseCycle.findUnique({
+    where: { id: target.cycleId },
+    include: {
+      monthlyClose: {
+        include: { site: { select: { code: true, name: true, address: true } } },
+      },
+      invoiceDocument: { select: { id: true } },
+    },
+  });
+  if (!cycle) throw new AuthError("마감 회차를 찾을 수 없습니다.", 404, "INVOICE_CLOSE_CYCLE_NOT_FOUND");
+  const close = cycle.monthlyClose;
+  if (close.state !== "CLOSED"
+    || close.latestCycleNo !== cycle.cycleNo
+    || close.version !== target.expectedCloseVersion
+    || cycle.revenueFingerprint !== target.expectedRevenueFingerprint) {
+    throw new AuthError("마감 상태가 변경되었습니다. 관제실에서 다시 시작해 주세요.", 409, "INVOICE_CLOSE_CHANGED");
+  }
+  if (cycle.invoiceDocument) throw new AuthError("이미 발행된 마감 회차입니다.", 409, "INVOICE_CYCLE_ALREADY_ISSUED");
+  const ids = snapshotRevenueIds(cycle.snapshotJson);
+  if (!ids.length) throw new AuthError("발행할 확정 매출이 없는 마감 회차입니다.", 409, "INVOICE_CYCLE_EMPTY");
+  const { start, end } = monthRange(close.month);
+  const entries = await tx.revenueEntry.findMany({
+    where: {
+      id: { in: ids },
+      siteId: close.siteId,
+      status: "CONFIRMED",
+      revenueDate: { gte: start, lte: end },
+      currentInvoiceDocumentId: null,
+    },
+    select: candidateSelect,
+    orderBy: [{ revenueDate: "asc" }, { createdAt: "asc" }],
+  });
+  if (entries.length !== ids.length || entries.reduce((sum, entry) => sum + entry.salesAmount, 0) !== cycle.totalSalesAmount) {
+    throw new AuthError("마감 회차의 확정 매출이 변경되었습니다.", 409, "INVOICE_CYCLE_CHANGED");
+  }
+  return { cycle, close, month: close.month, entries };
 }
 
 async function requireCompanySetting(tx: Prisma.TransactionClient) {
@@ -212,7 +280,8 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
   });
   if (!source) throw new AuthError("거래명세표를 찾을 수 없습니다.", 404, "INVOICE_NOT_FOUND");
   if (!isReplaceableInvoiceStatus(source.status)) throw new AuthError("현재 유효한 거래명세표만 대체 발행할 수 있습니다.", 409, "INVOICE_NOT_REPLACEABLE");
-  const [entries, activeDocuments] = await Promise.all([
+  const months = monthsBetween(source.periodStart, source.periodEnd);
+  const [entries, activeDocuments, closeStates] = await Promise.all([
     tx.revenueEntry.findMany({
       where: { siteId: source.siteId, status: "CONFIRMED", revenueDate: { gte: source.periodStart, lte: source.periodEnd } },
       select: candidateSelect,
@@ -224,7 +293,14 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
       select: { id: true },
       orderBy: { issuedAt: "asc" },
     }),
+    tx.monthlyClose.findMany({
+      where: { siteId: source.siteId, month: { in: months }, state: "CLOSED" },
+      include: { cycles: { orderBy: { cycleNo: "desc" }, take: 1 } },
+    }),
   ]);
+  if (closeStates.length !== months.length || closeStates.some((close) => !close.cycles[0])) {
+    throw new AuthError("대체발행 전에 모든 귀속월을 다시 마감해 주세요.", 409, "INVOICE_CLOSE_REQUIRED");
+  }
   if (!entries.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
   if (entries.length > 500) throw new AuthError("대체 발행 대상이 500건을 초과했습니다. 귀속기간을 확인해 주세요.", 409, "INVOICE_REPLACEMENT_TOO_LARGE");
   const activeIds = new Set(activeDocuments.map((document) => document.id));
@@ -232,7 +308,7 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
   if (entries.some((entry) => entry.currentInvoiceDocumentId && !activeIds.has(entry.currentInvoiceDocumentId))) {
     throw new AuthError("같은 기간의 일부 매출이 다른 귀속기간 거래명세표에 포함되어 있습니다.", 409, "INVOICE_REPLACEMENT_SCOPE_CONFLICT");
   }
-  return { source, entries, activeDocuments };
+  return { source, entries, activeDocuments, latestCycle: closeStates.length === 1 ? closeStates[0].cycles[0] : null };
 }
 
 function loadMissingContractWarnings(tx: Prisma.TransactionClient, source: { siteId: string; periodStart: Date; periodEnd: Date }) {
@@ -251,6 +327,7 @@ async function createInvoiceSnapshot(
   supplier: ReturnType<typeof companySnapshot>,
   template: Awaited<ReturnType<typeof resolveInvoiceTemplate>>,
   issuedAt: Date,
+  monthlyCloseCycleId?: string | null,
 ) {
   const issueDate = dbDate(input.issueDate);
   const invoiceNo = await nextInvoiceNo(tx, issueDate);
@@ -283,6 +360,7 @@ async function createInvoiceSnapshot(
     createdById: actor.id,
     issuedById: actor.id,
     issuedAt,
+    monthlyCloseCycleId: monthlyCloseCycleId ?? null,
   } });
   for (const [index, line] of draft.lines.entries()) {
     const savedLine = await tx.invoiceLine.create({ data: { invoiceDocumentId: document.id, itemName: line.itemName, specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, supplyAmount: line.supplyAmount, taxAmount: line.taxAmount, sortOrder: index } });
@@ -297,3 +375,30 @@ function companySnapshot(setting: { businessRegistrationNo: string; companyName:
 function dateKey(value: Date) { return value.toISOString().slice(0, 10); }
 function dbDate(value: string) { return new Date(`${value}T00:00:00.000Z`); }
 function endOfDay(value: string) { return new Date(`${value}T23:59:59.999Z`); }
+function monthEnd(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+}
+function monthRange(month: string) {
+  return { start: dbDate(month + "-01"), end: endOfDay(monthEnd(month)) };
+}
+function snapshotRevenueIds(snapshotJson: string) {
+  try {
+    const parsed = JSON.parse(snapshotJson) as { revenueEntryIds?: unknown };
+    return Array.isArray(parsed.revenueEntryIds)
+      ? parsed.revenueEntryIds.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+function monthsBetween(start: Date, end: Date) {
+  const months: string[] = [];
+  const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+  while (cursor <= last) {
+    months.push(cursor.toISOString().slice(0, 7));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return months;
+}
