@@ -345,6 +345,20 @@ model CompanySetting {
   updatedAt              DateTime @updatedAt
 }
 
+model InvoiceTemplate {
+  id             String   @id @default(cuid())
+  name           String
+  normalizedName String   @unique
+  configJson     String
+  version        Int      @default(1)
+  createdById    String
+  updatedById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
 model InvoiceDocument {
   id                             String               @id @default(cuid())
   invoiceNo                      String               @unique
@@ -368,6 +382,10 @@ model InvoiceDocument {
   taxAmount                      Int
   totalAmount                    Int
   memo                           String?
+  templateIdSnapshot             String?
+  templateVersionSnapshot        Int?
+  templateName                   String?
+  templateConfigJson             String?
   version                        Int                  @default(1)
   createdById                    String
   issuedById                     String
