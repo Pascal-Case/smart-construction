@@ -23,13 +23,13 @@ export async function listInvoiceTemplates(): Promise<InvoiceTemplateView[]> {
   return [systemTemplate(), ...rows.map(toView)];
 }
 
-export async function resolveInvoiceTemplate(id?: string | null, expectedVersion?: number | null): Promise<ResolvedInvoiceTemplate> {
+export async function resolveInvoiceTemplate(id?: string | null, expectedVersion?: number | null, tx?: Prisma.TransactionClient): Promise<ResolvedInvoiceTemplate> {
   if (!id || id === INVOICE_TEMPLATE_SYSTEM_ID) {
     if (expectedVersion != null && expectedVersion !== 1) throw changedTemplate();
     const view = systemTemplate();
     return { ...view, configJson: JSON.stringify(view.config) };
   }
-  const row = await prisma.invoiceTemplate.findUnique({ where: { id } });
+  const row = await (tx ?? prisma).invoiceTemplate.findUnique({ where: { id } });
   if (!row) throw new AuthError("선택한 거래명세표 템플릿을 찾을 수 없습니다.", 404, "INVOICE_TEMPLATE_NOT_FOUND");
   if (expectedVersion != null && row.version !== expectedVersion) throw changedTemplate();
   return { ...toView(row), configJson: row.configJson };
