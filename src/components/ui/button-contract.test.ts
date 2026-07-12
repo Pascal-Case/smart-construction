@@ -35,6 +35,44 @@ describe("Button form contract", () => {
 
     expect(violations, "폼 내부 Button은 type=submit 또는 type=button을 명시해야 합니다.").toEqual([]);
   });
+
+  it("requires link elements rendered through Button to disable native button semantics", () => {
+    const violations: string[] = [];
+
+    for (const file of tsxFiles(path.join(process.cwd(), "src"))) {
+      const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+
+      function visit(node: ts.Node) {
+        const opening = ts.isJsxSelfClosingElement(node) ? node : ts.isJsxElement(node) ? node.openingElement : null;
+        if (opening?.tagName.getText(source) === "Button") {
+          const render = opening.attributes.properties.find((attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText(source) === "render");
+          const expression = render && ts.isJsxAttribute(render) && render.initializer && ts.isJsxExpression(render.initializer)
+            ? render.initializer.expression
+            : null;
+          const renderedElement = expression && (ts.isJsxSelfClosingElement(expression) || ts.isJsxElement(expression)) ? expression : null;
+          const renderedTag = renderedElement
+            ? (ts.isJsxSelfClosingElement(renderedElement) ? renderedElement.tagName : renderedElement.openingElement.tagName).getText(source)
+            : null;
+
+          if (renderedTag && renderedTag !== "button") {
+            const nativeButton = opening.attributes.properties.find((attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText(source) === "nativeButton");
+            const disablesNativeButton = nativeButton
+              && ts.isJsxAttribute(nativeButton)
+              && nativeButton.initializer
+              && ts.isJsxExpression(nativeButton.initializer)
+              && nativeButton.initializer.expression?.kind === ts.SyntaxKind.FalseKeyword;
+            if (!disablesNativeButton) violations.push(`${path.relative(process.cwd(), file)}:${source.getLineAndCharacterOfPosition(opening.getStart(source)).line + 1}`);
+          }
+        }
+
+        ts.forEachChild(node, visit);
+      }
+
+      visit(source);
+    }
+
+    expect(violations, "링크를 render하는 Button은 nativeButton={false}를 명시해야 합니다.").toEqual([]);
+  });
 });
 
 function tsxFiles(directory: string): string[] {

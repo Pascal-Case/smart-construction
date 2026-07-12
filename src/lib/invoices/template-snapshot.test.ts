@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_INVOICE_TEMPLATE_CONFIG, INVOICE_TEMPLATE_SYSTEM_ID } from "@/lib/invoice-templates/config";
-import { invoiceIssueInputSchema, invoiceReplacementIssueInputSchema, invoiceReplacementPreviewInputSchema } from "@/lib/invoices/schemas";
+import { invoiceIssueInputSchema, invoicePreviewInputSchema, invoiceReplacementIssueInputSchema, invoiceReplacementPreviewInputSchema } from "@/lib/invoices/schemas";
 
 const baseInput = {
-  revenueEntryIds: ["revenue-1"],
-  periodStart: "2026-07-01",
-  periodEnd: "2026-07-31",
+  targets: [{
+    targetKey: "new:cycle-1",
+    kind: "NEW" as const,
+    cycleId: "cycle-1",
+    expectedCloseVersion: 2,
+    expectedRevenueFingerprint: "a".repeat(64),
+  }],
   issueDate: "2026-07-12",
   displayMode: "AGGREGATED" as const,
   memo: null,
 };
 
 describe("invoice template snapshot input", () => {
-  it("defaults legacy issue requests to the immutable system template", () => {
-    expect(invoiceIssueInputSchema.parse(baseInput)).toMatchObject({
+  it("defaults close-cycle issue requests to the immutable system template", () => {
+    expect(invoicePreviewInputSchema.parse(baseInput)).toMatchObject({
       templateId: INVOICE_TEMPLATE_SYSTEM_ID,
       templateVersion: 1,
     });
@@ -42,5 +46,20 @@ describe("invoice template snapshot input", () => {
       sourceVersion: 3,
       expectedRevenueEntryIds: ["r1", "r2"],
     });
+  });
+
+  it("validates mixed new and replacement targets with stable target keys", () => {
+    const replacement = {
+      targetKey: "replacement:site-1:2026-07-01:2026-07-31",
+      kind: "REPLACEMENT" as const,
+      sourceInvoiceId: "invoice-old",
+      sourceVersion: 3,
+      expectedRevenueEntryIds: ["r1", "r2"],
+      expectedActiveInvoiceIds: ["invoice-old"],
+      expectedCloseCycleIds: ["cycle-2"],
+    };
+    expect(invoiceIssueInputSchema.parse({ ...baseInput, targets: [...baseInput.targets, replacement] }).targets).toHaveLength(2);
+    expect(() => invoiceIssueInputSchema.parse({ ...baseInput, targets: [baseInput.targets[0], { ...replacement, targetKey: baseInput.targets[0].targetKey }] })).toThrow("중복된 발행 대상");
+    expect(() => invoicePreviewInputSchema.parse({ ...baseInput, targets: [{ targetKey: "replacement:missing", kind: "REPLACEMENT", sourceInvoiceId: "invoice-old" }] })).toThrow();
   });
 });

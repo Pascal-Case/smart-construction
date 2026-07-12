@@ -60,8 +60,8 @@ export function MasterManager({ type, initialData, canEdit }: { type: MasterType
         <Button type="submit" variant="outline" disabled={loading}><Search data-icon="inline-start" />조회</Button>
       </form>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" render={<a href={`/api/${endpoint}/export?template=1`} />}><FileDown data-icon="inline-start" />양식</Button>
-        <Button variant="outline" render={<a href={`/api/${endpoint}/export`} />}><Download data-icon="inline-start" />Excel</Button>
+        <Button variant="outline" nativeButton={false} render={<a href={`/api/${endpoint}/export?template=1`} />}><FileDown data-icon="inline-start" />양식</Button>
+        <Button variant="outline" nativeButton={false} render={<a href={`/api/${endpoint}/export`} />}><Download data-icon="inline-start" />Excel</Button>
         {canEdit && <><Button variant="outline" onClick={() => setImportOpen(true)}><Upload data-icon="inline-start" />가져오기</Button><Button onClick={openCreate}><Plus data-icon="inline-start" />{title} 추가</Button></>}
       </div>
     </div>

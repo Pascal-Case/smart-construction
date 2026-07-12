@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { currentYearMonthRange, enumerateMonths, monthlyReportQuerySchema } from "@/lib/reports/monthly-query";
+import { currentMonthKey, currentYearMonthRange, enumerateMonths, monthlyReportQuerySchema } from "@/lib/reports/monthly-query";
 
 describe("monthly report", () => {
   it("연도를 넘는 월 범위를 순서대로 만든다", () => {
@@ -13,5 +13,8 @@ describe("monthly report", () => {
   it("한국 시간의 현재 연도 1월부터 12월까지를 기본 범위로 만든다", () => {
     expect(currentYearMonthRange(new Date("2025-12-31T16:00:00.000Z")))
       .toEqual({ startMonth: "2026-01", endMonth: "2026-12" });
+  });
+  it("한국 시간의 현재 월을 기본 매출월로 만든다", () => {
+    expect(currentMonthKey(new Date("2025-12-31T16:00:00.000Z"))).toBe("2026-01");
   });
 });

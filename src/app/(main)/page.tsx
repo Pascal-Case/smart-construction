@@ -28,7 +28,7 @@ const workflows = [
   { title: "현장·품목 마스터", description: "Excel과 복사·붙여넣기로 기준정보를 관리합니다.", href: "/masters/sites", icon: Building2 },
   { title: "계약·매출 원장", description: "일할 계약 매출과 자유형·조정 매출을 건별 관리합니다.", href: "/revenues", icon: ReceiptText },
   { title: "월별 현황·메모", description: "현장별 청구액, 상세 내역과 월 공유 메모를 확인합니다.", href: "/reports/monthly", icon: BarChart3 },
-  { title: "거래명세표", description: "확정 매출을 선택해 snapshot으로 발행하고 재출력합니다.", href: "/invoices", icon: FileText },
+  { title: "거래명세표", description: "마감 회차를 snapshot으로 발행하고 재출력합니다.", href: "/invoices", icon: FileText },
 ];
 
 export default async function HomePage() {
@@ -36,7 +36,7 @@ export default async function HomePage() {
   if (!user) redirect("/login");
   const { year, startDate, endDate } = dashboardYearRange();
 
-  const [siteCount, revenues, invoiceCount, auditLogs, actionRevenues] = await Promise.all([
+  const [siteCount, revenues, invoiceCount, auditLogs, actionRevenues, closedMonths] = await Promise.all([
     prisma.site.count({ where: { isActive: true } }),
     prisma.revenueEntry.findMany({
       where: { revenueDate: { gte: startDate, lt: endDate }, status: { not: RevenueStatus.CANCELED } },
@@ -54,19 +54,35 @@ export default async function HomePage() {
         OR: [
           { status: RevenueStatus.DRAFT },
           { salesAmount: 0, status: { not: RevenueStatus.CANCELED } },
-          { status: RevenueStatus.CONFIRMED, currentInvoiceDocumentId: null },
         ],
       },
       select: {
         revenueDate: true,
         salesAmount: true,
         status: true,
-        currentInvoiceDocumentId: true,
+      },
+    }),
+    prisma.monthlyClose.findMany({
+      where: { state: "CLOSED" },
+      select: {
+        cycles: {
+          orderBy: { cycleNo: "desc" },
+          take: 1,
+          select: {
+            closedAt: true,
+            totalSalesAmount: true,
+            invoiceDocument: { select: { id: true } },
+          },
+        },
       },
     }),
   ]);
   const summary = buildDashboardSummary({ year, siteCount, invoiceCount, revenues });
-  const actionDesk = buildDashboardActionDesk(actionRevenues.map((row) => ({ ...row, hasCurrentInvoice: row.currentInvoiceDocumentId != null })));
+  const unissuedCloseCycles = closedMonths.flatMap((close) => {
+    const cycle = close.cycles[0];
+    return cycle && !cycle.invoiceDocument ? [cycle] : [];
+  });
+  const actionDesk = buildDashboardActionDesk(actionRevenues, unissuedCloseCycles);
   const recentActions = auditLogs.map((log) => ({ ...log, message: formatRecentAction(log) }));
 
   const metrics = [
@@ -78,7 +94,7 @@ export default async function HomePage() {
   const actionCards = [
     { label: "작성 중 매출", description: "확정 전 검토가 필요한 매출", href: "/revenues?status=DRAFT", icon: FileWarning, summary: actionDesk.draft, showAmount: true },
     { label: "0원 매출", description: "금액 또는 단가 확인이 필요한 매출", href: "/revenues?exception=ZERO", icon: AlertCircle, summary: actionDesk.zero, showAmount: false },
-    { label: "확정 후 미발행", description: "거래명세표 발행을 기다리는 매출", href: "/invoices#new-issue", icon: CircleDollarSign, summary: actionDesk.unissued, showAmount: true },
+    { label: "마감 후 미발행", description: "거래명세표 발행을 기다리는 마감 회차", href: "/invoices#new-issue", icon: CircleDollarSign, summary: actionDesk.unissued, showAmount: true },
   ];
 
   return (

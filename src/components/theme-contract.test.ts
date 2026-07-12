@@ -60,4 +60,13 @@ describe("theme contract", () => {
     expect(setup).toContain("auth-frame");
     expect(dashboard).toContain("dashboard-hero");
   });
+
+  it("keeps closed month rows distinct from dark-mode hover and selection", () => {
+    const controlRoom = source("src/components/reports/month-close-control-room.tsx");
+
+    expect(controlRoom).toContain("dark:bg-transparent");
+    expect(controlRoom).toContain("dark:hover:bg-muted/50");
+    expect(controlRoom).toContain("dark:bg-emerald-950/30");
+    expect(controlRoom).toContain("dark:text-emerald-300");
+  });
 });

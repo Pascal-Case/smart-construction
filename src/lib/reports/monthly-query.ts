@@ -21,3 +21,11 @@ export function currentYearMonthRange(now = new Date()) {
   const year = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", year: "numeric" }).format(now);
   return { startMonth: `${year}-01`, endMonth: `${year}-12` };
 }
+
+export function currentMonthKey(now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+  }).format(now);
+}

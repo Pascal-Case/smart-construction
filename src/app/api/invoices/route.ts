@@ -17,8 +17,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const actor = await requireUser([UserRole.ADMIN, UserRole.MANAGER]);
-    const documents = await issueInvoices(actor, invoiceIssueInputSchema.parse(await request.json()));
-    return Response.json({ documents }, { status: 201 });
+    const results = await issueInvoices(actor, invoiceIssueInputSchema.parse(await request.json()));
+    return Response.json({ results }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

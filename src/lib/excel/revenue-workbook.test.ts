@@ -54,6 +54,11 @@ describe("revenue workbook", () => {
     const countFormula = summary.getCell("G6").value as ExcelJS.CellFormulaValue;
     const canceledFormula = summary.getCell("J6").value as ExcelJS.CellFormulaValue;
 
+    expect(summary.getCell("A5").value).toBe("매출월");
+    expect(detail.getCell("A5").value).toBe("매출일");
+    expect(detail.getCell("B5").value).toBe("매출월");
+    expect(memo.getCell("A5").value).toBe("매출월");
+
     expect(salesFormula.formula).toContain("SUMIFS('매출상세'!$N$6:$N$7");
     expect(salesFormula.result).toBe(100_000);
     expect(costFormula.result).toBe(40_000);

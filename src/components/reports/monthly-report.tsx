@@ -446,7 +446,7 @@ function DetailDialog({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>귀속일</TableHead>
+                <TableHead>매출일</TableHead>
                 <TableHead>출처</TableHead>
                 <TableHead>내용</TableHead>
                 <TableHead>상태</TableHead>
