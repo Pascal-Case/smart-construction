@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { InvoiceDocumentPages, type InvoicePrintDocument } from "@/components/invoices/invoice-document";
+import { reconcileIssueResults, selectionSummary, toggleAllSelectable } from "@/components/invoices/invoice-issuance-state";
 import { useRealtimeRefresh } from "@/components/realtime-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,10 +14,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatSeoulDateTime } from "@/lib/date-time";
 import type { InvoiceTemplateConfig, InvoiceTemplateView } from "@/lib/invoice-templates/config";
 
 type SiteOption = { id: string; name: string };
 type Candidate = {
+  targetKey: string;
+  kind: "NEW" | "REPLACEMENT" | "BLOCKED";
+  selectable: boolean;
+  blockReason: string | null;
   cycleId: string;
   closeId: string;
   closeVersion: number;
@@ -27,6 +33,9 @@ type Candidate = {
   revenueCount: number;
   supplyAmount: number;
   revenueFingerprint: string;
+  currentInvoices: Array<{ id: string; invoiceNo: string; version: number }>;
+  sourceInvoiceId?: string;
+  sourceVersion?: number;
 };
 type CandidateData = {
   rows: Candidate[];
@@ -48,6 +57,7 @@ type InvoiceRow = {
   status: "DRAFT" | "ISSUED" | "SUPERSEDED";
   version: number;
   issuedAt: string;
+  updatedAt: string;
   supersededAt: string | null;
   supersededBy: { id: string; invoiceNo: string } | null;
   monthlyCloseCycle: { cycleNo: number } | null;
@@ -93,16 +103,40 @@ type PreviewDocument = {
   totalAmount: number;
 };
 type IssuePayload = {
-  cycles: Array<{
+  targets: Array<{
+    targetKey: string;
+    kind: "NEW";
     cycleId: string;
     expectedCloseVersion: number;
     expectedRevenueFingerprint: string;
+  } | {
+    targetKey: string;
+    kind: "REPLACEMENT";
+    sourceInvoiceId: string;
+    sourceVersion: number;
+    expectedRevenueEntryIds: string[];
+    expectedActiveInvoiceIds: string[];
+    expectedCloseCycleIds: string[];
   }>;
   issueDate: string;
   displayMode: "AGGREGATED" | "ITEMIZED";
   memo: string | null;
   templateId: string;
   templateVersion: number;
+};
+type PreviewResult = {
+  targetKey: string;
+  kind: "NEW" | "REPLACEMENT";
+  outcome: "PREVIEWED" | "BLOCKED";
+  document?: PreviewDocument;
+  commitTarget?: IssuePayload["targets"][number];
+  currentInvoices?: Array<{ id: string; invoiceNo: string; version: number }>;
+  warnings?: Array<{ id: string; contractNo: string; title: string }>;
+  error?: { code: string; message: string };
+};
+type BatchPreview = {
+  summary: { total: number; newCount: number; replacementCount: number; blockedCount: number; supplyAmount: number };
+  results: PreviewResult[];
 };
 type ReplacementState = {
   source: InvoiceRow;
@@ -150,12 +184,13 @@ export function InvoiceManager({
   const [displayMode, setDisplayMode] = useState<"AGGREGATED" | "ITEMIZED">("AGGREGATED");
   const [memo, setMemo] = useState("");
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? "system-default");
-  const [preview, setPreview] = useState<PreviewDocument[] | null>(null);
+  const [preview, setPreview] = useState<BatchPreview | null>(null);
   const [pending, setPending] = useState<IssuePayload | null>(null);
+  const [candidateErrors, setCandidateErrors] = useState<Record<string, string>>({});
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function loadCandidates() {
+  async function loadCandidates(preserve?: { selected: string[]; errors: Record<string, string> }) {
     setBusy(true);
     try {
       const params = new URLSearchParams({ month, siteId });
@@ -163,7 +198,9 @@ export function InvoiceManager({
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "발행 후보를 불러오지 못했습니다.");
       setCandidates(body);
-      setSelected([]);
+      const available = new Set((body.rows as Candidate[]).map((row) => row.targetKey));
+      setSelected(preserve ? preserve.selected.filter((key) => available.has(key)) : []);
+      setCandidateErrors(preserve ? Object.fromEntries(Object.entries(preserve.errors).filter(([key]) => available.has(key))) : {});
       setPreview(null);
       setPending(null);
     } catch (error) {
@@ -184,32 +221,30 @@ export function InvoiceManager({
     if (candidates) void loadCandidates();
   });
 
-  function toggle(cycleId: string) {
-    setSelected((current) => current.includes(cycleId)
-      ? current.filter((value) => value !== cycleId)
-      : [...current, cycleId]);
+  function toggle(targetKey: string) {
+    setSelected((current) => current.includes(targetKey)
+      ? current.filter((value) => value !== targetKey)
+      : [...current, targetKey]);
     setPreview(null);
     setPending(null);
   }
 
   function selectAll() {
     if (!candidates) return;
-    setSelected(selected.length === candidates.rows.length ? [] : candidates.rows.map((row) => row.cycleId));
+    setSelected(toggleAllSelectable(selected, candidates.rows));
     setPreview(null);
     setPending(null);
   }
 
   async function showPreview() {
-    if (!selected.length) return toast.error("발행할 마감 회차를 선택해 주세요.");
+    if (!selected.length) return toast.error("발행할 대상을 선택해 주세요.");
     const template = templates.find((item) => item.id === templateId) ?? templates[0];
     if (!template) return toast.error("사용할 템플릿을 선택해 주세요.");
-    const selectedRows = candidates?.rows.filter((row) => selected.includes(row.cycleId)) ?? [];
-    const payload: IssuePayload = {
-      cycles: selectedRows.map((row) => ({
-        cycleId: row.cycleId,
-        expectedCloseVersion: row.closeVersion,
-        expectedRevenueFingerprint: row.revenueFingerprint,
-      })),
+    const selectedRows = candidates?.rows.filter((row) => row.selectable && selected.includes(row.targetKey)) ?? [];
+    const previewPayload = {
+      targets: selectedRows.map((row) => row.kind === "REPLACEMENT" && row.sourceInvoiceId && row.sourceVersion
+        ? { targetKey: row.targetKey, kind: "REPLACEMENT" as const, sourceInvoiceId: row.sourceInvoiceId, sourceVersion: row.sourceVersion }
+        : { targetKey: row.targetKey, kind: "NEW" as const, cycleId: row.cycleId, expectedCloseVersion: row.closeVersion, expectedRevenueFingerprint: row.revenueFingerprint }),
       issueDate,
       displayMode,
       memo: memo.trim() || null,
@@ -221,12 +256,13 @@ export function InvoiceManager({
       const response = await fetch("/api/invoices/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(previewPayload),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "미리보기를 만들지 못했습니다.");
-      setPreview(body.documents);
-      setPending(payload);
+      const batch = body as BatchPreview;
+      setPreview(batch);
+      setPending({ ...previewPayload, targets: batch.results.flatMap((result) => result.outcome === "PREVIEWED" && result.commitTarget ? [result.commitTarget] : []) });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "미리보기를 만들지 못했습니다.");
     } finally {
@@ -246,8 +282,10 @@ export function InvoiceManager({
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "거래명세표를 발행하지 못했습니다.");
       const results = body.results as Array<{
+        targetKey: string;
         outcome: "ISSUED" | "BLOCKED" | "ALREADY_ISSUED";
         document?: { id: string };
+        error?: { message: string };
       }>;
       const ids = results.flatMap((result) => result.outcome === "ISSUED" && result.document ? [result.document.id] : []);
       const blocked = results.filter((result) => result.outcome === "BLOCKED").length;
@@ -255,9 +293,10 @@ export function InvoiceManager({
       const summary = `발행 ${ids.length} · 차단 ${blocked} · 이미 발행 ${alreadyIssued}`;
       if (ids.length === results.length) toast.success(summary);
       else toast.warning(summary);
+      const reconciled = reconcileIssueResults(selected, results);
       setPreview(null);
       setPending(null);
-      await Promise.all([loadCandidates(), loadInvoices(1)]);
+      await Promise.all([loadCandidates(reconciled), loadInvoices(1)]);
       if (ids.length) window.open(`/invoices/print?ids=${ids.join(",")}`, "_blank", "noopener,noreferrer");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "거래명세표를 발행하지 못했습니다.");
@@ -343,13 +382,14 @@ export function InvoiceManager({
     }
   }
 
-  const selectedRows = candidates?.rows.filter((row) => selected.includes(row.cycleId)) ?? [];
-  const selectedSupply = selectedRows.reduce((sum, row) => sum + row.supplyAmount, 0);
+  const selectedSummary = selectionSummary(selected, candidates?.rows ?? []);
+  const allSelectableSelected = Boolean(candidates?.rows.some((row) => row.selectable))
+    && candidates!.rows.filter((row) => row.selectable).every((row) => selected.includes(row.targetKey));
 
   return <div className="space-y-6">
     <div className="flex justify-end gap-2">
       <Button variant="outline" nativeButton={false} render={<Link href="/reports/monthly/close" />}>
-        <CalendarCheck2 data-icon="inline-start" />월마감 관제실
+        <CalendarCheck2 data-icon="inline-start" />월마감
       </Button>
       <Button variant="outline" nativeButton={false} render={<Link href="/invoices/templates" />}>
         <Settings2 data-icon="inline-start" />
@@ -360,8 +400,8 @@ export function InvoiceManager({
     {canIssue && <section id="new-issue" className="scroll-mt-20 space-y-4 rounded-xl border bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-semibold">신규 발행</h2>
-          <p className="text-sm text-muted-foreground">마감 완료된 미발행 현장·월만 표시합니다.</p>
+          <h2 className="font-semibold">발행 대기</h2>
+          <p className="text-sm text-muted-foreground">최신 마감 기준의 신규 발행과 대체 발행 대상을 함께 표시합니다.</p>
         </div>
         {!companyComplete && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           공급자 정보가 필요합니다. {isAdmin ? <Link className="underline" href="/settings/company">설정하기</Link> : "관리자에게 설정을 요청하세요."}
@@ -369,7 +409,7 @@ export function InvoiceManager({
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Field label="귀속월" type="month" value={month} onChange={setMonth} />
+        <Field label="매출월" type="month" value={month} onChange={setMonth} />
         <Select label="현장" value={siteId} onChange={setSiteId} options={[
           { value: "", label: "전체 현장" },
           ...sites.map((site) => ({ value: site.id, label: site.name })),
@@ -384,11 +424,11 @@ export function InvoiceManager({
       {candidates && <>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm">
-            <span className="font-medium">후보 {candidates.total}개 회차</span>
-            <span className="ml-3 text-muted-foreground">선택 {selected.length}개 · {selectedSupply.toLocaleString()}원</span>
+            <span className="font-medium">대기 {candidates.total}건</span>
+            <span className="ml-3 text-muted-foreground">선택 {selectedSummary.total}건 · 신규 {selectedSummary.newCount} · 대체 {selectedSummary.replacementCount} · {selectedSummary.supplyAmount.toLocaleString()}원</span>
           </div>
-          <Button size="sm" variant="outline" disabled={candidates.rows.length === 0} onClick={selectAll}>
-            {candidates.rows.length > 0 && selected.length === candidates.rows.length ? "전체 해제" : "전체 선택"}
+          <Button size="sm" variant="outline" disabled={!candidates.rows.some((row) => row.selectable)} onClick={selectAll}>
+            {allSelectableSelected ? "전체 해제" : "전체 선택"}
           </Button>
         </div>
         <div className="max-h-96 overflow-auto rounded-lg border">
@@ -396,7 +436,8 @@ export function InvoiceManager({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10"></TableHead>
-                <TableHead>귀속월</TableHead>
+                <TableHead>구분</TableHead>
+                <TableHead>매출월</TableHead>
                 <TableHead>현장</TableHead>
                 <TableHead className="text-right">확정 매출</TableHead>
                 <TableHead className="text-right">공급가액</TableHead>
@@ -404,20 +445,22 @@ export function InvoiceManager({
             </TableHeader>
             <TableBody>
               {candidates.rows.length === 0 ? <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                  마감 완료 후 발행 가능한 회차가 없습니다.
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  현재 발행 대기 중인 대상이 없습니다.
                 </TableCell>
-              </TableRow> : candidates.rows.map((row) => <TableRow key={row.cycleId}>
+              </TableRow> : candidates.rows.map((row) => <TableRow key={row.targetKey}>
                 <TableCell>
                   <input
-                    aria-label={`${row.siteName} ${row.month} 마감 회차 선택`}
+                    aria-label={`${row.siteName} ${row.month} ${row.kind === "REPLACEMENT" ? "대체" : "신규"} 발행 선택`}
                     type="checkbox"
-                    checked={selected.includes(row.cycleId)}
-                    onChange={() => toggle(row.cycleId)}
+                    disabled={!row.selectable}
+                    checked={selected.includes(row.targetKey)}
+                    onChange={() => toggle(row.targetKey)}
                   />
                 </TableCell>
+                <TableCell><Badge variant={row.kind === "REPLACEMENT" ? "secondary" : "outline"}>{row.kind === "REPLACEMENT" ? "대체" : row.kind === "BLOCKED" ? "확인 필요" : "신규"}</Badge></TableCell>
                 <TableCell>{row.month}</TableCell>
-                <TableCell><span className="font-medium">{row.siteName}</span><span className="block text-xs text-muted-foreground">{row.siteCode}</span></TableCell>
+                <TableCell><span className="font-medium">{row.siteName}</span><span className="block text-xs text-muted-foreground">{row.siteCode}</span>{row.currentInvoices.length > 0 && <span className="block text-xs text-muted-foreground">현재 {row.currentInvoices.map((invoice) => invoice.invoiceNo).join(", ")}</span>}{(row.blockReason || candidateErrors[row.targetKey]) && <span className="mt-1 block max-w-96 whitespace-normal text-xs text-destructive">{candidateErrors[row.targetKey] ?? row.blockReason}</span>}</TableCell>
                 <TableCell className="text-right tabular-nums">{row.revenueCount}건</TableCell>
                 <TableCell className="text-right tabular-nums">{row.supplyAmount.toLocaleString()}원</TableCell>
               </TableRow>)}
@@ -448,8 +491,8 @@ export function InvoiceManager({
       </div>
       <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
-          <TableHeader><TableRow><TableHead>발행번호</TableHead><TableHead>상태</TableHead><TableHead>발행일</TableHead><TableHead>수신처</TableHead><TableHead>귀속기간</TableHead><TableHead>원장/표시행</TableHead><TableHead className="text-right">공급가액</TableHead><TableHead>방식</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
-          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={9} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" ? "opacity-65" : undefined}>
+          <TableHeader><TableRow><TableHead>발행번호</TableHead><TableHead>상태</TableHead><TableHead>발행일</TableHead><TableHead>수신처</TableHead><TableHead>매출기간</TableHead><TableHead>원장/표시행</TableHead><TableHead className="text-right">공급가액</TableHead><TableHead>방식</TableHead><TableHead>최종수정일</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
+          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={10} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" ? "opacity-65" : undefined}>
             <TableCell className="font-mono text-xs">{row.invoiceNo}{row.supersededBy && <span className="block font-sans text-[11px] text-muted-foreground">→ {row.supersededBy.invoiceNo}</span>}</TableCell>
             <TableCell><Badge variant={row.status === "ISSUED" ? "secondary" : "outline"}>{row.status === "ISSUED" ? "유효" : row.status === "SUPERSEDED" ? "대체됨" : "작성 중"}</Badge></TableCell>
             <TableCell>{row.issueDate.slice(0, 10)}</TableCell><TableCell>{row.recipientName}</TableCell>
@@ -457,6 +500,7 @@ export function InvoiceManager({
             <TableCell>{row._count.revenueLinks}/{row._count.lines}</TableCell>
             <TableCell className="text-right font-medium tabular-nums">{row.subtotal.toLocaleString()}</TableCell>
             <TableCell><Badge variant="outline">{row.displayMode === "AGGREGATED" ? "합산" : "건별"}</Badge></TableCell>
+            <TableCell className="whitespace-nowrap text-xs tabular-nums">{formatSeoulDateTime(row.updatedAt)}</TableCell>
             <TableCell className="text-right"><div className="flex justify-end gap-1">
               {canIssue && row.status === "ISSUED" && row.replacementRequired && <Button size="sm" variant="outline" onClick={() => openReplacement(row)}><RefreshCw data-icon="inline-start" />대체 발행</Button>}
               <Button size="sm" variant="ghost" nativeButton={false} render={<a href={`/invoices/print?ids=${row.id}`} target="_blank" rel="noreferrer" />}><Printer data-icon="inline-start" />재출력</Button>
@@ -472,9 +516,11 @@ export function InvoiceManager({
 
     {preview && <Dialog open onOpenChange={(open) => { if (!open) setPreview(null); }}>
       <DialogContent className="max-h-[94svh] overflow-y-auto sm:max-w-6xl">
-        <DialogHeader><DialogTitle>거래명세표 발행 미리보기</DialogTitle><DialogDescription>선택한 마감 회차의 snapshot으로 발행할 실제 A4 배치를 확인하세요.</DialogDescription></DialogHeader>
-        <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={preview.map(toPrintPreview)} /></div>
-        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPreview(null)}>돌아가기</Button><Button disabled={busy} onClick={() => void issue()}><FileCheck2 data-icon="inline-start" />{busy ? "발행 중..." : `${preview.length}건 발행`}</Button></div>
+        <DialogHeader><DialogTitle>거래명세표 발행 미리보기</DialogTitle><DialogDescription>전체 {preview.summary.total}건 · 신규 {preview.summary.newCount}건 · 대체 {preview.summary.replacementCount}건 · 차단 {preview.summary.blockedCount}건을 확인하세요.</DialogDescription></DialogHeader>
+        {preview.results.some((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED") && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong>대체될 현재 발행본</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED" ? (result.currentInvoices ?? []).map((invoice) => <li key={`${result.targetKey}:${invoice.id}`}>{invoice.invoiceNo}</li>) : [])}</ul></div>}
+        {preview.results.some((result) => result.outcome === "BLOCKED") && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"><strong>미리보기에서 제외된 대상</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.outcome === "BLOCKED" ? [<li key={result.targetKey}>{result.error?.message ?? "최신 상태를 확인해 주세요."}</li>] : [])}</ul></div>}
+        <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={preview.results.flatMap((result) => result.outcome === "PREVIEWED" && result.document ? [result.document] : []).map(toPrintPreview)} /></div>
+        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPreview(null)}>돌아가기</Button><Button disabled={busy || !pending?.targets.length} onClick={() => void issue()}><FileCheck2 data-icon="inline-start" />{busy ? "발행 중..." : `${pending?.targets.length ?? 0}건 발행`}</Button></div>
       </DialogContent>
     </Dialog>}
 

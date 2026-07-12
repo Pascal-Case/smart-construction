@@ -154,7 +154,7 @@ function parsePeriod(input: string, referenceDate: Date): SmartValueField<SmartP
   if (isoDay || koreanDay) {
     const match = isoDay ?? koreanDay!;
     const value = dateValue(resolveYear(match[1], referenceYear), Number(match[2]), Number(match[3]));
-    if (value) return valueField("MATCHED", { startDate: value, endDate: value, precision: "DAY" }, "귀속일을 찾았습니다.");
+    if (value) return valueField("MATCHED", { startDate: value, endDate: value, precision: "DAY" }, "매출일을 찾았습니다.");
   }
   const shortDay = input.match(/(?<![\d/])(\d{1,2})\/(\d{1,2})(?![\d/])/);
   if (shortDay) {
@@ -225,7 +225,7 @@ function collectWarnings({ target, site, item, quantity, period, unitPrice, tota
   for (const [label, field] of fields) {
     if (field.status === "AMBIGUOUS" || field.status === "MISSING") warnings.push(label + ": " + field.message);
   }
-  if (target === "REVENUE" && period.value?.startDate !== period.value?.endDate) warnings.push("자유형 매출 폼에는 분석 기간의 시작일을 귀속일로 적용합니다.");
+  if (target === "REVENUE" && period.value?.startDate !== period.value?.endDate) warnings.push("자유형 매출 폼에는 분석 기간의 시작일을 매출일로 적용합니다.");
   if (target === "REVENUE" && item.status === "MISSING" && totalAmount.value != null) warnings.push("품목 없이 자유형 매출로 적용할 수 있습니다.");
   if (explicitTotal != null && calculatedTotal != null && explicitTotal !== calculatedTotal) warnings.push("문장의 총액이 수량 × 단가와 다릅니다. 예외 사유를 확인해 주세요.");
   return [...new Set(warnings)];

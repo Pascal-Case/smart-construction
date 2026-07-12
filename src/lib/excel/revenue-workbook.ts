@@ -71,7 +71,7 @@ export async function createRevenueWorkbook(input: { details: RevenueExportRow[]
 }
 
 function writeSummarySheet(sheet: ExcelJS.Worksheet, details: RevenueExportRow[], filter: RevenueExportFilter) {
-  const headers = ["귀속월", "현장코드", "현장명", "매출액", "매입액", "이익", "원장건수", "작성 중", "확정", "취소"];
+  const headers = ["매출월", "현장코드", "현장명", "매출액", "매입액", "이익", "원장건수", "작성 중", "확정", "취소"];
   writeSheetHeading(sheet, "월별 매출 요약", headers.length, filter);
   sheet.addRow(headers);
   styleHeader(sheet.getRow(HEADER_ROW));
@@ -138,7 +138,7 @@ function writeSummarySheet(sheet: ExcelJS.Worksheet, details: RevenueExportRow[]
 }
 
 function writeDetailSheet(sheet: ExcelJS.Worksheet, details: RevenueExportRow[], filter: RevenueExportFilter) {
-  const headers = ["귀속일", "귀속월", "현장코드", "현장명", "출처", "상태", "계약번호", "품목", "제목", "설명", "수량", "단위", "매출단가", "매출액", "매입단가", "매입액", "이익", "예외·조정 사유", "작성자", "등록일시"];
+  const headers = ["매출일", "매출월", "현장코드", "현장명", "출처", "상태", "계약번호", "품목", "제목", "설명", "수량", "단위", "매출단가", "매출액", "매입단가", "매입액", "이익", "예외·조정 사유", "작성자", "등록일시"];
   writeSheetHeading(sheet, "매출 상세", headers.length, filter);
   sheet.addRow(headers);
   styleHeader(sheet.getRow(HEADER_ROW));
@@ -187,7 +187,7 @@ function writeDetailSheet(sheet: ExcelJS.Worksheet, details: RevenueExportRow[],
 }
 
 function writeMemoSheet(sheet: ExcelJS.Worksheet, memos: MonthlyMemoExportRow[], filter: RevenueExportFilter) {
-  const headers = ["귀속월", "현장코드", "현장명", "특이사항", "수정자", "수정일시"];
+  const headers = ["매출월", "현장코드", "현장명", "특이사항", "수정자", "수정일시"];
   writeSheetHeading(sheet, "월별 특이사항", headers.length, filter);
   sheet.addRow(headers);
   styleHeader(sheet.getRow(HEADER_ROW));

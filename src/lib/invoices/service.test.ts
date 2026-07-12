@@ -5,6 +5,9 @@ import { DEFAULT_INVOICE_TEMPLATE_CONFIG } from "@/lib/invoice-templates/config"
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
+  rootCloseFindMany: vi.fn(),
+  rootInvoiceFindMany: vi.fn(),
+  rootRevenueFindMany: vi.fn(),
   companyFindUnique: vi.fn(),
   invoiceFindUnique: vi.fn(),
   invoiceFindMany: vi.fn(),
@@ -24,13 +27,18 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/db/prisma", () => ({ prisma: { $transaction: mocks.transaction } }));
+vi.mock("@/lib/db/prisma", () => ({ prisma: {
+  $transaction: mocks.transaction,
+  monthlyClose: { findMany: mocks.rootCloseFindMany },
+  invoiceDocument: { findMany: mocks.rootInvoiceFindMany },
+  revenueEntry: { findMany: mocks.rootRevenueFindMany },
+} }));
 vi.mock("@/lib/invoice-templates/service", () => ({ resolveInvoiceTemplate: mocks.resolveTemplate }));
 vi.mock("@/lib/masters/sequence", () => ({ nextInvoiceNo: mocks.nextInvoiceNo }));
 vi.mock("@/lib/audit/record", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/events/bus", () => ({ recordSyncEvent: mocks.recordSyncEvent }));
 
-import { issueInvoices, previewReplacementInvoice, replaceInvoice } from "@/lib/invoices/service";
+import { getInvoiceCandidates, issueInvoices, previewInvoices, previewReplacementInvoice, replaceInvoice } from "@/lib/invoices/service";
 
 const actor = { id: "u1", loginId: "manager", name: "매니저", role: UserRole.MANAGER, isActive: true, version: 1 };
 const source = {
@@ -70,7 +78,13 @@ describe("invoice replacement service", () => {
     mocks.transaction.mockImplementation(async (callback) => callback(tx));
     mocks.companyFindUnique.mockResolvedValue({ id: "default", businessRegistrationNo: "123", companyName: "공급사", representativeName: "대표", address: "서울", businessType: "건설", businessItem: "임대", phone: "02", defaultMessage: "공급합니다" });
     mocks.invoiceFindUnique.mockImplementation(({ where }: { where: { id: string } }) => where.id === source.id ? source : { ...source, id: "invoice-new", invoiceNo: "I-NEW", status: "ISSUED", version: 1, lines: [], site: { code: "S1" }, supersededBy: null, supersedes: [{ id: source.id, invoiceNo: source.invoiceNo }] });
-    mocks.invoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, version: source.version }]);
+    mocks.invoiceFindMany.mockResolvedValue([{
+      id: source.id,
+      invoiceNo: source.invoiceNo,
+      version: source.version,
+      subtotal: source.subtotal,
+      revenueLinks: source.revenueLinks,
+    }]);
     mocks.revenueFindMany.mockResolvedValue(entries);
     mocks.contractFindMany.mockResolvedValue([{ id: "contract-missing", contractNo: "C-NEW", title: "말일 추가 계약" }]);
     mocks.resolveTemplate.mockResolvedValue({ id: "system-default", version: 1, name: "기본", config: DEFAULT_INVOICE_TEMPLATE_CONFIG, configJson: JSON.stringify(DEFAULT_INVOICE_TEMPLATE_CONFIG) });
@@ -82,6 +96,22 @@ describe("invoice replacement service", () => {
     mocks.revenueUpdateMany.mockResolvedValue({ count: 2 });
     mocks.closeCycleFindUnique.mockResolvedValue(closeCycle());
     mocks.closeFindMany.mockResolvedValue([{ id: "close-1", month: "2026-07", cycles: [{ id: "cycle-1", totalSalesAmount: 300_000, snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }) }] }]);
+    mocks.rootCloseFindMany.mockResolvedValue([{ id: "close-1", siteId: "site-1", month: "2026-07", version: 2, site: { id: "site-1", code: "S1", name: "강남 현장" }, cycles: [{ id: "cycle-2", cycleNo: 2, revenueCount: 2, totalSalesAmount: 300_000, revenueFingerprint: "b".repeat(64), snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }) }] }]);
+    mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 100_000, revenueLinks: source.revenueLinks }]);
+    mocks.rootRevenueFindMany.mockResolvedValue([{ id: "r1", currentInvoiceDocumentId: source.id }, { id: "r2", currentInvoiceDocumentId: null }]);
+  });
+
+  it("classifies a reclosed month with a changed current invoice as replacement", async () => {
+    const result = await getInvoiceCandidates({ month: "2026-07", siteId: "" });
+
+    expect(result.rows).toEqual([expect.objectContaining({
+      targetKey: "replacement:site-1:2026-07",
+      kind: "REPLACEMENT",
+      cycleId: "cycle-2",
+      sourceInvoiceId: source.id,
+      sourceVersion: source.version,
+      currentInvoices: [{ id: source.id, invoiceNo: source.invoiceNo, version: source.version }],
+    })]);
   });
 
   it("previews every confirmed revenue in the source period and reports missing-contract warnings", async () => {
@@ -111,10 +141,45 @@ describe("invoice replacement service", () => {
 
   it("rejects replacement when the latest close is identical to the issued document", async () => {
     mocks.invoiceFindUnique.mockResolvedValue({ ...source, subtotal: 300_000, revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] });
+    mocks.invoiceFindMany.mockResolvedValue([{
+      id: source.id,
+      invoiceNo: source.invoiceNo,
+      version: source.version,
+      subtotal: 300_000,
+      revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }],
+    }]);
 
     await expect(previewReplacementInvoice(source.id, settings)).rejects.toMatchObject({
       status: 409,
       code: "INVOICE_REPLACEMENT_NOT_REQUIRED",
+    });
+  });
+
+  it("compares the latest close with every active document in the same period", async () => {
+    mocks.invoiceFindUnique.mockResolvedValue({
+      ...source,
+      subtotal: 300_000,
+      revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }],
+    });
+    mocks.invoiceFindMany.mockResolvedValue([
+      {
+        id: source.id,
+        invoiceNo: source.invoiceNo,
+        version: source.version,
+        subtotal: 300_000,
+        revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }],
+      },
+      {
+        id: "invoice-extra",
+        invoiceNo: "I-EXTRA",
+        version: 1,
+        subtotal: 50_000,
+        revenueLinks: [{ revenueEntryId: "r-extra" }],
+      },
+    ]);
+
+    await expect(previewReplacementInvoice(source.id, settings)).resolves.toMatchObject({
+      document: { subtotal: 300_000 },
     });
   });
 
@@ -134,17 +199,71 @@ describe("invoice replacement service", () => {
       { cycleId: "cycle-1", outcome: "BLOCKED", error: { code: "INVOICE_CLOSE_CHANGED" } },
     ]);
   });
+
+  it("previews mixed new and replacement targets with commit expectations", async () => {
+    mocks.revenueFindMany
+      .mockResolvedValueOnce(entries.map((entry) => ({ ...entry, currentInvoiceDocumentId: null })))
+      .mockResolvedValueOnce(entries);
+
+    const preview = await previewInvoices({
+      ...issueSettings(),
+      targets: [
+        newTarget(),
+        { targetKey: "replacement:site-1:2026-07", kind: "REPLACEMENT", sourceInvoiceId: source.id, sourceVersion: source.version },
+      ],
+    });
+
+    expect(preview.summary).toMatchObject({ total: 2, newCount: 1, replacementCount: 1, blockedCount: 0 });
+    expect(preview.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ targetKey: "new:cycle-1", kind: "NEW", outcome: "PREVIEWED" }),
+      expect.objectContaining({
+        targetKey: "replacement:site-1:2026-07",
+        kind: "REPLACEMENT",
+        outcome: "PREVIEWED",
+        commitTarget: expect.objectContaining({ expectedRevenueEntryIds: ["r1", "r2"], expectedActiveInvoiceIds: [source.id], expectedCloseCycleIds: ["cycle-1"] }),
+      }),
+    ]));
+  });
+
+  it("issues valid mixed targets and leaves a stale replacement blocked", async () => {
+    mocks.revenueFindMany.mockResolvedValue(entries.map((entry) => ({ ...entry, currentInvoiceDocumentId: null })));
+    const results = await issueInvoices(actor, {
+      ...issueSettings(),
+      targets: [
+        newTarget(),
+        {
+          targetKey: "replacement:site-1:2026-07",
+          kind: "REPLACEMENT",
+          sourceInvoiceId: source.id,
+          sourceVersion: source.version - 1,
+          expectedRevenueEntryIds: ["r1", "r2"],
+          expectedActiveInvoiceIds: [source.id],
+          expectedCloseCycleIds: ["cycle-1"],
+        },
+      ],
+    });
+
+    expect(results).toEqual([
+      expect.objectContaining({ targetKey: "new:cycle-1", outcome: "ISSUED" }),
+      expect.objectContaining({ targetKey: "replacement:site-1:2026-07", outcome: "BLOCKED", error: { code: "INVOICE_REPLACEMENT_CHANGED", message: expect.any(String) } }),
+    ]);
+    expect(mocks.invoiceUpdateMany).not.toHaveBeenCalled();
+  });
 });
 
 function issueInput() {
   return {
-    cycles: [{ cycleId: "cycle-1", expectedCloseVersion: 2, expectedRevenueFingerprint: "a".repeat(64) }],
-    issueDate: "2026-07-25",
-    displayMode: "AGGREGATED" as const,
-    memo: null,
-    templateId: "system-default",
-    templateVersion: 1,
+    ...issueSettings(),
+    targets: [newTarget()],
   };
+}
+
+function issueSettings() {
+  return { issueDate: "2026-07-25", displayMode: "AGGREGATED" as const, memo: null, templateId: "system-default", templateVersion: 1 };
+}
+
+function newTarget() {
+  return { targetKey: "new:cycle-1", kind: "NEW" as const, cycleId: "cycle-1", expectedCloseVersion: 2, expectedRevenueFingerprint: "a".repeat(64) };
 }
 
 function closeCycle() {

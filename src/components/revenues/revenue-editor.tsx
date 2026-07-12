@@ -131,12 +131,12 @@ export function RevenueEditor({
           {initialContext && (
             <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3 text-sm text-teal-950 sm:col-span-2 dark:border-teal-800 dark:bg-teal-950/60 dark:text-teal-50">
               <p className="font-medium">{initialContext.siteName} · {initialContext.month} 매출 등록</p>
-              <p className="mt-1 text-xs">현장과 대상월을 이어받았습니다. 귀속일은 대상월 안에서 직접 선택해 주세요.</p>
+              <p className="mt-1 text-xs">현장과 대상월을 이어받았습니다. 매출일은 대상월 안에서 직접 선택해 주세요.</p>
             </div>
           )}
           <SelectName label="유형" name="sourceType" value={sourceType} onChange={(value) => setSourceType(value as "MANUAL" | "ADJUSTMENT")} options={[{ value: "MANUAL", label: "직접 매출" }, { value: "ADJUSTMENT", label: "조정(음수 가능)" }]} />
           <SelectName label="현장" name="siteId" defaultValue={defaultSiteId} options={sites.map((site) => ({ value: site.id, label: site.name }))} />
-          <FormField label="귀속일" name="revenueDate" type="date" defaultValue={defaultRevenueDate} min={monthBounds?.min} max={monthBounds?.max} required />
+          <FormField label="매출일" name="revenueDate" type="date" defaultValue={defaultRevenueDate} min={monthBounds?.min} max={monthBounds?.max} required />
           <FormField label="제목" name="title" defaultValue={row?.title ?? draft?.title ?? ""} required />
           <div className="space-y-1.5 sm:col-span-2"><Label>품목(선택)</Label><select value={itemId} onChange={(event) => selectItem(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="">품목 없이 자유 입력</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
           <div className="space-y-1.5"><Label>수량</Label><Input type="number" min="0" step="any" value={quantity} onChange={(event) => { const value = event.target.value === "" ? "" : Number(event.target.value); setQuantity(value); recalc(value, salesPrice); }} /></div>

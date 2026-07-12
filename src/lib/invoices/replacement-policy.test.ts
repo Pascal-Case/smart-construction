@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isReplaceableInvoiceStatus, replacementRequiredForPeriod, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
+import { classifyInvoiceCandidateState, isReplaceableInvoiceStatus, replacementRequiredForPeriod, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
 
 describe("invoice replacement policy", () => {
   it("allows only the current issued document to start a replacement", () => {
@@ -30,5 +30,13 @@ describe("invoice replacement policy", () => {
     expect(replacementRequiredForPeriod(cycles, [
       { revenueEntryIds: ["r1"], subtotal: 300 },
     ])).toBe(true);
+  });
+
+  it("최신 마감과 현재 발행본을 신규·대체·변경 없음으로 분류한다", () => {
+    const close = { revenueEntryIds: ["r1", "r2"], totalSalesAmount: 300 };
+    expect(classifyInvoiceCandidateState({ close, currentDocuments: [], hasScopeConflict: false })).toBe("NEW");
+    expect(classifyInvoiceCandidateState({ close, currentDocuments: [{ revenueEntryIds: ["r1"], subtotal: 100 }], hasScopeConflict: false })).toBe("REPLACEMENT");
+    expect(classifyInvoiceCandidateState({ close, currentDocuments: [{ revenueEntryIds: ["r2", "r1"], subtotal: 300 }], hasScopeConflict: false })).toBe("UNCHANGED");
+    expect(classifyInvoiceCandidateState({ close, currentDocuments: [], hasScopeConflict: true })).toBe("BLOCKED");
   });
 });

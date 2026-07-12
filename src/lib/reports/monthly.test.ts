@@ -14,7 +14,7 @@ describe("monthly report", () => {
     expect(currentYearMonthRange(new Date("2025-12-31T16:00:00.000Z")))
       .toEqual({ startMonth: "2026-01", endMonth: "2026-12" });
   });
-  it("한국 시간의 현재 월을 기본 귀속월로 만든다", () => {
+  it("한국 시간의 현재 월을 기본 매출월로 만든다", () => {
     expect(currentMonthKey(new Date("2025-12-31T16:00:00.000Z"))).toBe("2026-01");
   });
 });

@@ -32,3 +32,15 @@ export function replacementRequiredForPeriod(
     closeCycles.reduce((sum, cycle) => sum + cycle.totalSalesAmount, 0),
   );
 }
+
+export function classifyInvoiceCandidateState(input: {
+  close: { revenueEntryIds: string[]; totalSalesAmount: number };
+  currentDocuments: Array<{ revenueEntryIds: string[]; subtotal: number }>;
+  hasScopeConflict: boolean;
+}) {
+  if (input.hasScopeConflict) return "BLOCKED" as const;
+  if (!input.currentDocuments.length) return "NEW" as const;
+  return replacementRequiredForPeriod([input.close], input.currentDocuments)
+    ? "REPLACEMENT" as const
+    : "UNCHANGED" as const;
+}

@@ -34,7 +34,7 @@ const navigation = [
   { label: "계약 관리", icon: FileSpreadsheet, href: "/contracts" },
   { label: "매출 원장", icon: ReceiptText, href: "/revenues" },
   { label: "월별 현황", icon: BarChart3, href: "/reports/monthly" },
-  { label: "월마감 관제실", icon: CalendarCheck2, href: "/reports/monthly/close" },
+  { label: "월마감", icon: CalendarCheck2, href: "/reports/monthly/close" },
   { label: "거래명세표", icon: FileText, href: "/invoices" },
 ];
 
