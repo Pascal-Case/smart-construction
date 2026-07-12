@@ -19,3 +19,16 @@ export function sameRevenueState(
 ) {
   return expectedAmount === actualAmount && sameRevenueSet(expectedIds, actualIds);
 }
+
+export function replacementRequiredForPeriod(
+  closeCycles: Array<{ revenueEntryIds: string[]; totalSalesAmount: number }>,
+  currentDocuments: Array<{ revenueEntryIds: string[]; subtotal: number }>,
+) {
+  if (!closeCycles.length || !currentDocuments.length) return false;
+  return !sameRevenueState(
+    currentDocuments.flatMap((document) => document.revenueEntryIds),
+    currentDocuments.reduce((sum, document) => sum + document.subtotal, 0),
+    closeCycles.flatMap((cycle) => cycle.revenueEntryIds),
+    closeCycles.reduce((sum, cycle) => sum + cycle.totalSalesAmount, 0),
+  );
+}

@@ -26,7 +26,7 @@ function row(name: string, options: { closed?: boolean; blockers?: number; excep
       totals: { revenueCount: 1, totalSalesAmount: 100, totalCostAmount: 50 },
     },
     commitFingerprint: "b".repeat(64),
-    close: options.closed ? { id: name, state: "CLOSED", version: 1, latestCycleNo: 1, cycles: [] } : null,
+    close: options.closed ? { id: name, state: "CLOSED", version: 1, latestCycleNo: 1, cycles: [], reopens: [] } : null,
   };
 }
 

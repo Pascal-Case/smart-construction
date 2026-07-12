@@ -15,7 +15,8 @@ export type MonthCloseControlRoomRow = {
     state: "OPEN" | "CLOSED";
     version: number;
     latestCycleNo: number;
-    cycles: Array<{ id: string; cycleNo: number; closedAt: string; revenueCount: number; totalSalesAmount: number }>;
+    cycles: Array<{ id: string; cycleNo: number; closedAt: string; closedByName: string; revenueCount: number; totalSalesAmount: number; totalCostAmount: number }>;
+    reopens: Array<{ id: string; fromCycleId: string; reason: string; reopenedByName: string; reopenedAt: string }>;
   } | null;
 };
 

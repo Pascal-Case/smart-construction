@@ -1,4 +1,5 @@
 import { stableFingerprint } from "@/lib/monthly-close/fingerprint";
+import { replacementRequiredForPeriod } from "@/lib/invoices/replacement-policy";
 import type {
   MonthCloseEvaluation,
   MonthCloseEvaluationInput,
@@ -167,8 +168,10 @@ function needsReplacement(input: MonthCloseEvaluationInput) {
   if (!input.latestCloseSnapshot) return false;
   const current = currentInvoiceState(input);
   if (current.revenueEntryIds.length === 0) return false;
-  const expectedIds = [...new Set(input.latestCloseSnapshot.revenueEntryIds)].sort();
-  return current.totalSalesAmount !== input.latestCloseSnapshot.totalSalesAmount
-    || current.revenueEntryIds.length !== expectedIds.length
-    || current.revenueEntryIds.some((id, index) => id !== expectedIds[index]);
+  return replacementRequiredForPeriod([
+    input.latestCloseSnapshot,
+  ], [{
+    revenueEntryIds: current.revenueEntryIds,
+    subtotal: current.totalSalesAmount,
+  }]);
 }

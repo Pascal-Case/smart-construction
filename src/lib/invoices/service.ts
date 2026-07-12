@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
 import { resolveInvoiceTemplate } from "@/lib/invoice-templates/service";
 import { buildInvoiceDrafts, type InvoiceSourceEntry } from "@/lib/invoices/calculation";
-import { isReplaceableInvoiceStatus, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
+import { isReplaceableInvoiceStatus, replacementRequiredForPeriod, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
 import type { InvoiceCandidateQuery, InvoiceIssueInput, InvoiceListQuery, InvoiceReplacementIssueInput, InvoiceReplacementPreviewInput } from "@/lib/invoices/schemas";
 import { nextInvoiceNo } from "@/lib/masters/sequence";
 
@@ -200,9 +200,71 @@ export async function listInvoices(query: InvoiceListQuery) {
   };
   const [total, rows] = await prisma.$transaction([
     prisma.invoiceDocument.count({ where }),
-    prisma.invoiceDocument.findMany({ where, select: { id: true, invoiceNo: true, issueDate: true, periodStart: true, periodEnd: true, recipientName: true, subtotal: true, taxAmount: true, totalAmount: true, displayMode: true, status: true, version: true, issuedAt: true, supersededAt: true, supersededBy: { select: { id: true, invoiceNo: true } }, _count: { select: { lines: true, revenueLinks: true } } }, orderBy: [{ issueDate: "desc" }, { invoiceNo: "desc" }], skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
+    prisma.invoiceDocument.findMany({
+      where,
+      select: {
+        id: true,
+        invoiceNo: true,
+        siteId: true,
+        issueDate: true,
+        periodStart: true,
+        periodEnd: true,
+        recipientName: true,
+        subtotal: true,
+        taxAmount: true,
+        totalAmount: true,
+        displayMode: true,
+        status: true,
+        version: true,
+        issuedAt: true,
+        supersededAt: true,
+        supersededBy: { select: { id: true, invoiceNo: true } },
+        monthlyCloseCycle: { select: { cycleNo: true } },
+        _count: { select: { lines: true, revenueLinks: true } },
+      },
+      orderBy: [{ issueDate: "desc" }, { invoiceNo: "desc" }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
   ]);
-  return { rows, total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
+  const issuedRows = rows.filter((row) => row.status === "ISSUED");
+  if (!issuedRows.length) {
+    return { rows: rows.map((row) => ({ ...row, replacementRequired: false })), total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
+  }
+
+  const closeTargets = uniqueBy(issuedRows.flatMap((row) => monthsBetween(row.periodStart, row.periodEnd).map((month) => ({ siteId: row.siteId, month }))), (target) => target.siteId + ":" + target.month);
+  const periodTargets = uniqueBy(issuedRows.map((row) => ({ siteId: row.siteId, periodStart: row.periodStart, periodEnd: row.periodEnd })), periodKey);
+  const [closes, currentDocuments] = await prisma.$transaction([
+    prisma.monthlyClose.findMany({
+      where: { OR: closeTargets },
+      include: { cycles: { orderBy: { cycleNo: "desc" }, take: 1 } },
+    }),
+    prisma.invoiceDocument.findMany({
+      where: { status: "ISSUED", OR: periodTargets },
+      select: {
+        siteId: true,
+        periodStart: true,
+        periodEnd: true,
+        subtotal: true,
+        revenueLinks: { select: { revenueEntryId: true } },
+      },
+    }),
+  ]);
+  const closeBySiteMonth = new Map(closes.map((close) => [close.siteId + ":" + close.month, close]));
+  const documentsByPeriod = groupBy(currentDocuments, periodKey);
+  const enrichedRows = rows.map((row) => {
+    if (row.status !== "ISSUED") return { ...row, replacementRequired: false };
+    const closeStates = monthsBetween(row.periodStart, row.periodEnd).map((month) => closeBySiteMonth.get(row.siteId + ":" + month));
+    if (closeStates.some((close) => close?.state !== "CLOSED" || !close.cycles[0])) return { ...row, replacementRequired: false };
+    const latestCycles = closeStates.map((close) => close!.cycles[0]);
+    const documents = documentsByPeriod.get(periodKey(row)) ?? [];
+    const replacementRequired = replacementRequiredForPeriod(
+      latestCycles.map((cycle) => ({ revenueEntryIds: snapshotRevenueIds(cycle.snapshotJson), totalSalesAmount: cycle.totalSalesAmount })),
+      documents.map((document) => ({ revenueEntryIds: document.revenueLinks.map((link) => link.revenueEntryId), subtotal: document.subtotal })),
+    );
+    return { ...row, replacementRequired };
+  });
+  return { rows: enrichedRows, total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
 }
 
 export async function getInvoiceDocument(id: string, tx?: Prisma.TransactionClient) {
@@ -412,6 +474,20 @@ function snapshotRevenueIds(snapshotJson: string) {
   } catch {
     return [];
   }
+}
+
+function periodKey(value: { siteId: string; periodStart: Date; periodEnd: Date }) {
+  return [value.siteId, value.periodStart.toISOString(), value.periodEnd.toISOString()].join(":");
+}
+
+function uniqueBy<T>(values: T[], key: (value: T) => string) {
+  return [...new Map(values.map((value) => [key(value), value])).values()];
+}
+
+function groupBy<T>(values: T[], key: (value: T) => string) {
+  const result = new Map<string, T[]>();
+  for (const value of values) result.set(key(value), [...(result.get(key(value)) ?? []), value]);
+  return result;
 }
 function monthsBetween(start: Date, end: Date) {
   const months: string[] = [];

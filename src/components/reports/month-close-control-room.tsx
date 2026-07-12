@@ -65,7 +65,7 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
   useRealtimeRefresh(["monthlyClose.changed", "contract.changed", "revenue.changed", "invoice.changed"], () => { void load(); });
 
   const rows = sortControlRoomRows(filterControlRoomRows(data?.rows ?? [], view));
-  const eligibleRows = (data?.rows ?? []).filter((row) => row.close?.state !== "CLOSED" && row.evaluation.canClose);
+  const openRows = (data?.rows ?? []).filter((row) => row.close?.state !== "CLOSED");
   const selectedRows = (data?.rows ?? []).filter((row) => selected.includes(row.site.id) && row.close?.state !== "CLOSED");
 
   function toggle(siteId: string) {
@@ -87,10 +87,10 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "마감을 완료하지 못했습니다.");
       const results = body.results as Array<{ outcome: "CLOSED" | "BLOCKED" | "ALREADY_CLOSED" | "CHANGED" }>;
-      const closed = results.filter((result) => result.outcome === "CLOSED").length;
-      const skipped = results.length - closed;
-      if (closed) toast.success(`${closed}개 현장을 마감했습니다.`);
-      if (skipped) toast.warning(`${skipped}개 현장은 예외 또는 상태 변경으로 마감되지 않았습니다.`);
+      const counts = countOutcomes(results);
+      const summary = `마감 ${counts.CLOSED} · 차단 ${counts.BLOCKED} · 이미 마감 ${counts.ALREADY_CLOSED} · 상태 변경 ${counts.CHANGED}`;
+      if (results.length === counts.CLOSED) toast.success(summary);
+      else toast.warning(summary);
       setSelected([]);
       await load();
     } catch (error) {
@@ -161,7 +161,7 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={busy} onClick={() => void load()}><RefreshCw data-icon="inline-start" />조회</Button>
         {canClose && <Button variant="outline" disabled={busy || selectedRows.length === 0} onClick={() => void closeRows(selectedRows)}><LockKeyhole data-icon="inline-start" />선택 마감</Button>}
-        {canClose && <Button disabled={busy || eligibleRows.length === 0} onClick={() => void closeRows(eligibleRows)}><FileCheck2 data-icon="inline-start" />가능한 현장 모두 마감</Button>}
+        {canClose && <Button disabled={busy || openRows.length === 0} onClick={() => void closeRows(openRows)}><FileCheck2 data-icon="inline-start" />열린 현장 모두 마감</Button>}
       </div>
     </section>
 
@@ -190,7 +190,7 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
             return <TableRow key={row.site.id} className={closed ? "bg-emerald-50/30" : undefined}>
               <TableCell><input aria-label={`${row.site.name} 선택`} type="checkbox" disabled={closed || !canClose} checked={selected.includes(row.site.id)} onChange={() => toggle(row.site.id)} /></TableCell>
               <TableCell><span className="font-medium">{row.site.name}</span><span className="block text-xs text-muted-foreground">{row.site.code}</span></TableCell>
-              <TableCell><div className="flex flex-wrap gap-1">{closed ? <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800" variant="outline"><CheckCircle2 data-icon="inline-start" />마감 {row.close?.latestCycleNo}회차</Badge> : row.evaluation.blockingCount > 0 ? <Badge className="border-red-200 bg-red-50 text-red-800" variant="outline"><AlertTriangle data-icon="inline-start" />차단 {row.evaluation.blockingCount}</Badge> : <Badge variant="secondary">마감 가능</Badge>}{row.evaluation.replacementRequired && <Badge className="border-amber-200 bg-amber-50 text-amber-800" variant="outline">대체 발행 필요</Badge>}</div>{latestCycle && <span className="mt-1 block text-xs text-muted-foreground">{new Date(latestCycle.closedAt).toLocaleString("ko-KR")}</span>}</TableCell>
+              <TableCell><div className="flex flex-wrap gap-1">{closed ? <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800" variant="outline"><CheckCircle2 data-icon="inline-start" />마감 {row.close?.latestCycleNo}회차</Badge> : row.evaluation.blockingCount > 0 ? <Badge className="border-red-200 bg-red-50 text-red-800" variant="outline"><AlertTriangle data-icon="inline-start" />차단 {row.evaluation.blockingCount}</Badge> : <Badge variant="secondary">마감 가능</Badge>}{row.evaluation.replacementRequired && <Badge className="border-amber-200 bg-amber-50 text-amber-800" variant="outline">대체 발행 필요</Badge>}</div>{latestCycle && <span className="mt-1 block text-xs text-muted-foreground">{new Date(latestCycle.closedAt).toLocaleString("ko-KR")}</span>}{row.close && <CloseHistory close={row.close} />}</TableCell>
               <TableCell className="text-right"><span className="font-medium tabular-nums">{row.evaluation.totals.totalSalesAmount.toLocaleString()}원</span><span className="block text-xs text-muted-foreground">{row.evaluation.totals.revenueCount}건</span></TableCell>
               <TableCell><div className="min-w-72 space-y-2">{row.evaluation.exceptions.length === 0 ? <span className="text-sm text-muted-foreground">예외 없음</span> : row.evaluation.exceptions.map((exception) => <div key={exception.key} className="rounded-lg border p-2 text-sm"><div className="flex items-start justify-between gap-2"><span>{exception.message}</span><Badge variant="outline">{exceptionLabel(exception)}</Badge></div><div className="mt-1 flex items-center justify-between"><span className={exception.blocking ? "text-xs text-red-700" : "text-xs text-muted-foreground"}>{exception.reviewed ? "검토 완료" : exception.blocking ? "마감 차단" : "인지 필요"}</span>{canClose && exception.reviewable && !exception.reviewed && <Button size="xs" variant="outline" onClick={() => { setReviewTarget({ siteId: row.site.id, siteName: row.site.name, exception }); setReviewReason(""); }}>검토</Button>}</div></div>)}</div></TableCell>
               <TableCell className="text-right"><div className="flex min-w-36 flex-col items-end gap-1">{canClose && !closed && <Button size="sm" disabled={busy || !row.evaluation.canClose} onClick={() => void closeRows([row])}><LockKeyhole data-icon="inline-start" />마감</Button>}{isAdmin && closed && latestCycle && <Button size="sm" variant="outline" onClick={() => { setReopenTarget(row); setReopenReason(""); }}><RotateCcw data-icon="inline-start" />마감 되돌리기</Button>}{closed && latestCycle && <Button size="sm" variant="ghost" nativeButton={false} render={<Link href={`/invoices?month=${month}&siteId=${row.site.id}#new-issue`} />}><Search data-icon="inline-start" />발행으로 이동</Button>}</div></TableCell>
@@ -219,4 +219,26 @@ function exceptionLabel(exception: MonthCloseException) {
     INVOICE_HISTORY: "발행 이력",
     REPLACEMENT_REQUIRED: "대체 발행",
   }[exception.kind];
+}
+
+function CloseHistory({ close }: { close: NonNullable<MonthCloseControlRoomRow["close"]> }) {
+  return <details className="mt-2 text-xs">
+    <summary className="cursor-pointer text-muted-foreground">마감 {close.cycles.length}회 · 되돌리기 {close.reopens.length}회</summary>
+    <div className="mt-2 min-w-64 space-y-2 rounded-lg border bg-background p-2">
+      {close.cycles.map((cycle) => <div key={cycle.id}>
+        <p className="font-medium">{cycle.cycleNo}회차 · {cycle.totalSalesAmount.toLocaleString()}원 · {cycle.revenueCount}건</p>
+        <p className="text-muted-foreground">{cycle.closedByName} · {new Date(cycle.closedAt).toLocaleString("ko-KR")}</p>
+      </div>)}
+      {close.reopens.map((reopen) => <div key={reopen.id} className="border-t pt-2">
+        <p className="font-medium">되돌리기 · {reopen.reason}</p>
+        <p className="text-muted-foreground">{reopen.reopenedByName} · {new Date(reopen.reopenedAt).toLocaleString("ko-KR")}</p>
+      </div>)}
+    </div>
+  </details>;
+}
+
+function countOutcomes(results: Array<{ outcome: "CLOSED" | "BLOCKED" | "ALREADY_CLOSED" | "CHANGED" }>) {
+  const counts = { CLOSED: 0, BLOCKED: 0, ALREADY_CLOSED: 0, CHANGED: 0 };
+  for (const result of results) counts[result.outcome] += 1;
+  return counts;
 }

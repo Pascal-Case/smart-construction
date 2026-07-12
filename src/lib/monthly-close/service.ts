@@ -388,8 +388,22 @@ function toControlRoomRow(context: NonNullable<Awaited<ReturnType<typeof loadEva
       state: context.close.state,
       version: context.close.version,
       latestCycleNo: context.close.latestCycleNo,
-      cycles: context.close.cycles,
-      reopens: context.close.reopens,
+      cycles: context.close.cycles.map((cycle) => ({
+        id: cycle.id,
+        cycleNo: cycle.cycleNo,
+        revenueCount: cycle.revenueCount,
+        totalSalesAmount: cycle.totalSalesAmount,
+        totalCostAmount: cycle.totalCostAmount,
+        closedByName: cycle.closedByName,
+        closedAt: cycle.closedAt,
+      })),
+      reopens: context.close.reopens.map((reopen) => ({
+        id: reopen.id,
+        fromCycleId: reopen.fromCycleId,
+        reason: reopen.reason,
+        reopenedByName: reopen.reopenedByName,
+        reopenedAt: reopen.reopenedAt,
+      })),
     } : null,
   };
 }

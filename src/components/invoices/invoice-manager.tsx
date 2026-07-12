@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, FileCheck2, Printer, RefreshCw, Search, Settings2 } from "lucide-react";
+import { CalendarCheck2, Eye, FileCheck2, Printer, RefreshCw, Search, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -50,6 +50,8 @@ type InvoiceRow = {
   issuedAt: string;
   supersededAt: string | null;
   supersededBy: { id: string; invoiceNo: string } | null;
+  monthlyCloseCycle: { cycleNo: number } | null;
+  replacementRequired: boolean;
   _count: { lines: number; revenueLinks: number };
 };
 export type InvoiceList = {
@@ -248,9 +250,11 @@ export function InvoiceManager({
         document?: { id: string };
       }>;
       const ids = results.flatMap((result) => result.outcome === "ISSUED" && result.document ? [result.document.id] : []);
-      const failed = results.length - ids.length;
-      if (ids.length) toast.success(`거래명세표 ${ids.length}건을 발행했습니다.`);
-      if (failed) toast.warning(`${failed}개 마감 회차는 상태 변경 또는 기존 발행으로 처리되지 않았습니다.`);
+      const blocked = results.filter((result) => result.outcome === "BLOCKED").length;
+      const alreadyIssued = results.filter((result) => result.outcome === "ALREADY_ISSUED").length;
+      const summary = `발행 ${ids.length} · 차단 ${blocked} · 이미 발행 ${alreadyIssued}`;
+      if (ids.length === results.length) toast.success(summary);
+      else toast.warning(summary);
       setPreview(null);
       setPending(null);
       await Promise.all([loadCandidates(), loadInvoices(1)]);
@@ -343,7 +347,10 @@ export function InvoiceManager({
   const selectedSupply = selectedRows.reduce((sum, row) => sum + row.supplyAmount, 0);
 
   return <div className="space-y-6">
-    <div className="flex justify-end">
+    <div className="flex justify-end gap-2">
+      <Button variant="outline" nativeButton={false} render={<Link href="/reports/monthly/close" />}>
+        <CalendarCheck2 data-icon="inline-start" />월마감 관제실
+      </Button>
       <Button variant="outline" nativeButton={false} render={<Link href="/invoices/templates" />}>
         <Settings2 data-icon="inline-start" />
         {canIssue ? "템플릿 관리" : "템플릿 보기"}
@@ -446,12 +453,12 @@ export function InvoiceManager({
             <TableCell className="font-mono text-xs">{row.invoiceNo}{row.supersededBy && <span className="block font-sans text-[11px] text-muted-foreground">→ {row.supersededBy.invoiceNo}</span>}</TableCell>
             <TableCell><Badge variant={row.status === "ISSUED" ? "secondary" : "outline"}>{row.status === "ISSUED" ? "유효" : row.status === "SUPERSEDED" ? "대체됨" : "작성 중"}</Badge></TableCell>
             <TableCell>{row.issueDate.slice(0, 10)}</TableCell><TableCell>{row.recipientName}</TableCell>
-            <TableCell className="text-xs">{row.periodStart.slice(0, 10)} ~ {row.periodEnd.slice(0, 10)}</TableCell>
+            <TableCell className="text-xs">{row.periodStart.slice(0, 10)} ~ {row.periodEnd.slice(0, 10)}{row.monthlyCloseCycle && <span className="block text-muted-foreground">마감 {row.monthlyCloseCycle.cycleNo}회차 근거</span>}</TableCell>
             <TableCell>{row._count.revenueLinks}/{row._count.lines}</TableCell>
             <TableCell className="text-right font-medium tabular-nums">{row.subtotal.toLocaleString()}</TableCell>
             <TableCell><Badge variant="outline">{row.displayMode === "AGGREGATED" ? "합산" : "건별"}</Badge></TableCell>
             <TableCell className="text-right"><div className="flex justify-end gap-1">
-              {canIssue && row.status === "ISSUED" && <Button size="sm" variant="outline" onClick={() => openReplacement(row)}><RefreshCw data-icon="inline-start" />대체 발행</Button>}
+              {canIssue && row.status === "ISSUED" && row.replacementRequired && <Button size="sm" variant="outline" onClick={() => openReplacement(row)}><RefreshCw data-icon="inline-start" />대체 발행</Button>}
               <Button size="sm" variant="ghost" nativeButton={false} render={<a href={`/invoices/print?ids=${row.id}`} target="_blank" rel="noreferrer" />}><Printer data-icon="inline-start" />재출력</Button>
             </div></TableCell>
           </TableRow>)}</TableBody>
