@@ -3,7 +3,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
-export type AppEventType = "monthlyMemo.changed" | "site.changed" | "item.changed" | "contract.changed" | "revenue.changed" | "invoice.changed";
+export type AppEventType = "monthlyMemo.changed" | "site.changed" | "item.changed" | "contract.changed" | "revenue.changed" | "invoice.changed" | "monthlyClose.changed";
 export type AppEvent = { id: number; type: AppEventType; entityId: string; siteId: string | null; month: string | null; actorId: string | null; occurredAt: string };
 export type SyncEventInput = { type: AppEventType; entityId: string; siteId?: string; month?: string; actorId?: string };
 
