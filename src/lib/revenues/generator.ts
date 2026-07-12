@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 import {
   buildContractRevenueDrafts,
   buildGenerationRows,
@@ -21,6 +22,11 @@ export async function previewContractRevenues(contractId: string) {
 export async function generateContractRevenues(actor: SessionUser, contractId: string) {
   return prisma.$transaction(async (tx) => {
     const preview = await buildPreview(tx, contractId);
+    const affectedMonths = [...new Set(preview.rows.flatMap((row) => {
+      const date = row.draft?.revenueDate ?? row.existing?.revenueDate;
+      return date ? [date.toISOString().slice(0, 7)] : [];
+    }))];
+    await assertMonthsOpen(tx, [{ siteId: preview.contract.siteId, months: affectedMonths }]);
     const counts = { create: 0, update: 0, unchanged: 0, protected: 0, cancel: 0 };
     for (const row of preview.rows) {
       if (row.action === "CREATE") {

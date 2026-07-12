@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 import { generatedKeyAfterUserCancel } from "@/lib/revenues/generation-policy";
 import { buildRevenueWhere } from "@/lib/revenues/query";
 import type { RevenueInput, RevenueListQuery } from "@/lib/revenues/schemas";
@@ -30,6 +31,7 @@ export async function createRevenue(actor: SessionUser, input: RevenueInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       const data = await prepareRevenue(tx, input);
+      await assertMonthsOpen(tx, [{ siteId: input.siteId, months: [input.revenueDate.slice(0, 7)] }]);
       const confirmed = input.saveStatus === "CONFIRMED";
       const entry = await tx.revenueEntry.create({ data: {
         ...data,
@@ -54,6 +56,10 @@ export async function updateRevenue(actor: SessionUser, id: string, input: Reven
       if (before.sourceType === "CONTRACT") throw new AuthError("계약 자동 매출은 계약 재생성으로 변경해 주세요.", 400, "CONTRACT_REVENUE_READ_ONLY");
       if (before.status !== "DRAFT") throw new AuthError("작성 중 매출만 수정할 수 있습니다.", 409, "REVENUE_NOT_DRAFT");
       const data = await prepareRevenue(tx, input, before);
+      await assertMonthsOpen(tx, [
+        { siteId: before.siteId, months: [before.revenueDate.toISOString().slice(0, 7)] },
+        { siteId: input.siteId, months: [input.revenueDate.slice(0, 7)] },
+      ]);
       const updated = await tx.revenueEntry.updateMany({ where: { id, version: input.version, status: "DRAFT" }, data: { ...data, updatedById: actor.id, version: { increment: 1 } } });
       if (!updated.count) throw new AuthError("다른 사용자가 먼저 매출을 수정했습니다. 새로고침 후 다시 시도해 주세요.", 409, "VERSION_CONFLICT");
       const entry = await tx.revenueEntry.findUniqueOrThrow({ where: { id }, include: includeRelations });
@@ -78,6 +84,7 @@ async function transitionRevenue(actor: SessionUser, id: string, version: number
     if (!before) throw new AuthError("매출 건을 찾을 수 없습니다.", 404, "REVENUE_NOT_FOUND");
     if (before.status === "CANCELED") throw new AuthError("이미 취소된 매출입니다.", 409, "REVENUE_ALREADY_CANCELED");
     if (status === "CONFIRMED" && before.status !== "DRAFT") throw new AuthError("작성 중 매출만 확정할 수 있습니다.", 409, "REVENUE_NOT_DRAFT");
+    await assertMonthsOpen(tx, [{ siteId: before.siteId, months: [before.revenueDate.toISOString().slice(0, 7)] }]);
     const result = await tx.revenueEntry.updateMany({ where: { id, version }, data: status === "CONFIRMED"
       ? { status, confirmedById: actor.id, confirmedAt: new Date(), updatedById: actor.id, version: { increment: 1 } }
       : { status, cancelReason: reason, canceledById: actor.id, canceledAt: new Date(), generatedKey: generatedKeyAfterUserCancel(before.sourceType, before.generatedKey), updatedById: actor.id, version: { increment: 1 } } });

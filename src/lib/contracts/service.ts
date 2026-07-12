@@ -4,13 +4,14 @@ import { Prisma } from "@/generated/prisma/client";
 import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
-import { buildContractImpact } from "@/lib/contracts/impact";
+import { buildContractImpact, enumerateMonths } from "@/lib/contracts/impact";
 import { deriveContractPeriod } from "@/lib/contracts/period";
 import type { ContractInput, ContractListQuery } from "@/lib/contracts/schemas";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
 import { normalizeCode } from "@/lib/masters/normalize";
 import { nextBusinessCode } from "@/lib/masters/sequence";
+import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 
 const contractInclude = {
   site: { select: { id: true, code: true, name: true, isActive: true } },
@@ -50,6 +51,7 @@ export async function createContract(actor: SessionUser, input: ContractInput) {
     return await prisma.$transaction(async (tx) => {
       const prepared = await prepareAggregate(tx, actor, input);
       const period = deriveContractPeriod(input.lines);
+      await assertMonthsOpen(tx, [{ siteId: input.siteId, months: enumerateMonths(period.startDate, period.endDate) }]);
       const contractNo = input.contractNo ? normalizeCode(input.contractNo) : await nextBusinessCode(tx, "contract");
       const contract = await tx.contract.create({ data: {
         contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
@@ -78,6 +80,11 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
       const before = await tx.contract.findUnique({ where: { id }, include: contractIncludeAll });
       if (!before) throw new AuthError("계약을 찾을 수 없습니다.", 404, "CONTRACT_NOT_FOUND");
       const prepared = await prepareAggregate(tx, actor, input, before);
+      const impact = buildContractImpact(before, input);
+      await assertMonthsOpen(tx, [
+        { siteId: before.siteId, months: impact.affectedMonths },
+        { siteId: input.siteId, months: impact.affectedMonths },
+      ]);
       const period = deriveContractPeriod(input.lines);
       const updated = await tx.contract.updateMany({ where: { id, version: input.version }, data: {
         contractNo: input.contractNo ? normalizeCode(input.contractNo) : before.contractNo,

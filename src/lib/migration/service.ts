@@ -6,6 +6,8 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { enumerateMonths } from "@/lib/contracts/impact";
+import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 import { fingerprintLegacyBundle, legacyContractNo, parseLegacyPayload } from "@/lib/migration/legacy";
 import type {
   LegacyMigrationBundle,
@@ -142,6 +144,20 @@ export async function commitLegacyMigration(actor: SessionUser, raw: unknown, ex
       const currentSites = await tx.site.findMany({ include: { aliases: true } });
       const itemIdentity = masterIdentityMap(currentItems);
       const siteIdentity = masterIdentityMap(currentSites);
+      const contractNos = parsed.bundle.contracts.map((contract) => legacyContractNo(contract.id));
+      const existingContracts = await tx.contract.findMany({
+        where: { contractNo: { in: contractNos } },
+        select: { contractNo: true },
+      });
+      const existingContractNos = new Set(existingContracts.map((contract) => contract.contractNo));
+      await assertMonthsOpen(tx, parsed.bundle.contracts.flatMap((contract) => {
+        if (existingContractNos.has(legacyContractNo(contract.id))) return [];
+        const site = siteIdentity.get(normalizeAlias(contract.site));
+        return site ? [{
+          siteId: site.id,
+          months: enumerateMonths(contract.startDate, contract.endDate),
+        }] : [];
+      }));
       const itemTargets = new Map<string, ExistingItem>();
       let createdItems = 0;
       let reusedItems = 0;
@@ -188,7 +204,7 @@ export async function commitLegacyMigration(actor: SessionUser, raw: unknown, ex
       let skippedContracts = 0;
       for (const contract of parsed.bundle.contracts) {
         const contractNo = legacyContractNo(contract.id);
-        if (await tx.contract.findUnique({ where: { contractNo }, select: { id: true } })) {
+        if (existingContractNos.has(contractNo)) {
           skippedContracts += 1;
           continue;
         }
