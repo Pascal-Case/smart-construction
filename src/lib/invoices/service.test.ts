@@ -45,6 +45,8 @@ const source = {
   status: "ISSUED" as const,
   version: 2,
   recipientName: "강남 현장",
+  subtotal: 100_000,
+  revenueLinks: [{ revenueEntryId: "r1" }],
 };
 const entries = [
   candidate("r1", "기존 계약", 100_000, "invoice-old"),
@@ -79,7 +81,7 @@ describe("invoice replacement service", () => {
     mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
     mocks.revenueUpdateMany.mockResolvedValue({ count: 2 });
     mocks.closeCycleFindUnique.mockResolvedValue(closeCycle());
-    mocks.closeFindMany.mockResolvedValue([{ id: "close-1", month: "2026-07", cycles: [{ id: "cycle-1" }] }]);
+    mocks.closeFindMany.mockResolvedValue([{ id: "close-1", month: "2026-07", cycles: [{ id: "cycle-1", totalSalesAmount: 300_000, snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }) }] }]);
   });
 
   it("previews every confirmed revenue in the source period and reports missing-contract warnings", async () => {
@@ -105,6 +107,15 @@ describe("invoice replacement service", () => {
   it("rejects issue when the confirmed revenue set changed after preview", async () => {
     await expect(replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1"] })).rejects.toMatchObject({ status: 409, code: "INVOICE_REPLACEMENT_CHANGED" });
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects replacement when the latest close is identical to the issued document", async () => {
+    mocks.invoiceFindUnique.mockResolvedValue({ ...source, subtotal: 300_000, revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] });
+
+    await expect(previewReplacementInvoice(source.id, settings)).rejects.toMatchObject({
+      status: 409,
+      code: "INVOICE_REPLACEMENT_NOT_REQUIRED",
+    });
   });
 
   it("issues the complete latest close cycle and stores its provenance", async () => {

@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
 import { resolveInvoiceTemplate } from "@/lib/invoice-templates/service";
 import { buildInvoiceDrafts, type InvoiceSourceEntry } from "@/lib/invoices/calculation";
-import { isReplaceableInvoiceStatus, sameRevenueSet } from "@/lib/invoices/replacement-policy";
+import { isReplaceableInvoiceStatus, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
 import type { InvoiceCandidateQuery, InvoiceIssueInput, InvoiceListQuery, InvoiceReplacementIssueInput, InvoiceReplacementPreviewInput } from "@/lib/invoices/schemas";
 import { nextInvoiceNo } from "@/lib/masters/sequence";
 
@@ -276,7 +276,16 @@ function toSourceEntry(row: CandidateRow): InvoiceSourceEntry {
 async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: string) {
   const source = await tx.invoiceDocument.findUnique({
     where: { id: invoiceId },
-    select: { id: true, siteId: true, periodStart: true, periodEnd: true, status: true, version: true },
+    select: {
+      id: true,
+      siteId: true,
+      periodStart: true,
+      periodEnd: true,
+      status: true,
+      version: true,
+      subtotal: true,
+      revenueLinks: { select: { revenueEntryId: true } },
+    },
   });
   if (!source) throw new AuthError("거래명세표를 찾을 수 없습니다.", 404, "INVOICE_NOT_FOUND");
   if (!isReplaceableInvoiceStatus(source.status)) throw new AuthError("현재 유효한 거래명세표만 대체 발행할 수 있습니다.", 409, "INVOICE_NOT_REPLACEABLE");
@@ -300,6 +309,18 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
   ]);
   if (closeStates.length !== months.length || closeStates.some((close) => !close.cycles[0])) {
     throw new AuthError("대체발행 전에 모든 귀속월을 다시 마감해 주세요.", 409, "INVOICE_CLOSE_REQUIRED");
+  }
+  const latestCycles = closeStates.map((close) => close.cycles[0]);
+  const closedRevenueIds = latestCycles.flatMap((cycle) => snapshotRevenueIds(cycle.snapshotJson));
+  const closedAmount = latestCycles.reduce((sum, cycle) => sum + cycle.totalSalesAmount, 0);
+  const currentRevenueIds = entries.map((entry) => entry.id);
+  const currentAmount = entries.reduce((sum, entry) => sum + entry.salesAmount, 0);
+  if (!sameRevenueState(closedRevenueIds, closedAmount, currentRevenueIds, currentAmount)) {
+    throw new AuthError("재마감 이후 매출이 변경되었습니다. 관제실에서 다시 확인해 주세요.", 409, "INVOICE_CLOSE_CHANGED");
+  }
+  const issuedRevenueIds = source.revenueLinks.map((link) => link.revenueEntryId);
+  if (sameRevenueState(issuedRevenueIds, source.subtotal, closedRevenueIds, closedAmount)) {
+    throw new AuthError("재마감 결과가 현재 거래명세표와 같아 대체 발행할 내용이 없습니다.", 409, "INVOICE_REPLACEMENT_NOT_REQUIRED");
   }
   if (!entries.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
   if (entries.length > 500) throw new AuthError("대체 발행 대상이 500건을 초과했습니다. 귀속기간을 확인해 주세요.", 409, "INVOICE_REPLACEMENT_TOO_LARGE");
