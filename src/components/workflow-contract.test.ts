@@ -54,4 +54,14 @@ describe("registration workflow contract", () => {
     expect(source).toContain("확정 후 미발행");
     expect(source).toContain('/revenues?exception=ZERO');
   });
+
+  it("거래명세표 이력은 최신본 대체 발행과 과거본 상태를 구분한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/invoices/invoice-manager.tsx"), "utf8");
+
+    expect(source).toContain("대체 발행 미리보기");
+    expect(source).toContain("월 전체 대체 발행");
+    expect(source).toContain('row.status === "ISSUED"');
+    expect(source).toContain("대체됨");
+    expect(source).toContain("확정 매출이 없는 진행 계약");
+  });
 });

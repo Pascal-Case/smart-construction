@@ -27,6 +27,8 @@ export default async function InvoicePrintPage({ searchParams }: { searchParams:
     supplyMessage: row.supplyMessage,
     subtotal: row.subtotal,
     memo: row.memo,
+    status: row.status,
+    supersededByInvoiceNo: row.supersededBy?.invoiceNo ?? null,
     templateConfig: decodeInvoiceTemplateSnapshot(row.templateConfigJson),
     lines: row.lines.map((line) => ({ id: line.id, itemName: line.itemName, specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, supplyAmount: line.supplyAmount })),
   }));

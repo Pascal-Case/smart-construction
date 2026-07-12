@@ -393,6 +393,21 @@ html[data-design-theme="sagwa"] .ring-teal-600 {
   overflow: hidden;
 }
 
+.invoice-superseded-banner {
+  position: absolute;
+  top: 2mm;
+  right: 8mm;
+  z-index: 5;
+  border: 1px solid #b91c1c;
+  border-radius: 999px;
+  padding: 0.7mm 2mm;
+  background: white;
+  color: #991b1b;
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .invoice-title {
   position: relative;
   display: flex;
