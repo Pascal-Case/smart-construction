@@ -30,6 +30,10 @@
 
 .env의 DATABASE_URL은 server local disk의 file: URL이어야 한다.
 
+기존 운영 DB에 migration을 적용할 때는 먼저 수동 backup을 만들고 임시 복제본에서 `npm run db:deploy`, `npm run db:generate`, `PRAGMA quick_check`를 실행한다. 품목별 청구 방식 migration은 기존 계약 품목 수와 매출 원장 합계가 그대로이고 기존 품목이 모두 호환 상태로 채워지는지 확인한 뒤 운영 DB에 적용한다. migration과 production build 확인이 끝날 때까지 사용자 입력을 재개하지 않는다.
+
+신규 월정액 또는 일할청구 품목이 한 건이라도 저장된 뒤에는 구버전 application만 되돌리지 않는다. 구버전은 새 청구 방식을 기존 총액 일할로 해석할 수 있으므로 쓰기를 중단하고 forward-fix한다. backup 복원은 migration 이후 입력 손실을 수용할 때만 수행한다.
+
     DATABASE_URL="file:./data/app.db"
     SESSION_COOKIE_SECURE="false"
     SESSION_TTL_HOURS="12"
