@@ -62,6 +62,15 @@ describe("registration workflow contract", () => {
     expect(source).toContain("확정 등록");
   });
 
+  it("매출 원장은 현재 페이지의 작성 중 계약 매출을 선택해 일괄 확정한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+
+    expect(source).toContain("현재 페이지의 작성 중 계약 매출 전체 선택");
+    expect(source).toContain("계약 매출 일괄 확정");
+    expect(source).toContain('fetch("/api/revenues/confirm-batch"');
+    expect(source).toContain('row.sourceType === "CONTRACT" && row.status === "DRAFT"');
+  });
+
   it("월별 상세에서 선택한 현장과 월을 유지한 채 매출 등록을 시작한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/reports/monthly-report.tsx"), "utf8");
 

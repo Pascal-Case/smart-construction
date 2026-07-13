@@ -28,6 +28,9 @@ export const revenueInputSchema = z.object({
 export const revenueUpdateSchema = revenueInputSchema.and(z.object({ version: z.number().int().positive() }));
 export const revenueCancelSchema = z.object({ version: z.number().int().positive(), reason: z.string().trim().min(1, "취소 사유를 입력해 주세요.").max(500) });
 export const revenueConfirmSchema = z.object({ version: z.number().int().positive() });
+export const contractRevenueBatchConfirmSchema = z.object({
+  entries: z.array(z.object({ id: z.string().min(1), version: z.number().int().positive() })).min(1).max(100),
+}).refine((value) => new Set(value.entries.map((entry) => entry.id)).size === value.entries.length, { message: "중복된 매출 선택이 포함되어 있습니다.", path: ["entries"] });
 export const revenueListQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),
   startDate: z.union([z.iso.date(), z.literal("")]).default(""),
@@ -42,3 +45,4 @@ export const revenueListQuerySchema = z.object({
 
 export type RevenueInput = z.infer<typeof revenueInputSchema>;
 export type RevenueListQuery = z.infer<typeof revenueListQuerySchema>;
+export type ContractRevenueBatchConfirmInput = z.infer<typeof contractRevenueBatchConfirmSchema>;
