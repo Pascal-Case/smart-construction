@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, FileCheck2, LockKeyhole, RefreshCw, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -18,7 +18,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { parseExplicitSort, serializeListQuery, toggleSort, type ExplicitSort } from "@/lib/list-sorting";
+import { monthlyCloseSortKeys, type MonthlyCloseSortKey } from "@/lib/monthly-close/schemas";
 import type { MonthCloseException } from "@/lib/monthly-close/types";
 
 export type ControlRoomData = {
@@ -35,9 +38,10 @@ export type ControlRoomData = {
 
 type ReviewTarget = { siteId: string; siteName: string; exception: MonthCloseException };
 
-export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isAdmin }: { initialMonth: string; initialData: ControlRoomData; canClose: boolean; isAdmin: boolean }) {
+export function MonthCloseControlRoom({ initialMonth, initialView, initialSort, initialData, canClose, isAdmin }: { initialMonth: string; initialView: MonthCloseView; initialSort: ExplicitSort<MonthlyCloseSortKey>; initialData: ControlRoomData; canClose: boolean; isAdmin: boolean }) {
   const [month, setMonth] = useState(initialMonth);
-  const [view, setView] = useState<MonthCloseView>("exceptions");
+  const [view, setView] = useState<MonthCloseView>(initialView);
+  const [sort, setSort] = useState<ExplicitSort<MonthlyCloseSortKey>>(initialSort);
   const [data, setData] = useState<ControlRoomData | null>(initialData);
   const [selected, setSelected] = useState<string[]>([]);
   const [reviewTarget, setReviewTarget] = useState<ReviewTarget | null>(null);
@@ -46,30 +50,65 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
   const [reopenReason, setReopenReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function load() {
+  const load = useCallback(async (options: { nextMonth?: string; nextSort?: ExplicitSort<MonthlyCloseSortKey>; nextView?: MonthCloseView; historyMode?: "push" | "none" } = {}) => {
+    const nextMonth = options.nextMonth ?? month;
+    const nextSort = options.nextSort === undefined ? sort : options.nextSort;
+    const nextView = options.nextView ?? view;
     setBusy(true);
     try {
-      const response = await fetch(`/api/monthly-closes?${new URLSearchParams({ month, view: "all" })}`);
+      const params = new URLSearchParams({ month: nextMonth, view: "all" });
+      if (nextSort) { params.set("sort", nextSort.key); params.set("order", nextSort.direction); }
+      const response = await fetch(`/api/monthly-closes?${params}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "월마감 현황을 불러오지 못했습니다.");
       setData(body);
+      setMonth(nextMonth);
+      setSort(nextSort);
       const visibleIds = new Set((body.rows as MonthCloseControlRoomRow[]).map((row) => row.site.id));
       setSelected((current) => current.filter((siteId) => visibleIds.has(siteId)));
+      if (options.historyMode === "push") updateUrl(nextMonth, nextView, nextSort);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "월마감 현황을 불러오지 못했습니다.");
     } finally {
       setBusy(false);
     }
-  }
+  }, [month, sort, view]);
+
+  useEffect(() => {
+    const restoreFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(params.get("month") ?? "") ? params.get("month")! : initialMonth;
+      const nextView = params.get("view") === "all" ? "all" : "exceptions";
+      const nextSort = parseExplicitSort(params, monthlyCloseSortKeys);
+      setView(nextView);
+      void load({ nextMonth, nextSort, nextView, historyMode: "none" });
+    };
+    window.addEventListener("popstate", restoreFromUrl);
+    return () => window.removeEventListener("popstate", restoreFromUrl);
+  }, [initialMonth, load]);
 
   useRealtimeRefresh(["monthlyClose.changed", "contract.changed", "revenue.changed", "invoice.changed"], () => { void load(); });
 
-  const rows = sortControlRoomRows(filterControlRoomRows(data?.rows ?? [], view));
+  const rows = sortControlRoomRows(filterControlRoomRows(data?.rows ?? [], view), sort);
   const openRows = (data?.rows ?? []).filter((row) => row.close?.state !== "CLOSED");
   const selectedRows = (data?.rows ?? []).filter((row) => selected.includes(row.site.id) && row.close?.state !== "CLOSED");
 
   function toggle(siteId: string) {
     setSelected((current) => current.includes(siteId) ? current.filter((value) => value !== siteId) : [...current, siteId]);
+  }
+
+  function changeSort(key: MonthlyCloseSortKey) {
+    const nextSort = toggleSort(sort, key);
+    void load({ nextSort, historyMode: "push" });
+  }
+
+  function changeView(nextView: MonthCloseView) {
+    setView(nextView);
+    updateUrl(month, nextView, sort);
+  }
+
+  function directionFor(key: MonthlyCloseSortKey) {
+    return sort?.key === key ? sort.direction : undefined;
   }
 
   async function closeRows(targets: MonthCloseControlRoomRow[]) {
@@ -157,7 +196,7 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
 
   return <div className="space-y-5">
     <section className="flex flex-wrap items-end justify-between gap-3 rounded-xl border bg-card p-4">
-      <div className="w-full max-w-xs space-y-1.5"><Label>매출월</Label><Input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setData(null); setSelected([]); }} /></div>
+      <div className="w-full max-w-xs space-y-1.5"><Label>매출월</Label><Input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setSelected([]); }} /></div>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={busy} onClick={() => void load()}><RefreshCw data-icon="inline-start" />조회</Button>
         {canClose && <Button variant="outline" disabled={busy || selectedRows.length === 0} onClick={() => void closeRows(selectedRows)}><LockKeyhole data-icon="inline-start" />선택 마감</Button>}
@@ -175,15 +214,15 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex rounded-lg border p-1">
-          <Button size="sm" variant={view === "exceptions" ? "secondary" : "ghost"} onClick={() => setView("exceptions")}>예외만</Button>
-          <Button size="sm" variant={view === "all" ? "secondary" : "ghost"} onClick={() => setView("all")}>전체 현장</Button>
+          <Button size="sm" variant={view === "exceptions" ? "secondary" : "ghost"} onClick={() => changeView("exceptions")}>예외만</Button>
+          <Button size="sm" variant={view === "all" ? "secondary" : "ghost"} onClick={() => changeView("all")}>전체 현장</Button>
         </div>
-        <p className="text-sm text-muted-foreground">직접 입력, 계약·단가 차이, 발행 후 변경을 한곳에서 확인합니다.</p>
+        <p className="text-sm text-muted-foreground">{sort ? "선택한 헤더 순서로 전체 현장을 정렬합니다." : "기본 정렬: 열린 현장과 처리할 예외가 많은 현장 우선"}</p>
       </div>
 
       <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
-          <TableHeader><TableRow><TableHead className="w-10"></TableHead><TableHead>현장</TableHead><TableHead>상태</TableHead><TableHead className="text-right">매출</TableHead><TableHead>예외</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead className="w-10"></TableHead><SortableTableHead direction={directionFor("site")} onSort={() => changeSort("site")}>현장</SortableTableHead><SortableTableHead direction={directionFor("status")} onSort={() => changeSort("status")}>상태</SortableTableHead><SortableTableHead numeric direction={directionFor("sales")} onSort={() => changeSort("sales")}>매출</SortableTableHead><SortableTableHead direction={directionFor("exceptions")} onSort={() => changeSort("exceptions")}>예외</SortableTableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
           <TableBody>{rows.length === 0 ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">{busy ? "월마감 현황을 불러오는 중입니다." : view === "exceptions" ? "확인할 예외가 없습니다." : "마감 대상 현장이 없습니다."}</TableCell></TableRow> : rows.map((row) => {
             const closed = row.close?.state === "CLOSED";
             const latestCycle = row.close?.cycles[0];
@@ -204,6 +243,11 @@ export function MonthCloseControlRoom({ initialMonth, initialData, canClose, isA
 
     {reopenTarget && <Dialog open onOpenChange={(open) => { if (!open) setReopenTarget(null); }}><DialogContent><DialogHeader><DialogTitle>마감 되돌리기</DialogTitle><DialogDescription>{reopenTarget.site.name}의 {month} 마감을 열어 수정할 수 있게 합니다. 이미 발행한 거래명세표가 있으면 수정 후 재마감하고 대체 발행해야 합니다.</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="reopen-reason">되돌리기 사유</Label><textarea id="reopen-reason" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} className="min-h-28 w-full rounded-lg border bg-background p-3 text-sm" placeholder="20일 이후 접수된 예외 등 되돌리는 이유를 기록하세요." /></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setReopenTarget(null)}>취소</Button><Button disabled={busy || !reopenReason.trim()} onClick={() => void submitReopen()}><RotateCcw data-icon="inline-start" />되돌리기</Button></div></DialogContent></Dialog>}
   </div>;
+}
+
+function updateUrl(month: string, view: MonthCloseView, sort: ExplicitSort<MonthlyCloseSortKey>) {
+  const params = serializeListQuery(new URLSearchParams({ month, view }), sort);
+  window.history.pushState({}, "", `${window.location.pathname}?${params}`);
 }
 
 function SummaryCard({ title, value, description, tone }: { title: string; value: number; description: string; tone?: "success" | "warning" }) {

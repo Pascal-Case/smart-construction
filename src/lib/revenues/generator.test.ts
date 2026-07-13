@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ContractLineBillingMethod, RevenueStatus, UserRole } from "@/generated/prisma/client";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/db/prisma", () => ({ prisma: { $transaction: vi.fn() } }));
+vi.mock("@/lib/db/prisma", () => ({ prisma: {
+  $transaction: vi.fn(),
+  contractRevenueGenerationQueue: { count: vi.fn(), findMany: vi.fn() },
+} }));
 vi.mock("@/lib/audit/record", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/events/bus", () => ({ recordSyncEvent: vi.fn() }));
 vi.mock("@/lib/monthly-close/guard", () => ({ assertMonthsOpen: vi.fn() }));
@@ -12,7 +15,7 @@ import { recordAudit } from "@/lib/audit/record";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
 import { assertMonthsOpen } from "@/lib/monthly-close/guard";
-import { generateContractRevenues } from "@/lib/revenues/generator";
+import { generateContractRevenues, listContractRevenueCandidates, syncContractRevenueGenerationQueue } from "@/lib/revenues/generator";
 
 const actor = { id: "manager-1", loginId: "manager", name: "매니저", role: UserRole.MANAGER, isActive: true, version: 1 };
 const contract = {
@@ -78,6 +81,10 @@ function transactionWith(rows: ReturnType<typeof existing>[]) {
       create: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
+    contractRevenueGenerationQueue: {
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
+    },
   };
   vi.mocked(prisma.$transaction).mockImplementation((async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) as never);
   return tx;
@@ -136,6 +143,83 @@ describe("contract revenue generator write guards", () => {
     expect(assertMonthsOpen).toHaveBeenCalledWith(tx, [{ siteId: "site-1", months: ["2026-07"] }]);
     expect(tx.revenueEntry.create).not.toHaveBeenCalled();
     expect(tx.revenueEntry.updateMany).not.toHaveBeenCalled();
+    expect(tx.contractRevenueGenerationQueue.deleteMany).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("생성 완료 후 같은 트랜잭션에서 처리대기 큐를 비운다", async () => {
+    const tx = transactionWith([]);
+
+    await expect(generateContractRevenues(actor, contract.id)).resolves.toMatchObject({ create: 1 });
+    expect(tx.contractRevenueGenerationQueue.deleteMany).toHaveBeenCalledWith({ where: { contractId: contract.id } });
+  });
+
+  it("계약의 현재 생성 액션에 따라 처리대기 큐를 생성하거나 제거한다", async () => {
+    const actionable = transactionWith([]);
+    await expect(syncContractRevenueGenerationQueue(actionable as never, contract.id)).resolves.toBe(true);
+    expect(actionable.contractRevenueGenerationQueue.upsert).toHaveBeenCalledWith({
+      where: { contractId: contract.id },
+      create: { contractId: contract.id },
+      update: {},
+    });
+
+    const synced = transactionWith([existing({ salesAmount: 40_000, costAmount: 24_000 })]);
+    await expect(syncContractRevenueGenerationQueue(synced as never, contract.id)).resolves.toBe(false);
+    expect(synced.contractRevenueGenerationQueue.deleteMany).toHaveBeenCalledWith({ where: { contractId: contract.id } });
+  });
+
+  it("비활성 계약은 생성 액션이 있어도 처리대기 큐에서 제거한다", async () => {
+    const tx = transactionWith([]);
+    tx.contract.findUnique.mockResolvedValueOnce({ ...contract, status: "ENDED" });
+
+    await expect(syncContractRevenueGenerationQueue(tx as never, contract.id)).resolves.toBe(false);
+    expect(tx.contractRevenueGenerationQueue.upsert).not.toHaveBeenCalled();
+    expect(tx.contractRevenueGenerationQueue.deleteMany).toHaveBeenCalledWith({ where: { contractId: contract.id } });
+  });
+});
+
+describe("contract revenue generation candidates", () => {
+  it("ACTIVE 처리대기 큐에 검색·현장 조건을 결합하고 오래된 순으로 페이지를 반환한다", async () => {
+    const queue = prisma.contractRevenueGenerationQueue;
+    const countQuery = { kind: "count" };
+    const rowsQuery = { kind: "rows" };
+    vi.mocked(queue.count).mockReturnValue(countQuery as never);
+    vi.mocked(queue.findMany).mockReturnValue(rowsQuery as never);
+    vi.mocked(prisma.$transaction).mockResolvedValue([12, [{
+      contractId: "contract-1",
+      pendingAt: new Date("2026-07-13T01:00:00Z"),
+      contract: { contractNo: "C-001", title: "CCTV 계약", site: { id: "site-1", name: "강남 현장" } },
+    }]] as never);
+
+    const result = await listContractRevenueCandidates({ q: "CCTV", siteId: "site-1", page: 2, pageSize: 10 });
+
+    expect(queue.count).toHaveBeenCalledWith({ where: { contract: { is: expect.objectContaining({
+      status: "ACTIVE",
+      siteId: "site-1",
+      OR: [
+        { contractNo: { contains: "CCTV" } },
+        { title: { contains: "CCTV" } },
+        { site: { name: { contains: "CCTV" } } },
+      ],
+    }) } } });
+    expect(queue.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: [{ pendingAt: "asc" }, { contractId: "asc" }],
+      skip: 10,
+      take: 10,
+    }));
+    expect(result).toEqual({
+      rows: [{
+        id: "contract-1",
+        contractNo: "C-001",
+        title: "CCTV 계약",
+        pendingAt: new Date("2026-07-13T01:00:00Z"),
+        site: { id: "site-1", name: "강남 현장" },
+      }],
+      total: 12,
+      page: 2,
+      pageSize: 10,
+      totalPages: 2,
+    });
+    expect(vi.mocked(prisma.$transaction).mock.calls.at(-1)?.[0]).toEqual([countQuery, rowsQuery]);
   });
 });

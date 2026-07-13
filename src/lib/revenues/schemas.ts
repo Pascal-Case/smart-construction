@@ -31,6 +31,7 @@ export const revenueConfirmSchema = z.object({ version: z.number().int().positiv
 export const contractRevenueBatchConfirmSchema = z.object({
   entries: z.array(z.object({ id: z.string().min(1), version: z.number().int().positive() })).min(1).max(100),
 }).refine((value) => new Set(value.entries.map((entry) => entry.id)).size === value.entries.length, { message: "중복된 매출 선택이 포함되어 있습니다.", path: ["entries"] });
+export const revenueSortKeys = ["revenueDate", "site", "source", "content", "quantityPrice", "salesAmount", "costAmount", "status", "updatedAt"] as const;
 export const revenueListQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),
   startDate: z.union([z.iso.date(), z.literal("")]).default(""),
@@ -39,10 +40,13 @@ export const revenueListQuerySchema = z.object({
   sourceType: z.enum(["all", "CONTRACT", "MANUAL", "ADJUSTMENT"]).default("all"),
   status: z.enum(["all", "DRAFT", "CONFIRMED", "CANCELED"]).default("all"),
   exception: z.enum(["all", "ZERO"]).default("all"),
+  sort: z.enum(revenueSortKeys).default("updatedAt"),
+  order: z.enum(["asc", "desc"]).default("desc"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(10).max(100).default(20),
 }).refine((value) => !value.startDate || !value.endDate || value.startDate <= value.endDate, { message: "조회 종료일은 시작일보다 빠를 수 없습니다.", path: ["endDate"] });
 
 export type RevenueInput = z.infer<typeof revenueInputSchema>;
 export type RevenueListQuery = z.infer<typeof revenueListQuerySchema>;
+export type RevenueSortKey = RevenueListQuery["sort"];
 export type ContractRevenueBatchConfirmInput = z.infer<typeof contractRevenueBatchConfirmSchema>;

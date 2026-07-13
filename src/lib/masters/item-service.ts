@@ -8,12 +8,13 @@ import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
 import { assertItemIdentityAvailable } from "@/lib/masters/identity";
 import { cleanAliases, normalizeAlias, normalizeCode } from "@/lib/masters/normalize";
-import type { ItemInput, MasterListQuery } from "@/lib/masters/schemas";
+import { sortItems } from "@/lib/masters/list-order";
+import type { ItemInput, ItemListQuery } from "@/lib/masters/schemas";
 import { nextBusinessCode } from "@/lib/masters/sequence";
 
 const includeAliases = { aliases: { orderBy: { alias: "asc" as const } } };
 
-export async function listItems(query: MasterListQuery) {
+export async function listItems(query: ItemListQuery) {
   const where: Prisma.ItemWhereInput = {
     ...(query.status === "active" ? { isActive: true } : query.status === "inactive" ? { isActive: false } : {}),
     ...(query.q ? { OR: [
@@ -22,11 +23,10 @@ export async function listItems(query: MasterListQuery) {
       { aliases: { some: { normalizedAlias: { contains: normalizeAlias(query.q) } } } },
     ] } : {}),
   };
-  const orderBy = { [query.sort]: query.order } as Prisma.ItemOrderByWithRelationInput;
-  const [total, rows] = await prisma.$transaction([
-    prisma.item.count({ where }),
-    prisma.item.findMany({ where, include: includeAliases, orderBy, skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
-  ]);
+  const filteredRows = await prisma.item.findMany({ where, include: includeAliases });
+  const sortedRows = sortItems(filteredRows, query.sort, query.order);
+  const total = sortedRows.length;
+  const rows = sortedRows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
   return { rows: rows.map(toItemView), total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
 }
 

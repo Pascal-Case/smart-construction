@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { resolveContractLineBilling } from "@/lib/contracts/billing-method";
 import { buildContractImpact } from "@/lib/contracts/impact";
+import { contractBaseAmount } from "@/lib/contracts/list-order";
 import { enumerateMonths } from "@/lib/contracts/period";
 import { deriveContractPeriod } from "@/lib/contracts/period";
 import type { ContractInput, ContractListQuery } from "@/lib/contracts/schemas";
@@ -14,6 +15,7 @@ import { recordSyncEvent } from "@/lib/events/bus";
 import { normalizeCode } from "@/lib/masters/normalize";
 import { nextBusinessCode } from "@/lib/masters/sequence";
 import { assertMonthsOpen } from "@/lib/monthly-close/guard";
+import { syncContractRevenueGenerationQueue } from "@/lib/revenues/generator";
 
 const contractInclude = {
   site: { select: { id: true, code: true, name: true, isActive: true } },
@@ -35,11 +37,64 @@ export async function listContracts(query: ContractListQuery) {
       { lines: { some: { isActive: true, item: { name: { contains: query.q } } } } },
     ] } : {}),
   };
-  const [total, rows] = await prisma.$transaction([
-    prisma.contract.count({ where }),
-    prisma.contract.findMany({ where, include: contractInclude, orderBy: { updatedAt: "desc" }, skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
-  ]);
+  const total = await prisma.contract.count({ where });
+  const pageIds = await listContractPageIds(query);
+  const unorderedRows = pageIds.length
+    ? await prisma.contract.findMany({ where: { id: { in: pageIds } }, include: contractInclude })
+    : [];
+  const rowMap = new Map(unorderedRows.map((row) => [row.id, row]));
+  const rows = pageIds.flatMap((id) => {
+    const row = rowMap.get(id);
+    return row ? [{ ...row, baseAmount: contractBaseAmount(row.lines) }] : [];
+  });
   return { rows, total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
+}
+
+async function listContractPageIds(query: ContractListQuery) {
+  const clauses: Prisma.Sql[] = [];
+  if (query.status !== "all") clauses.push(Prisma.sql`c."status" = ${query.status}`);
+  if (query.siteId) clauses.push(Prisma.sql`c."siteId" = ${query.siteId}`);
+  if (query.q) {
+    const normalizedCode = normalizeCode(query.q);
+    clauses.push(Prisma.sql`(
+      instr(c."contractNo", ${normalizedCode}) > 0
+      OR instr(c."title", ${query.q}) > 0
+      OR instr(s."name", ${query.q}) > 0
+      OR EXISTS (
+        SELECT 1
+        FROM "ContractLine" searchLine
+        JOIN "Item" searchItem ON searchItem."id" = searchLine."itemId"
+        WHERE searchLine."contractId" = c."id"
+          AND searchLine."isActive" = true
+          AND instr(searchItem."name", ${query.q}) > 0
+      )
+    )`);
+  }
+  const whereSql = clauses.length ? Prisma.sql`WHERE ${Prisma.join(clauses, " AND ")}` : Prisma.empty;
+  const direction = Prisma.raw(query.order === "asc" ? "ASC" : "DESC");
+  const expressions: Record<ContractListQuery["sort"], Prisma.Sql[]> = {
+    contractNo: [Prisma.sql`c."contractNo"`],
+    title: [Prisma.sql`c."title"`],
+    site: [Prisma.sql`s."name"`],
+    period: [Prisma.sql`c."startDate"`, Prisma.sql`c."endDate"`],
+    itemCount: [Prisma.sql`COUNT(activeLine."id")`],
+    baseAmount: [Prisma.sql`COALESCE(SUM(CAST(ROUND(activeLine."quantity" * activeLine."appliedSalesPrice") AS INTEGER)), 0)`],
+    status: [Prisma.sql`CASE c."status" WHEN 'DRAFT' THEN 0 WHEN 'ACTIVE' THEN 1 WHEN 'ENDED' THEN 2 WHEN 'CANCELED' THEN 3 ELSE 4 END`],
+    updatedAt: [Prisma.sql`c."updatedAt"`],
+  };
+  const orderSql = Prisma.join(expressions[query.sort].map((expression) => Prisma.sql`${expression} ${direction}`), ", ");
+  const offset = (query.page - 1) * query.pageSize;
+  const ids = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT c."id" AS id
+    FROM "Contract" c
+    JOIN "Site" s ON s."id" = c."siteId"
+    LEFT JOIN "ContractLine" activeLine ON activeLine."contractId" = c."id" AND activeLine."isActive" = true
+    ${whereSql}
+    GROUP BY c."id"
+    ORDER BY ${orderSql}, c."id" ASC
+    LIMIT ${query.pageSize} OFFSET ${offset}
+  `);
+  return ids.map((row) => row.id);
 }
 
 export async function getContract(id: string) {
@@ -58,6 +113,7 @@ export async function createContract(actor: SessionUser, input: ContractInput) {
       const contract = await tx.contract.create({ data: {
         contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), createdById: actor.id, updatedById: actor.id,
+        ...(input.status === "ACTIVE" ? { revenueGenerationQueue: { create: {} } } : {}),
         lines: { create: prepared.map((line, index) => ({
           ...line,
           sortOrder: index,
@@ -113,6 +169,7 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
           updatedById: actor.id,
         } });
       }
+      await syncContractRevenueGenerationQueue(tx, id);
       const contract = await tx.contract.findUniqueOrThrow({ where: { id }, include: contractInclude });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "CONTRACT", entityId: id, before, after: contract });
       await recordSyncEvent(tx, { type: "contract.changed", entityId: id, siteId: contract.siteId, actorId: actor.id });

@@ -19,12 +19,65 @@ const includeRelations = {
 
 export async function listRevenues(query: RevenueListQuery) {
   const where = buildRevenueWhere(query);
-  const [total, rows, aggregate] = await prisma.$transaction([
+  const [total, aggregate] = await prisma.$transaction([
     prisma.revenueEntry.count({ where }),
-    prisma.revenueEntry.findMany({ where, include: includeRelations, orderBy: [{ revenueDate: "desc" }, { createdAt: "desc" }], skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
     prisma.revenueEntry.aggregate({ where: { ...where, status: { not: "CANCELED" } }, _sum: { salesAmount: true, costAmount: true } }),
   ]);
+  const pageIds = await listRevenuePageIds(query);
+  const unorderedRows = pageIds.length
+    ? await prisma.revenueEntry.findMany({ where: { id: { in: pageIds } }, include: includeRelations })
+    : [];
+  const rowMap = new Map(unorderedRows.map((row) => [row.id, row]));
+  const rows = pageIds.flatMap((id) => {
+    const row = rowMap.get(id);
+    return row ? [row] : [];
+  });
   return { rows, total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)), totals: { salesAmount: aggregate._sum.salesAmount ?? 0, costAmount: aggregate._sum.costAmount ?? 0 } };
+}
+
+async function listRevenuePageIds(query: RevenueListQuery) {
+  const clauses: Prisma.Sql[] = [];
+  if (query.siteId) clauses.push(Prisma.sql`r."siteId" = ${query.siteId}`);
+  if (query.sourceType !== "all") clauses.push(Prisma.sql`r."sourceType" = ${query.sourceType}`);
+  if (query.status !== "all") clauses.push(Prisma.sql`r."status" = ${query.status}`);
+  if (query.exception === "ZERO") clauses.push(Prisma.sql`r."salesAmount" = 0 AND r."status" <> 'CANCELED'`);
+  if (query.startDate) clauses.push(Prisma.sql`r."revenueDate" >= ${new Date(`${query.startDate}T00:00:00.000Z`)}`);
+  if (query.endDate) clauses.push(Prisma.sql`r."revenueDate" <= ${new Date(`${query.endDate}T00:00:00.000Z`)}`);
+  if (query.q) clauses.push(Prisma.sql`(
+    instr(r."title", ${query.q}) > 0
+    OR instr(r."description", ${query.q}) > 0
+    OR instr(s."name", ${query.q}) > 0
+    OR instr(i."name", ${query.q}) > 0
+  )`);
+  const whereSql = clauses.length ? Prisma.sql`WHERE ${Prisma.join(clauses, " AND ")}` : Prisma.empty;
+  const direction = Prisma.raw(query.order === "asc" ? "ASC" : "DESC");
+  const expressions: Record<RevenueListQuery["sort"], Array<{ expression: Prisma.Sql; nullLast?: boolean }>> = {
+    revenueDate: [{ expression: Prisma.sql`r."revenueDate"` }],
+    site: [{ expression: Prisma.sql`s."name"` }],
+    source: [{ expression: Prisma.sql`CASE r."sourceType" WHEN 'CONTRACT' THEN 0 WHEN 'MANUAL' THEN 1 WHEN 'ADJUSTMENT' THEN 2 ELSE 3 END` }],
+    content: [{ expression: Prisma.sql`r."title"` }],
+    quantityPrice: [{ expression: Prisma.sql`r."quantity"`, nullLast: true }, { expression: Prisma.sql`r."appliedSalesPrice"`, nullLast: true }],
+    salesAmount: [{ expression: Prisma.sql`r."salesAmount"` }],
+    costAmount: [{ expression: Prisma.sql`r."costAmount"`, nullLast: true }],
+    status: [{ expression: Prisma.sql`CASE r."status" WHEN 'DRAFT' THEN 0 WHEN 'CONFIRMED' THEN 1 WHEN 'CANCELED' THEN 2 ELSE 3 END` }],
+    updatedAt: [{ expression: Prisma.sql`r."updatedAt"` }],
+  };
+  const orderParts = expressions[query.sort].flatMap(({ expression, nullLast }) => [
+    ...(nullLast ? [Prisma.sql`${expression} IS NULL ASC`] : []),
+    Prisma.sql`${expression} ${direction}`,
+  ]);
+  const orderSql = Prisma.join(orderParts, ", ");
+  const offset = (query.page - 1) * query.pageSize;
+  const ids = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT r."id" AS id
+    FROM "RevenueEntry" r
+    JOIN "Site" s ON s."id" = r."siteId"
+    LEFT JOIN "Item" i ON i."id" = r."itemId"
+    ${whereSql}
+    ORDER BY ${orderSql}, r."id" ASC
+    LIMIT ${query.pageSize} OFFSET ${offset}
+  `);
+  return ids.map((row) => row.id);
 }
 
 export async function createRevenue(actor: SessionUser, input: RevenueInput) {
@@ -123,6 +176,13 @@ async function transitionRevenue(actor: SessionUser, id: string, version: number
       ? { status, confirmedById: actor.id, confirmedAt: new Date(), updatedById: actor.id, version: { increment: 1 } }
       : { status, cancelReason: reason, canceledById: actor.id, canceledAt: new Date(), generatedKey: generatedKeyAfterUserCancel(before.sourceType, before.generatedKey), updatedById: actor.id, version: { increment: 1 } } });
     if (!result.count) throw new AuthError("다른 사용자가 먼저 매출 상태를 변경했습니다.", 409, "VERSION_CONFLICT");
+    if (status === "CANCELED" && before.sourceType === "CONTRACT" && before.contractId) {
+      await tx.contractRevenueGenerationQueue.upsert({
+        where: { contractId: before.contractId },
+        create: { contractId: before.contractId },
+        update: {},
+      });
+    }
     const entry = await tx.revenueEntry.findUniqueOrThrow({ where: { id }, include: includeRelations });
     await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: status === "CONFIRMED" ? "CONFIRM" : "CANCEL", entityType: "REVENUE", entityId: id, before, after: entry });
     await recordSyncEvent(tx, { type: "revenue.changed", entityId: id, siteId: entry.siteId, actorId: actor.id });

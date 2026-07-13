@@ -224,6 +224,7 @@ export async function commitLegacyMigration(actor: SessionUser, raw: unknown, ex
           memo: "레거시 계약 ID: " + contract.id,
           createdById: actor.id,
           updatedById: actor.id,
+          revenueGenerationQueue: { create: {} },
           lines: { create: {
             itemId: item.id, description: "레거시 데이터 이관", billingMethod: ContractLineBillingMethod.LEGACY_TOTAL,
             quantity: contract.quantity, unit: legacyItem.unit,

@@ -77,6 +77,23 @@ describe("registration workflow contract", () => {
     expect(confirmDialogSource).toContain("취소");
   });
 
+  it("계약 매출 생성은 전체 진행 계약 대신 검색 가능한 처리대기 페이지만 조회한다", () => {
+    const pageSource = readFileSync(path.join(process.cwd(), "src/app/(main)/revenues/page.tsx"), "utf8");
+    const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+    const routeSource = readFileSync(path.join(process.cwd(), "src/app/api/contracts/revenue-candidates/route.ts"), "utf8");
+
+    expect(pageSource).not.toContain("prisma.contract.findMany");
+    expect(pageSource).not.toContain("contracts={contracts}");
+    expect(source).toContain("/api/contracts/revenue-candidates?");
+    expect(source).toContain("처리 대기");
+    expect(source).toContain("계약번호·계약명 검색");
+    expect(source).toContain('["contract.changed", "revenue.changed"]');
+    expect(source).toContain("처리할 계약 매출이 없습니다.");
+    expect(source).toContain("new AbortController()");
+    expect(source).toContain("signal: controller.signal");
+    expect(routeSource).toContain("requireUser([UserRole.ADMIN, UserRole.MANAGER])");
+  });
+
   it("월별 상세에서 선택한 현장과 월을 유지한 채 매출 등록을 시작한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/reports/monthly-report.tsx"), "utf8");
 

@@ -211,26 +211,35 @@ model ImportBatch {
 }
 
 model Contract {
-  id             String         @id @default(cuid())
-  contractNo     String         @unique
-  siteId         String
-  title          String
-  startDate      DateTime
-  endDate        DateTime
-  status         ContractStatus @default(DRAFT)
-  memo           String?
-  version        Int            @default(1)
-  createdById    String
-  updatedById    String
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  site           Site           @relation(fields: [siteId], references: [id], onDelete: Restrict)
-  lines          ContractLine[]
-  revenueEntries RevenueEntry[]
+  id                     String                          @id @default(cuid())
+  contractNo             String                          @unique
+  siteId                 String
+  title                  String
+  startDate              DateTime
+  endDate                DateTime
+  status                 ContractStatus                  @default(DRAFT)
+  memo                   String?
+  version                Int                             @default(1)
+  createdById            String
+  updatedById            String
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
+  site                   Site                            @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  lines                  ContractLine[]
+  revenueEntries         RevenueEntry[]
+  revenueGenerationQueue ContractRevenueGenerationQueue?
 
   @@index([siteId, status])
   @@index([startDate, endDate])
   @@index([status, updatedAt])
+}
+
+model ContractRevenueGenerationQueue {
+  contractId String   @id
+  pendingAt  DateTime @default(now())
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([pendingAt, contractId])
 }
 
 model ContractLine {
