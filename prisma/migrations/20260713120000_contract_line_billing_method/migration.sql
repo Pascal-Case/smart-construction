@@ -1,0 +1,2 @@
+ALTER TABLE "ContractLine"
+ADD COLUMN "billingMethod" TEXT NOT NULL DEFAULT 'LEGACY_TOTAL';

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma } from "@/generated/prisma/client";
+import { ContractLineBillingMethod, Prisma } from "@/generated/prisma/client";
 import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
@@ -56,7 +56,13 @@ export async function createContract(actor: SessionUser, input: ContractInput) {
       const contract = await tx.contract.create({ data: {
         contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), createdById: actor.id, updatedById: actor.id,
-        lines: { create: prepared.map((line, index) => ({ ...line, sortOrder: index, createdById: actor.id, updatedById: actor.id })) },
+        lines: { create: prepared.map((line, index) => ({
+          ...line,
+          billingMethod: ContractLineBillingMethod.MONTHLY_RECURRING,
+          sortOrder: index,
+          createdById: actor.id,
+          updatedById: actor.id,
+        })) },
       }, include: contractInclude });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "CONTRACT", entityId: contract.id, after: contract });
       await recordSyncEvent(tx, { type: "contract.changed", entityId: contract.id, siteId: contract.siteId, actorId: actor.id });
@@ -98,7 +104,14 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
       for (const [index, line] of prepared.entries()) {
         const { id: lineId, ...data } = line;
         if (lineId) await tx.contractLine.update({ where: { id: lineId }, data: { ...data, isActive: true, sortOrder: index, updatedById: actor.id } });
-        else await tx.contractLine.create({ data: { ...data, contractId: id, sortOrder: index, createdById: actor.id, updatedById: actor.id } });
+        else await tx.contractLine.create({ data: {
+          ...data,
+          billingMethod: ContractLineBillingMethod.MONTHLY_RECURRING,
+          contractId: id,
+          sortOrder: index,
+          createdById: actor.id,
+          updatedById: actor.id,
+        } });
       }
       const contract = await tx.contract.findUniqueOrThrow({ where: { id }, include: contractInclude });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "CONTRACT", entityId: id, before, after: contract });

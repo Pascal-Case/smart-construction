@@ -35,6 +35,12 @@ enum ContractStatus {
   CANCELED
 }
 
+enum ContractLineBillingMethod {
+  LEGACY_TOTAL
+  MONTHLY_RECURRING
+  PRORATED_TOTAL
+}
+
 enum RevenueSourceType {
   CONTRACT
   MANUAL
@@ -232,6 +238,7 @@ model ContractLine {
   contractId                 String
   itemId                     String
   description                String?
+  billingMethod              ContractLineBillingMethod @default(LEGACY_TOTAL)
   quantity                   Float
   unit                       String
   standardSalesPriceSnapshot Int
