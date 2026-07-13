@@ -83,6 +83,23 @@ describe("monthly close evaluator", () => {
     }).canClose).toBe(true);
   });
 
+  it("월청구 기대 금액과 다른 확정 매출도 보호된 계약 차이로 표시한다", () => {
+    const result = evaluateSiteMonth(baseInput({
+      expectedContractRevenues: [{ ...baseInput().expectedContractRevenues[0], salesAmount: 40_000 }],
+      revenues: [{ ...baseInput().revenues[0], status: "CONFIRMED", salesAmount: 27_200 }],
+    }));
+
+    expect(result.exceptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "CONTRACT_DIFFERENCE:line-1:2026-07",
+        kind: "CONTRACT_DIFFERENCE",
+        blocking: true,
+        message: "계약 기준과 원장 금액이 다릅니다.",
+      }),
+    ]));
+    expect(result.canClose).toBe(false);
+  });
+
   it("대체발행 이력과 단독 0원은 정보를 남기되 마감을 막지 않는다", () => {
     const result = evaluateSiteMonth(baseInput({
       expectedContractRevenues: [],

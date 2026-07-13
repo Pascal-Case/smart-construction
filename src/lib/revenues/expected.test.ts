@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ContractLineBillingMethod } from "@/generated/prisma/client";
 import {
   buildContractRevenueDrafts,
   buildGenerationRows,
@@ -14,6 +15,7 @@ const contract: ExpectedRevenueContract = {
   siteId: "site-1",
   lines: [{
     id: "line-1",
+    billingMethod: ContractLineBillingMethod.MONTHLY_RECURRING,
     itemId: "item-1",
     description: "월 공급",
     quantity: 2,
@@ -68,9 +70,26 @@ describe("expected contract revenues", () => {
       contractLineId: "line-1",
       itemId: "item-1",
       title: "안전용품 공급 - 안전모",
+      billingMethod: ContractLineBillingMethod.MONTHLY_RECURRING,
       salesAmount: 200_000,
       costAmount: 140_000,
     }]);
+  });
+
+  it("월청구 계약 품목은 같은 generated key 규칙으로 매월 전액 초안을 만든다", () => {
+    const monthly = {
+      ...contract,
+      lines: [{
+        ...contract.lines[0],
+        revenueStartDate: new Date("2026-07-01T00:00:00.000Z"),
+        revenueEndDate: new Date("2026-08-31T00:00:00.000Z"),
+      }],
+    };
+
+    expect(buildContractRevenueDrafts(monthly).map((row) => [row.generatedKey, row.salesAmount, row.costAmount])).toEqual([
+      ["line-1:2026-07", 200_000, 140_000],
+      ["line-1:2026-08", 200_000, 140_000],
+    ]);
   });
 
   it("CREATE, UPDATE, PROTECTED, CANCEL 판정을 한 순수 함수에서 만든다", () => {
