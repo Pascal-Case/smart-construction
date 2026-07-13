@@ -1,4 +1,5 @@
 import type { SmartContractBillingMethod, SmartInputAppliedDraft, SmartInputPreview, SmartMasterOption, SmartPeriod } from "@/lib/smart-input/types";
+import { spansMoreThanTwoCalendarMonths } from "@/lib/contracts/period";
 
 export const SMART_INPUT_PRORATED_PERIOD_ERROR = "일할청구는 최대 두 달력 월에 걸쳐 등록할 수 있습니다.";
 
@@ -12,9 +13,7 @@ export function smartInputContractPeriodError(period: {
   endDate: string;
 }) {
   if (period.billingMethod !== "PRORATED_TOTAL") return null;
-  const [startYear, startMonth] = period.startDate.slice(0, 7).split("-").map(Number);
-  const [endYear, endMonth] = period.endDate.slice(0, 7).split("-").map(Number);
-  return (endYear - startYear) * 12 + endMonth - startMonth > 1
+  return spansMoreThanTwoCalendarMonths(period.startDate, period.endDate)
     ? SMART_INPUT_PRORATED_PERIOD_ERROR
     : null;
 }

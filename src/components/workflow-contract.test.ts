@@ -35,7 +35,7 @@ describe("registration workflow contract", () => {
     expect(source).toContain('type={line.billingMethod === "MONTHLY_RECURRING" ? "month" : "date"}');
     expect(source).toContain("changeBillingMethod");
     expect(source).toContain("기존 계산 유지");
-    expect(source).toContain("legacyEligible");
+    expect(source).toContain("line.legacyPeriod");
     expect(source).toContain('line.billingMethod === "LEGACY_TOTAL" ? {} : { billingMethod: line.billingMethod }');
     expect(source).toContain("spansMoreThanTwoCalendarMonths");
     expect(source).toContain("일할청구는 최대 두 달력 월에 걸쳐 등록할 수 있습니다.");

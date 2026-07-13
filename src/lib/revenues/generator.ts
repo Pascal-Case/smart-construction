@@ -64,6 +64,7 @@ async function buildPreview(tx: Prisma.TransactionClient, contractId: string) {
 }
 
 function revenueData(draft: ExpectedContractRevenue) {
-  const { allocationBaseDays, billingMethod: _billingMethod, ...data } = draft;
+  const { allocationBaseDays, billingMethod, ...data } = draft;
+  void billingMethod;
   return { ...data, daysInMonth: allocationBaseDays, sourceType: "CONTRACT" as const, status: "DRAFT" as const };
 }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { ContractLineBillingMethod } from "@/generated/prisma/client";
-import { buildContractImpact, enumerateMonths } from "@/lib/contracts/impact";
+import { buildContractImpact } from "@/lib/contracts/impact";
+import { enumerateMonths } from "@/lib/contracts/period";
 
 describe("contract impact", () => {
   it("계약기간에 포함된 월을 양 끝 포함으로 열거한다", () => {

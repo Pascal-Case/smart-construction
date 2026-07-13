@@ -1,5 +1,5 @@
 import type { ContractLineBillingMethod } from "@/generated/prisma/client";
-import { deriveContractPeriod } from "@/lib/contracts/period";
+import { dateOnly, deriveContractPeriod, enumerateMonths } from "@/lib/contracts/period";
 
 type ExistingLine = {
   id: string; itemId: string; billingMethod: ContractLineBillingMethod; quantity: number; appliedSalesPrice: number; appliedCostPrice: number;
@@ -64,13 +64,4 @@ export function buildContractImpact(
   };
 }
 
-export function enumerateMonths(startDate: string | Date, endDate: string | Date) {
-  const result: string[] = [];
-  const start = new Date(`${dateOnly(startDate).slice(0, 7)}-01T00:00:00.000Z`);
-  const end = new Date(`${dateOnly(endDate).slice(0, 7)}-01T00:00:00.000Z`);
-  for (const cursor = start; cursor <= end; cursor.setUTCMonth(cursor.getUTCMonth() + 1)) result.push(cursor.toISOString().slice(0, 7));
-  return result;
-}
-
 function addMonths(target: Set<string>, start: string | Date, end: string | Date) { for (const month of enumerateMonths(start, end)) target.add(month); }
-function dateOnly(value: string | Date) { return value instanceof Date ? value.toISOString().slice(0, 10) : value.length === 7 ? `${value}-01` : value; }

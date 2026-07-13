@@ -1,5 +1,7 @@
 import { ContractLineBillingMethod } from "@/generated/prisma/client";
 import { AuthError } from "@/lib/auth/errors";
+import { spansMoreThanTwoCalendarMonths } from "@/lib/contracts/period";
+import { revenueMonthBounds } from "@/lib/revenues/month-context";
 
 export type PublicContractLineBillingMethod =
   | typeof ContractLineBillingMethod.MONTHLY_RECURRING
@@ -31,8 +33,8 @@ export function resolveContractLineBilling(input: BillingInput, existing?: Exist
     if (startMonth > endMonth) throw invalidPeriod();
     return {
       billingMethod,
-      revenueStartDate: `${startMonth}-01`,
-      revenueEndDate: monthEnd(endMonth),
+      revenueStartDate: revenueMonthBounds(startMonth).min,
+      revenueEndDate: revenueMonthBounds(endMonth).max,
     };
   }
 
@@ -41,7 +43,7 @@ export function resolveContractLineBilling(input: BillingInput, existing?: Exist
   }
   if (input.revenueStartDate > input.revenueEndDate) throw invalidPeriod();
   if (billingMethod === ContractLineBillingMethod.PRORATED_TOTAL
-    && monthDistance(input.revenueStartDate, input.revenueEndDate) > 1) {
+    && spansMoreThanTwoCalendarMonths(input.revenueStartDate, input.revenueEndDate)) {
     throw new AuthError("일할청구는 달력상 최대 두 달까지만 등록할 수 있습니다.", 400, "PRORATED_PERIOD_TOO_LONG");
   }
 
@@ -56,20 +58,8 @@ function monthValue(value: string) {
   return value.slice(0, 7);
 }
 
-function monthEnd(month: string) {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const day = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-  return `${month}-${String(day).padStart(2, "0")}`;
-}
-
 function isDateValue(value: string) {
   return /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value);
-}
-
-function monthDistance(start: string, end: string) {
-  const [startYear, startMonth] = start.slice(0, 7).split("-").map(Number);
-  const [endYear, endMonth] = end.slice(0, 7).split("-").map(Number);
-  return (endYear * 12 + endMonth) - (startYear * 12 + startMonth);
 }
 
 function invalidPeriod() {

@@ -6,7 +6,7 @@ import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
-import { enumerateMonths } from "@/lib/contracts/impact";
+import { enumerateMonths } from "@/lib/contracts/period";
 import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 import { fingerprintLegacyBundle, legacyContractNo, parseLegacyPayload } from "@/lib/migration/legacy";
 import type {
