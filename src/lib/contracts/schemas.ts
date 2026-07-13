@@ -35,13 +35,26 @@ export const contractInputSchema = z.object({
 
 export const contractUpdateSchema = contractInputSchema.and(z.object({ version: z.number().int().positive() }));
 
+export const contractSortKeys = ["contractNo", "title", "site", "period", "itemCount", "baseAmount", "status", "updatedAt"] as const;
+
 export const contractListQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),
   status: z.enum(["all", "DRAFT", "ACTIVE", "ENDED", "CANCELED"]).default("all"),
   siteId: z.string().default(""),
+  sort: z.enum(contractSortKeys).default("updatedAt"),
+  order: z.enum(["asc", "desc"]).default("desc"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(10).max(100).default(20),
 });
 
+export const contractRevenueCandidateQuerySchema = z.object({
+  q: z.string().trim().max(100).default(""),
+  siteId: z.string().default(""),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(10).max(50).default(20),
+});
+
 export type ContractInput = z.infer<typeof contractInputSchema>;
 export type ContractListQuery = z.infer<typeof contractListQuerySchema>;
+export type ContractSortKey = ContractListQuery["sort"];
+export type ContractRevenueCandidateQuery = z.infer<typeof contractRevenueCandidateQuerySchema>;

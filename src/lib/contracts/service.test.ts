@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   nextBusinessCode: vi.fn(),
   recordAudit: vi.fn(),
   recordSyncEvent: vi.fn(),
+  syncRevenueQueue: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -24,6 +25,7 @@ vi.mock("@/lib/audit/record", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/events/bus", () => ({ recordSyncEvent: mocks.recordSyncEvent }));
 vi.mock("@/lib/monthly-close/guard", () => ({ assertMonthsOpen: mocks.assertMonthsOpen }));
 vi.mock("@/lib/masters/sequence", () => ({ nextBusinessCode: mocks.nextBusinessCode }));
+vi.mock("@/lib/revenues/generator", () => ({ syncContractRevenueGenerationQueue: mocks.syncRevenueQueue }));
 vi.mock("@/lib/db/prisma", () => ({ prisma: { $transaction: mocks.transaction } }));
 
 import { createContract, updateContract } from "@/lib/contracts/service";
@@ -87,6 +89,7 @@ describe("contract service billing boundary", () => {
         revenueStartDate: new Date("2026-01-01T00:00:00.000Z"),
         revenueEndDate: new Date("2026-12-31T00:00:00.000Z"),
       }] },
+      revenueGenerationQueue: { create: {} },
     });
     expect(mocks.recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       action: "CREATE",
@@ -94,6 +97,25 @@ describe("contract service billing boundary", () => {
         lines: expect.objectContaining({ create: [expect.objectContaining({ billingMethod: ContractLineBillingMethod.MONTHLY_RECURRING })] }),
       }),
     }));
+    expect(mocks.syncRevenueQueue).not.toHaveBeenCalled();
+  });
+
+  it("does not queue a draft contract for revenue generation", async () => {
+    await createContract(actor, {
+      siteId: "site-1",
+      title: "작성 중 CCTV",
+      status: "DRAFT",
+      lines: [{
+        itemId: "item-1",
+        quantity: 2,
+        appliedSalesPrice: 20_000,
+        appliedCostPrice: 10_000,
+        revenueStartDate: "2026-01-15",
+        revenueEndDate: "2026-12-08",
+      }],
+    });
+
+    expect(mocks.contractCreate.mock.calls[0][0].data).not.toHaveProperty("revenueGenerationQueue");
   });
 
   it("preserves an omitted existing legacy method and audits before and after", async () => {
@@ -156,6 +178,7 @@ describe("contract service billing boundary", () => {
       before: expect.objectContaining({ lines: [expect.objectContaining({ billingMethod: ContractLineBillingMethod.LEGACY_TOTAL })] }),
       after: expect.objectContaining({ lines: [expect.objectContaining({ billingMethod: ContractLineBillingMethod.LEGACY_TOTAL })] }),
     }));
+    expect(mocks.syncRevenueQueue).toHaveBeenCalledWith(expect.anything(), "contract-1");
   });
 
   it.each([

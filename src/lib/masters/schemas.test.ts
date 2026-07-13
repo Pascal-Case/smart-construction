@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { itemInputSchema, masterListQuerySchema, siteInputSchema } from "@/lib/masters/schemas";
+import { itemInputSchema, itemListQuerySchema, siteInputSchema, siteListQuerySchema } from "@/lib/masters/schemas";
 
 describe("master schemas", () => {
   it("현장 종료일이 시작일보다 빠르면 거부한다", () => {
@@ -14,7 +14,15 @@ describe("master schemas", () => {
   });
 
   it("목록 조회 기본값과 페이지 크기 상한을 적용한다", () => {
-    expect(masterListQuerySchema.parse({})).toMatchObject({ status: "active", sort: "name", page: 1, pageSize: 20 });
-    expect(masterListQuerySchema.safeParse({ pageSize: 101 }).success).toBe(false);
+    expect(siteListQuerySchema.parse({})).toMatchObject({ status: "active", sort: "updatedAt", order: "desc", page: 1, pageSize: 20 });
+    expect(itemListQuerySchema.parse({})).toMatchObject({ status: "active", sort: "updatedAt", order: "desc", page: 1, pageSize: 20 });
+    expect(siteListQuerySchema.safeParse({ pageSize: 101 }).success).toBe(false);
+  });
+
+  it("화면에 표시하는 정렬 키만 각 마스터에서 허용한다", () => {
+    expect(siteListQuerySchema.safeParse({ sort: "managerName", order: "asc" }).success).toBe(true);
+    expect(siteListQuerySchema.safeParse({ sort: "unit", order: "asc" }).success).toBe(false);
+    expect(itemListQuerySchema.safeParse({ sort: "standardSalesPrice", order: "desc" }).success).toBe(true);
+    expect(itemListQuerySchema.safeParse({ sort: "customerName", order: "asc" }).success).toBe(false);
   });
 });

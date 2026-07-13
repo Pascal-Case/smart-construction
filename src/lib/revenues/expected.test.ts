@@ -5,6 +5,7 @@ import {
   buildContractRevenueDrafts,
   buildGenerationRows,
   countGenerationActions,
+  hasActionableGenerationRows,
   type ContractRevenueExisting,
   type ExpectedRevenueContract,
 } from "@/lib/revenues/expected";
@@ -112,5 +113,18 @@ describe("expected contract revenues", () => {
     expect(buildGenerationRows([draft], [existing({ status: "CANCELED", cancelReason: "사용자 취소" })])[0].action)
       .toBe("RECREATE");
     expect(buildGenerationRows([draft], [existing()])[0].action).toBe("UNCHANGED");
+  });
+
+  it("실제 쓰기가 필요한 생성 액션만 처리대기로 판정한다", () => {
+    const draft = buildContractRevenueDrafts(contract)[0];
+    const unchanged = buildGenerationRows([draft], [existing()]);
+    const protectedRows = buildGenerationRows([draft], [existing({ status: "CONFIRMED" })]);
+
+    expect(hasActionableGenerationRows(unchanged)).toBe(false);
+    expect(hasActionableGenerationRows(protectedRows)).toBe(false);
+    expect(hasActionableGenerationRows(buildGenerationRows([draft], []))).toBe(true);
+    expect(hasActionableGenerationRows(buildGenerationRows([draft], [existing({ salesAmount: 1 })]))).toBe(true);
+    expect(hasActionableGenerationRows(buildGenerationRows([], [existing()]))).toBe(true);
+    expect(hasActionableGenerationRows(buildGenerationRows([draft], [existing({ status: "CANCELED", cancelReason: "사용자 취소" })]))).toBe(true);
   });
 });

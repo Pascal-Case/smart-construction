@@ -26,6 +26,17 @@ describe("revenueInputSchema", () => {
 });
 
 describe("revenueListQuerySchema", () => {
+  it("최종수정일 최신순을 기본값으로 사용한다", () => {
+    expect(revenueListQuerySchema.parse({})).toMatchObject({ sort: "updatedAt", order: "desc", page: 1, pageSize: 20 });
+  });
+
+  it("메인 표에 표시하는 데이터 컬럼 정렬만 허용한다", () => {
+    for (const sort of ["revenueDate", "site", "source", "content", "quantityPrice", "salesAmount", "costAmount", "status", "updatedAt"]) {
+      expect(revenueListQuerySchema.safeParse({ sort, order: "asc" }).success).toBe(true);
+    }
+    expect(revenueListQuerySchema.safeParse({ sort: "description", order: "asc" }).success).toBe(false);
+  });
+
   it("대시보드에서 0원 예외 목록을 요청할 수 있다", () => {
     expect(revenueListQuerySchema.parse({ exception: "ZERO" }).exception).toBe("ZERO");
     expect(revenueListQuerySchema.parse({}).exception).toBe("all");

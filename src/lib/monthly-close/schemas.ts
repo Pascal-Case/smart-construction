@@ -4,10 +4,18 @@ const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "월은 YYYY-MM 
 const fingerprintSchema = z.string().regex(/^[a-f0-9]{64}$/i, "상태 fingerprint가 올바르지 않습니다.");
 const reasonSchema = z.string().trim().min(1, "사유를 입력해 주세요.").max(500, "사유는 500자 이하여야 합니다.");
 
+export const monthlyCloseSortKeys = ["site", "status", "sales", "exceptions"] as const;
+
 export const monthlyCloseQuerySchema = z.object({
   month: monthSchema,
   siteId: z.string().default(""),
   view: z.enum(["exceptions", "all"]).default("exceptions"),
+  sort: z.enum(monthlyCloseSortKeys).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
+}).superRefine((value, context) => {
+  if ((value.sort == null) !== (value.order == null)) {
+    context.addIssue({ code: "custom", message: "정렬 기준과 방향을 함께 입력해 주세요.", path: [value.sort ? "order" : "sort"] });
+  }
 });
 
 export const reviewMonthlyCloseExceptionSchema = z.object({
@@ -38,6 +46,7 @@ export const reopenMonthlyCloseSchema = z.object({
 });
 
 export type MonthlyCloseQuery = z.infer<typeof monthlyCloseQuerySchema>;
+export type MonthlyCloseSortKey = NonNullable<MonthlyCloseQuery["sort"]>;
 export type ReviewMonthlyCloseExceptionInput = z.infer<typeof reviewMonthlyCloseExceptionSchema>;
 export type CloseMonthlySitesInput = z.infer<typeof closeMonthlySitesSchema>;
 export type ReopenMonthlyCloseInput = z.infer<typeof reopenMonthlyCloseSchema>;

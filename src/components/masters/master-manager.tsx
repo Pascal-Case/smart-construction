@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, FileDown, Pencil, Plus, Search, Upload } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useRealtimeRefresh } from "@/components/realtime-provider";
@@ -10,53 +10,90 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatSeoulDateTime } from "@/lib/date-time";
+import { parseExplicitSort, serializeListQuery, toggleSort, type ExplicitSort } from "@/lib/list-sorting";
+import { itemSortKeys, siteSortKeys, type ItemListQuery, type ItemSortKey, type SiteListQuery, type SiteSortKey } from "@/lib/masters/schemas";
 
 type MasterType = "site" | "item";
 type BaseRow = { id: string; code: string; name: string; aliases: string[]; isActive: boolean; version: number; updatedAt: string };
 export type SiteView = BaseRow & { customerName: string | null; address: string | null; managerName: string | null; managerContact: string | null; startDate: string | null; endDate: string | null; memo: string | null };
 export type ItemView = BaseRow & { unit: string; standardSalesPrice: number; standardCostPrice: number; memo: string | null };
 type MasterRow = SiteView | ItemView;
+type MasterSortKey = SiteSortKey | ItemSortKey;
 export type MasterList<T extends MasterRow> = { rows: T[]; total: number; page: number; pageSize: number; totalPages: number };
 type Preview = { rows: Array<{ rowNumber: number; status: "CREATE" | "UPDATE" | "UNCHANGED" | "ERROR"; code: string; name: string; errors: string[] }>; counts: { total: number; create: number; update: number; unchanged: number; error: number } };
 
-export function MasterManager({ type, initialData, canEdit }: { type: MasterType; initialData: MasterList<MasterRow>; canEdit: boolean }) {
+export function MasterManager({ type, initialData, initialQuery, initialSort, canEdit }: { type: MasterType; initialData: MasterList<MasterRow>; initialQuery: SiteListQuery | ItemListQuery; initialSort: ExplicitSort<MasterSortKey>; canEdit: boolean }) {
   const [data, setData] = useState(initialData);
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("active");
-  const [sort, setSort] = useState("name");
+  const [query, setQuery] = useState(initialQuery.q);
+  const [status, setStatus] = useState(initialQuery.status);
+  const [sort, setSort] = useState<ExplicitSort<MasterSortKey>>(initialSort);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MasterRow | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const endpoint = type === "site" ? "sites" : "items";
   const title = type === "site" ? "현장" : "품목";
+  const allowedSortKeys = type === "site" ? siteSortKeys : itemSortKeys;
 
-  async function load(page = 1) {
+  const load = useCallback(async ({ page, nextSort, filters, historyMode }: { page: number; nextSort: ExplicitSort<MasterSortKey>; filters: { q: string; status: string }; historyMode: "push" | "none" }) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ q: query, status, sort, page: String(page), pageSize: "20" });
+      const params = serializeListQuery(
+        new URLSearchParams({ q: filters.q, status: filters.status, page: String(page), pageSize: "20" }),
+        nextSort,
+      );
       const response = await fetch(`/api/${endpoint}?${params}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? `${title} 목록을 불러오지 못했습니다.`);
       setData(body);
+      setSort(nextSort);
+      if (historyMode === "push") window.history.pushState({}, "", `${window.location.pathname}?${params}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "목록을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
+  }, [endpoint, title]);
+
+  useEffect(() => {
+    const restoreFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextQuery = params.get("q") ?? "";
+      const requestedStatus = params.get("status");
+      const nextStatus = requestedStatus === "all" || requestedStatus === "inactive" ? requestedStatus : "active";
+      const nextPage = Math.max(1, Number(params.get("page")) || 1);
+      const nextSort = parseExplicitSort(params, allowedSortKeys) as ExplicitSort<MasterSortKey>;
+      setQuery(nextQuery);
+      setStatus(nextStatus);
+      void load({ page: nextPage, nextSort, filters: { q: nextQuery, status: nextStatus }, historyMode: "none" });
+    };
+    window.addEventListener("popstate", restoreFromUrl);
+    return () => window.removeEventListener("popstate", restoreFromUrl);
+  }, [allowedSortKeys, load]);
+
+  useRealtimeRefresh([type === "site" ? "site.changed" : "item.changed"], () => void load({ page: data.page, nextSort: sort, filters: { q: query, status }, historyMode: "none" }));
+
+  function changeSort(key: MasterSortKey) {
+    const nextSort = toggleSort(sort, key);
+    void load({ page: 1, nextSort, filters: { q: query, status }, historyMode: "push" });
   }
-  useRealtimeRefresh([type === "site" ? "site.changed" : "item.changed"], () => void load(data.page));
+
+  function directionFor(key: MasterSortKey) {
+    if (sort?.key === key) return sort.direction;
+    return !sort && key === "updatedAt" ? "desc" : undefined;
+  }
 
   function openCreate() { setEditing(null); setEditorOpen(true); }
   function openEdit(row: MasterRow) { setEditing(row); setEditorOpen(true); }
 
   return <div className="space-y-4">
     <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 xl:flex-row xl:items-end">
-      <form className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => { event.preventDefault(); void load(1); }}>
+      <form className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => { event.preventDefault(); void load({ page: 1, nextSort: sort, filters: { q: query, status }, historyMode: "push" }); }}>
         <div className="min-w-60 flex-1 space-y-1.5"><Label htmlFor={`${type}-search`}>검색</Label><Input id={`${type}-search`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={type === "site" ? "코드, 현장명, 거래처, 별칭" : "코드, 품목명, 별칭"} /></div>
-        <SelectField label="상태" value={status} onChange={setStatus} options={[{ value: "active", label: "사용 중" }, { value: "inactive", label: "사용 중지" }, { value: "all", label: "전체" }]} />
-        <SelectField label="정렬" value={sort} onChange={setSort} options={[{ value: "name", label: "이름" }, { value: "code", label: "코드" }, { value: "updatedAt", label: "최근 수정" }]} />
+        <SelectField label="상태" value={status} onChange={(value) => setStatus(value as typeof status)} options={[{ value: "active", label: "사용 중" }, { value: "inactive", label: "사용 중지" }, { value: "all", label: "전체" }]} />
         <Button type="submit" variant="outline" disabled={loading}><Search data-icon="inline-start" />조회</Button>
       </form>
       <div className="flex flex-wrap gap-2">
@@ -67,14 +104,14 @@ export function MasterManager({ type, initialData, canEdit }: { type: MasterType
     </div>
 
     <div className="overflow-x-auto rounded-xl border bg-card">
-      <Table><TableHeader><TableRow><TableHead>코드</TableHead><TableHead>{title}명</TableHead>{type === "site" ? <><TableHead>거래처</TableHead><TableHead>담당자</TableHead><TableHead>운영 기간</TableHead></> : <><TableHead>단위</TableHead><TableHead className="text-right">표준 매출단가</TableHead><TableHead className="text-right">표준 매입단가</TableHead></>}<TableHead>별칭</TableHead><TableHead>상태</TableHead>{canEdit && <TableHead className="text-right">관리</TableHead>}</TableRow></TableHeader>
-        <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={canEdit ? 8 : 7} className="h-28 text-center text-muted-foreground">조건에 맞는 {title}이 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id}><TableCell className="font-mono text-xs">{row.code}</TableCell><TableCell className="font-medium">{row.name}</TableCell>{type === "site" ? <SiteCells row={row as SiteView} /> : <ItemCells row={row as ItemView} />}<TableCell className="max-w-52 truncate text-xs text-muted-foreground" title={row.aliases.join(", ")}>{row.aliases.join(", ") || "-"}</TableCell><TableCell><Badge variant={row.isActive ? "secondary" : "outline"}>{row.isActive ? "사용" : "중지"}</Badge></TableCell>{canEdit && <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={() => openEdit(row)}><Pencil data-icon="inline-start" />수정</Button></TableCell>}</TableRow>)}</TableBody>
+      <Table><TableHeader><TableRow><SortableTableHead direction={directionFor("code")} onSort={() => changeSort("code")}>코드</SortableTableHead><SortableTableHead direction={directionFor("name")} onSort={() => changeSort("name")}>{title}명</SortableTableHead>{type === "site" ? <><SortableTableHead direction={directionFor("customerName")} onSort={() => changeSort("customerName")}>거래처</SortableTableHead><SortableTableHead direction={directionFor("managerName")} onSort={() => changeSort("managerName")}>담당자</SortableTableHead><SortableTableHead direction={directionFor("period")} onSort={() => changeSort("period")}>운영 기간</SortableTableHead></> : <><SortableTableHead direction={directionFor("unit")} onSort={() => changeSort("unit")}>단위</SortableTableHead><SortableTableHead numeric direction={directionFor("standardSalesPrice")} onSort={() => changeSort("standardSalesPrice")}>표준 매출단가</SortableTableHead><SortableTableHead numeric direction={directionFor("standardCostPrice")} onSort={() => changeSort("standardCostPrice")}>표준 매입단가</SortableTableHead></>}<SortableTableHead direction={directionFor("alias")} onSort={() => changeSort("alias")}>별칭</SortableTableHead><SortableTableHead direction={directionFor("status")} onSort={() => changeSort("status")}>상태</SortableTableHead><SortableTableHead direction={directionFor("updatedAt")} isDefault={!sort} onSort={() => changeSort("updatedAt")}>최종수정일</SortableTableHead>{canEdit && <TableHead className="text-right">관리</TableHead>}</TableRow></TableHeader>
+        <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={canEdit ? 9 : 8} className="h-28 text-center text-muted-foreground">조건에 맞는 {title}이 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id}><TableCell className="font-mono text-xs">{row.code}</TableCell><TableCell className="font-medium">{row.name}</TableCell>{type === "site" ? <SiteCells row={row as SiteView} /> : <ItemCells row={row as ItemView} />}<TableCell className="max-w-52 truncate text-xs text-muted-foreground" title={row.aliases.join(", ")}>{row.aliases.join(", ") || "-"}</TableCell><TableCell><Badge variant={row.isActive ? "secondary" : "outline"}>{row.isActive ? "사용" : "중지"}</Badge></TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatSeoulDateTime(row.updatedAt)}</TableCell>{canEdit && <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={() => openEdit(row)}><Pencil data-icon="inline-start" />수정</Button></TableCell>}</TableRow>)}</TableBody>
       </Table>
     </div>
-    <div className="flex items-center justify-between text-sm text-muted-foreground"><span>총 {data.total.toLocaleString()}건 · {data.page}/{data.totalPages} 페이지</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading || data.page <= 1} onClick={() => void load(data.page - 1)}>이전</Button><Button size="sm" variant="outline" disabled={loading || data.page >= data.totalPages} onClick={() => void load(data.page + 1)}>다음</Button></div></div>
+    <div className="flex items-center justify-between text-sm text-muted-foreground"><span>총 {data.total.toLocaleString()}건 · {data.page}/{data.totalPages} 페이지</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading || data.page <= 1} onClick={() => void load({ page: data.page - 1, nextSort: sort, filters: { q: query, status }, historyMode: "push" })}>이전</Button><Button size="sm" variant="outline" disabled={loading || data.page >= data.totalPages} onClick={() => void load({ page: data.page + 1, nextSort: sort, filters: { q: query, status }, historyMode: "push" })}>다음</Button></div></div>
 
-    <MasterEditor type={type} open={editorOpen} row={editing} onOpenChange={setEditorOpen} onSaved={() => void load(data.page)} />
-    <ImportDialog type={type} open={importOpen} onOpenChange={setImportOpen} onCommitted={() => void load(1)} />
+    <MasterEditor type={type} open={editorOpen} row={editing} onOpenChange={setEditorOpen} onSaved={() => void load({ page: data.page, nextSort: sort, filters: { q: query, status }, historyMode: "none" })} />
+    <ImportDialog type={type} open={importOpen} onOpenChange={setImportOpen} onCommitted={() => void load({ page: 1, nextSort: sort, filters: { q: query, status }, historyMode: "none" })} />
   </div>;
 }
 

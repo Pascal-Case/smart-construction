@@ -121,6 +121,13 @@ export function countGenerationActions(rows: GenerationRow[]) {
   };
 }
 
+export function hasActionableGenerationRows(rows: GenerationRow[]) {
+  return rows.some((row) => row.action === "CREATE"
+    || row.action === "RECREATE"
+    || row.action === "UPDATE"
+    || row.action === "CANCEL");
+}
+
 export function sameExpectedRevenue(row: ContractRevenueExisting, draft: ExpectedContractRevenue) {
   return row.siteId === draft.siteId
     && row.itemId === draft.itemId

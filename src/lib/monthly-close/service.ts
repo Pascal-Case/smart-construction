@@ -15,6 +15,7 @@ import type {
 } from "@/lib/monthly-close/schemas";
 import { buildCloseCycleSnapshot } from "@/lib/monthly-close/snapshot";
 import type { MonthCloseEvaluationInput } from "@/lib/monthly-close/types";
+import { sortControlRoomRows } from "@/lib/monthly-close/control-room-order";
 import { buildContractRevenueDrafts } from "@/lib/revenues/expected";
 
 type CloseTarget = CloseMonthlySitesInput["targets"][number];
@@ -32,7 +33,7 @@ export async function getMonthCloseControlRoom(query: MonthlyCloseQuery) {
       const context = await loadEvaluationContext(tx, site.id, query.month);
       if (context) contexts.push(context);
     }
-    const allRows = contexts.map(toControlRoomRow);
+    const allRows = sortControlRoomRows(contexts.map(toControlRoomRow), query.sort && query.order ? { key: query.sort, direction: query.order } : null);
     const rows = query.view === "all" ? allRows : allRows.filter((row) => row.evaluation.exceptions.length > 0);
     const closedCount = allRows.filter((row) => row.close?.state === "CLOSED").length;
     return {

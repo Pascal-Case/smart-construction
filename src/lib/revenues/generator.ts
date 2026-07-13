@@ -4,13 +4,16 @@ import { Prisma, RevenueStatus } from "@/generated/prisma/client";
 import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
+import type { ContractRevenueCandidateQuery } from "@/lib/contracts/schemas";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
+import { normalizeCode } from "@/lib/masters/normalize";
 import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 import {
   buildContractRevenueDrafts,
   buildGenerationRows,
   countGenerationActions,
+  hasActionableGenerationRows,
   type ExpectedContractRevenue,
 } from "@/lib/revenues/expected";
 import { AUTO_CANCEL_REASON } from "@/lib/revenues/generation-policy";
@@ -44,23 +47,90 @@ export async function generateContractRevenues(actor: SessionUser, contractId: s
       } else if (row.action === "UNCHANGED") counts.unchanged += 1;
       else counts.protected += 1;
     }
+    await tx.contractRevenueGenerationQueue.deleteMany({ where: { contractId } });
     await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "GENERATE", entityType: "CONTRACT_REVENUE", entityId: contractId, after: counts });
     await recordSyncEvent(tx, { type: "revenue.changed", entityId: contractId, siteId: preview.contract.siteId, actorId: actor.id });
     return counts;
   });
 }
 
+export async function listContractRevenueCandidates(query: ContractRevenueCandidateQuery) {
+  const contractWhere: Prisma.ContractWhereInput = {
+    status: "ACTIVE",
+    ...(query.siteId ? { siteId: query.siteId } : {}),
+    ...(query.q ? { OR: [
+      { contractNo: { contains: normalizeCode(query.q) } },
+      { title: { contains: query.q } },
+      { site: { name: { contains: query.q } } },
+    ] } : {}),
+  };
+  const where: Prisma.ContractRevenueGenerationQueueWhereInput = { contract: { is: contractWhere } };
+  const [total, rows] = await prisma.$transaction([
+    prisma.contractRevenueGenerationQueue.count({ where }),
+    prisma.contractRevenueGenerationQueue.findMany({
+      where,
+      select: {
+        contractId: true,
+        pendingAt: true,
+        contract: {
+          select: {
+            contractNo: true,
+            title: true,
+            site: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [{ pendingAt: "asc" }, { contractId: "asc" }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+  ]);
+  return {
+    rows: rows.map((row) => ({
+      id: row.contractId,
+      contractNo: row.contract.contractNo,
+      title: row.contract.title,
+      pendingAt: row.pendingAt,
+      site: row.contract.site,
+    })),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+    totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
+  };
+}
+
+export async function syncContractRevenueGenerationQueue(tx: Prisma.TransactionClient, contractId: string) {
+  const preview = await loadContractRevenueGeneration(tx, contractId);
+  const actionable = preview.contract.status === "ACTIVE" && hasActionableGenerationRows(preview.rows);
+  if (actionable) {
+    await tx.contractRevenueGenerationQueue.upsert({
+      where: { contractId },
+      create: { contractId },
+      update: {},
+    });
+  } else {
+    await tx.contractRevenueGenerationQueue.deleteMany({ where: { contractId } });
+  }
+  return actionable;
+}
+
 async function buildPreview(tx: Prisma.TransactionClient, contractId: string) {
+  const preview = await loadContractRevenueGeneration(tx, contractId);
+  if (preview.contract.status !== "ACTIVE") throw new AuthError("진행 상태 계약만 자동 매출을 생성할 수 있습니다.", 400, "CONTRACT_NOT_ACTIVE");
+  return preview;
+}
+
+async function loadContractRevenueGeneration(tx: Prisma.TransactionClient, contractId: string) {
   const contract = await tx.contract.findUnique({ where: { id: contractId }, include: {
     site: { select: { name: true } },
     lines: { where: { isActive: true }, include: { item: { select: { name: true } } }, orderBy: { sortOrder: "asc" } },
   } });
   if (!contract) throw new AuthError("계약을 찾을 수 없습니다.", 404, "CONTRACT_NOT_FOUND");
-  if (contract.status !== "ACTIVE") throw new AuthError("진행 상태 계약만 자동 매출을 생성할 수 있습니다.", 400, "CONTRACT_NOT_ACTIVE");
   const drafts = buildContractRevenueDrafts(contract);
   const existing = await tx.revenueEntry.findMany({ where: { contractId, sourceType: "CONTRACT" } });
   const rows = buildGenerationRows(drafts, existing);
-  return { contract: { id: contract.id, contractNo: contract.contractNo, title: contract.title, siteId: contract.siteId, siteName: contract.site.name, version: contract.version }, rows, counts: countGenerationActions(rows), totalSalesAmount: drafts.reduce((sum, row) => sum + row.salesAmount, 0), totalCostAmount: drafts.reduce((sum, row) => sum + row.costAmount, 0) };
+  return { contract: { id: contract.id, contractNo: contract.contractNo, title: contract.title, siteId: contract.siteId, siteName: contract.site.name, status: contract.status, version: contract.version }, rows, counts: countGenerationActions(rows), totalSalesAmount: drafts.reduce((sum, row) => sum + row.salesAmount, 0), totalCostAmount: drafts.reduce((sum, row) => sum + row.costAmount, 0) };
 }
 
 function revenueData(draft: ExpectedContractRevenue) {

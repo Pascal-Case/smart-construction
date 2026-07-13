@@ -5,7 +5,10 @@ import { UserRole } from "@/generated/prisma/client";
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   findMany: vi.fn(),
+  findUnique: vi.fn(),
+  findUniqueOrThrow: vi.fn(),
   updateMany: vi.fn(),
+  queueUpsert: vi.fn(),
   assertMonthsOpen: vi.fn(),
   recordAudit: vi.fn(),
   recordSyncEvent: vi.fn(),
@@ -17,7 +20,7 @@ vi.mock("@/lib/events/bus", () => ({ recordSyncEvent: mocks.recordSyncEvent }));
 vi.mock("@/lib/monthly-close/guard", () => ({ assertMonthsOpen: mocks.assertMonthsOpen }));
 vi.mock("@/lib/db/prisma", () => ({ prisma: { $transaction: mocks.transaction } }));
 
-import { confirmContractRevenues } from "@/lib/revenues/service";
+import { cancelRevenue, confirmContractRevenues } from "@/lib/revenues/service";
 
 const actor = { id: "user-1", loginId: "manager", name: "매니저", role: UserRole.MANAGER, isActive: true, version: 1 };
 const beforeRows = [
@@ -56,5 +59,63 @@ describe("confirmContractRevenues", () => {
     await expect(confirmContractRevenues(actor, { entries: [{ id: "revenue-1", version: 1 }, { id: "revenue-2", version: 2 }] })).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
     expect(mocks.recordAudit).not.toHaveBeenCalled();
     expect(mocks.recordSyncEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("cancelRevenue contract generation queue", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.transaction.mockImplementation(async (callback) => callback({
+      revenueEntry: {
+        findUnique: mocks.findUnique,
+        findUniqueOrThrow: mocks.findUniqueOrThrow,
+        updateMany: mocks.updateMany,
+      },
+      contractRevenueGenerationQueue: { upsert: mocks.queueUpsert },
+    }));
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("사용자가 계약 매출을 취소하면 같은 트랜잭션에서 계약을 처리대기로 되돌린다", async () => {
+    const before = {
+      id: "revenue-1",
+      contractId: "contract-1",
+      siteId: "site-1",
+      revenueDate: new Date("2026-07-01T00:00:00Z"),
+      sourceType: "CONTRACT",
+      status: "CONFIRMED",
+      generatedKey: "line-1:2026-07",
+      version: 2,
+    };
+    const after = { ...before, status: "CANCELED", generatedKey: null, version: 3 };
+    mocks.findUnique.mockResolvedValue(before);
+    mocks.findUniqueOrThrow.mockResolvedValue(after);
+
+    await expect(cancelRevenue(actor, before.id, before.version, "사용자 취소")).resolves.toEqual(after);
+
+    expect(mocks.queueUpsert).toHaveBeenCalledWith({
+      where: { contractId: "contract-1" },
+      create: { contractId: "contract-1" },
+      update: {},
+    });
+  });
+
+  it("직접 매출 취소는 계약 처리대기 큐를 변경하지 않는다", async () => {
+    const before = {
+      id: "revenue-2",
+      contractId: null,
+      siteId: "site-1",
+      revenueDate: new Date("2026-07-01T00:00:00Z"),
+      sourceType: "MANUAL",
+      status: "DRAFT",
+      generatedKey: null,
+      version: 1,
+    };
+    mocks.findUnique.mockResolvedValue(before);
+    mocks.findUniqueOrThrow.mockResolvedValue({ ...before, status: "CANCELED", version: 2 });
+
+    await cancelRevenue(actor, before.id, before.version, "사용자 취소");
+
+    expect(mocks.queueUpsert).not.toHaveBeenCalled();
   });
 });

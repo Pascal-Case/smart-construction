@@ -36,15 +36,29 @@ export const itemInputSchema = z.object({
 export const siteUpdateSchema = siteInputSchema.and(z.object({ version: z.number().int().positive() }));
 export const itemUpdateSchema = itemInputSchema.and(z.object({ version: z.number().int().positive() }));
 
-export const masterListQuerySchema = z.object({
+const masterListQueryBaseSchema = z.object({
   q: z.string().trim().max(100).default(""),
   status: z.enum(["all", "active", "inactive"]).default("active"),
-  sort: z.enum(["code", "name", "updatedAt"]).default("name"),
-  order: z.enum(["asc", "desc"]).default("asc"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(10).max(100).default(20),
 });
 
+export const siteSortKeys = ["code", "name", "customerName", "managerName", "period", "alias", "status", "updatedAt"] as const;
+export const itemSortKeys = ["code", "name", "unit", "standardSalesPrice", "standardCostPrice", "alias", "status", "updatedAt"] as const;
+
+export const siteListQuerySchema = masterListQueryBaseSchema.extend({
+  sort: z.enum(siteSortKeys).default("updatedAt"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export const itemListQuerySchema = masterListQueryBaseSchema.extend({
+  sort: z.enum(itemSortKeys).default("updatedAt"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+});
+
 export type SiteInput = z.infer<typeof siteInputSchema>;
 export type ItemInput = z.infer<typeof itemInputSchema>;
-export type MasterListQuery = z.infer<typeof masterListQuerySchema>;
+export type SiteListQuery = z.infer<typeof siteListQuerySchema>;
+export type ItemListQuery = z.infer<typeof itemListQuerySchema>;
+export type SiteSortKey = (typeof siteSortKeys)[number];
+export type ItemSortKey = (typeof itemSortKeys)[number];

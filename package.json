@@ -25,8 +25,9 @@
     "env:check": "tsx scripts/check-env.ts",
     "db:prepare": "tsx scripts/prepare-sqlite.ts",
     "db:generate": "prisma generate",
-    "db:migrate": "npm run db:prepare && prisma migrate dev",
-    "db:deploy": "npm run db:prepare && prisma migrate deploy",
+    "db:sync-revenue-queue": "tsx scripts/sync-contract-revenue-generation-queue.ts",
+    "db:migrate": "npm run db:prepare && prisma migrate dev && npm run db:sync-revenue-queue",
+    "db:deploy": "npm run db:prepare && prisma migrate deploy && npm run db:sync-revenue-queue",
     "db:studio": "prisma studio"
   },
   "dependencies": {

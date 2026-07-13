@@ -43,4 +43,21 @@ describe("month close control room state", () => {
     ]);
     expect(rows.map((item) => item.site.name)).toEqual(["차단", "검토", "마감"]);
   });
+
+  it("sorts visible sales and exception aggregates in both directions", () => {
+    const low = row("소액", { exceptions: 1 });
+    const high = row("고액", { blockers: 2 });
+    high.evaluation.totals = { revenueCount: 2, totalSalesAmount: 1_000, totalCostAmount: 500 };
+
+    expect(sortControlRoomRows([high, low], { key: "sales", direction: "asc" }).map((item) => item.site.name)).toEqual(["소액", "고액"]);
+    expect(sortControlRoomRows([low, high], { key: "exceptions", direction: "desc" }).map((item) => item.site.name)).toEqual(["고액", "소액"]);
+  });
+
+  it("uses business status order and stable site ids", () => {
+    const blocked = row("차단", { blockers: 1 });
+    const ready = row("가능");
+    const closed = row("마감", { closed: true });
+
+    expect(sortControlRoomRows([closed, ready, blocked], { key: "status", direction: "asc" }).map((item) => item.site.name)).toEqual(["차단", "가능", "마감"]);
+  });
 });
