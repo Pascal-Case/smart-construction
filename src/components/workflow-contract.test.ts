@@ -28,6 +28,31 @@ describe("registration workflow contract", () => {
     expect(source).toContain("current.at(-1)");
   });
 
+  it("계약 품목은 월정액 기본과 방식별 기간 입력 및 legacy 복귀를 제공한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
+
+    expect(source).toContain('billingMethod: "MONTHLY_RECURRING"');
+    expect(source).toContain('type={line.billingMethod === "MONTHLY_RECURRING" ? "month" : "date"}');
+    expect(source).toContain("changeBillingMethod");
+    expect(source).toContain("기존 계산 유지");
+    expect(source).toContain("legacyEligible");
+    expect(source).toContain('line.billingMethod === "LEGACY_TOTAL" ? {} : { billingMethod: line.billingMethod }');
+    expect(source).toContain("spansMoreThanTwoCalendarMonths");
+    expect(source).toContain("일할청구는 최대 두 달력 월에 걸쳐 등록할 수 있습니다.");
+  });
+
+  it("계약 목록과 자동 매출 미리보기는 청구 방식별 의미를 사용자 용어로 표시한다", () => {
+    const contractSource = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
+    const revenueSource = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+
+    expect(contractSource).toContain("품목 기준금액 합계");
+    expect(contractSource).toContain("월정액은 월별 금액, 일할·기존 계산은 배분 전 총액");
+    expect(revenueSource).toContain("billingBasisLabel");
+    expect(revenueSource).toContain("월정액 전액");
+    expect(revenueSource).toContain("기존 계산 · 전체기간");
+    expect(revenueSource).not.toContain("계약 총액을 전체 매출기간의 일수로 나눠");
+  });
+
   it("직접 매출 등록에서 확정과 작성 중 저장 결과를 구분한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-editor.tsx"), "utf8");
 
