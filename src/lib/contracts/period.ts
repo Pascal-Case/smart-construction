@@ -29,6 +29,21 @@ export function spansMoreThanTwoCalendarMonths(startDate: string, endDate: strin
   return enumerateMonths(startDate, endDate).length > 2;
 }
 
+export function monthBounds(month: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) throw new Error("대상월 형식이 올바르지 않습니다.");
+
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+  if (monthNumber < 1 || monthNumber > 12) throw new Error("대상월 형식이 올바르지 않습니다.");
+
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return {
+    min: `${month}-01`,
+    max: `${month}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
 export function dateOnly(value: string | Date) {
   return value instanceof Date ? value.toISOString().slice(0, 10) : value.length === 7 ? `${value}-01` : value;
 }

@@ -73,6 +73,11 @@ describe("contract line billing method", () => {
       revenueEndDate: "2026-02",
     })).toThrowError(expect.objectContaining({ code: "INVALID_BILLING_PERIOD" }));
     expect(() => resolveContractLineBilling({
+      billingMethod: ContractLineBillingMethod.PRORATED_TOTAL,
+      revenueStartDate: "2026-02-08",
+      revenueEndDate: "2026-01-15",
+    })).toThrowError(expect.objectContaining({ code: "INVALID_BILLING_PERIOD" }));
+    expect(() => resolveContractLineBilling({
       billingMethod: ContractLineBillingMethod.LEGACY_TOTAL,
       revenueStartDate: "2026-01-01",
       revenueEndDate: "2026-01-31",

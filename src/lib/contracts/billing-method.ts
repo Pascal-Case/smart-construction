@@ -1,7 +1,6 @@
 import { ContractLineBillingMethod } from "@/generated/prisma/client";
 import { AuthError } from "@/lib/auth/errors";
-import { spansMoreThanTwoCalendarMonths } from "@/lib/contracts/period";
-import { revenueMonthBounds } from "@/lib/revenues/month-context";
+import { monthBounds, spansMoreThanTwoCalendarMonths } from "@/lib/contracts/period";
 
 export type PublicContractLineBillingMethod =
   | typeof ContractLineBillingMethod.MONTHLY_RECURRING
@@ -33,8 +32,8 @@ export function resolveContractLineBilling(input: BillingInput, existing?: Exist
     if (startMonth > endMonth) throw invalidPeriod();
     return {
       billingMethod,
-      revenueStartDate: revenueMonthBounds(startMonth).min,
-      revenueEndDate: revenueMonthBounds(endMonth).max,
+      revenueStartDate: monthBounds(startMonth).min,
+      revenueEndDate: monthBounds(endMonth).max,
     };
   }
 

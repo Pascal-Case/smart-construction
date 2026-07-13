@@ -5,7 +5,6 @@ import type { SmartInputAppliedDraft } from "@/lib/smart-input/types";
 
 const draft: SmartInputAppliedDraft = {
   billingMethod: "PRORATED_TOTAL",
-  periodPrecision: "DAY",
   siteId: "site-1",
   itemId: "item-1",
   title: "강남 A현장 하이바",
@@ -47,7 +46,6 @@ describe("buildDirectRegistrationPayload", () => {
     expect(buildDirectRegistrationPayload("CONTRACT", {
       ...draft,
       billingMethod: "MONTHLY_RECURRING",
-      periodPrecision: "MONTH",
       startDate: "2026-08",
       endDate: "2026-12",
     })).toMatchObject({

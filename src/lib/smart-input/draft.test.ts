@@ -22,7 +22,6 @@ describe("buildSmartInputDraft", () => {
 
     expect(buildSmartInputDraft(preview, site, item)).toMatchObject({
       billingMethod: "PRORATED_TOTAL",
-      periodPrecision: "DAY",
       siteId: site.id,
       itemId: item.id,
       quantity: 5,
@@ -46,7 +45,6 @@ describe("buildSmartInputDraft", () => {
 
     expect(buildSmartInputDraft(preview, site, item)).toMatchObject({
       billingMethod: "MONTHLY_RECURRING",
-      periodPrecision: "MONTH",
       startDate: "2026-03",
       endDate: "2026-08",
     });

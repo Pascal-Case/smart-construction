@@ -38,7 +38,6 @@ export function buildSmartInputDraft(preview: SmartInputPreview, site: SmartMast
   if (!reason && unitPrice != null && item?.standardSalesPrice != null && unitPrice !== item.standardSalesPrice) reason = "문장 입력 단가";
   return {
     billingMethod,
-    periodPrecision: period.precision,
     siteId: site.id,
     itemId: item?.id ?? null,
     title: (site.name + " " + (item?.name ?? (preview.target === "CONTRACT" ? "계약" : "매출"))).slice(0, 100),

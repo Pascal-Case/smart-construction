@@ -67,7 +67,6 @@ export type SmartInputPreview = {
 
 export type SmartInputAppliedDraft = {
   billingMethod: SmartContractBillingMethod;
-  periodPrecision: SmartPeriod["precision"];
   siteId: string;
   itemId: string | null;
   title: string;
