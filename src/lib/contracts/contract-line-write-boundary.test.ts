@@ -26,8 +26,8 @@ describe("contract line write boundary", () => {
     const contractService = readFileSync(path.join(process.cwd(), approvedWriteFiles[0]), "utf8");
     const legacyMigrationService = readFileSync(path.join(process.cwd(), approvedWriteFiles[1]), "utf8");
 
-    expect(contractService.match(/billingMethod:\s*ContractLineBillingMethod\.MONTHLY_RECURRING/g))
-      .toHaveLength(2);
+    expect(contractService).toContain("resolveContractLineBilling");
+    expect(contractService).toContain("billingMethod: billing.billingMethod");
     expect(legacyMigrationService.match(/billingMethod:\s*ContractLineBillingMethod\.LEGACY_TOTAL/g))
       .toHaveLength(1);
   });

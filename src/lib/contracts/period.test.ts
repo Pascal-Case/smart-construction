@@ -26,4 +26,27 @@ describe("contract period", () => {
     expect(result).not.toHaveProperty("startDate");
     expect(result).not.toHaveProperty("endDate");
   });
+
+  it("공개 청구 방식과 월 단위 기간을 받고 legacy 선택은 거부한다", () => {
+    const result = contractInputSchema.parse({
+      siteId: "site-1",
+      title: "계약",
+      status: "ACTIVE",
+      lines: [{ ...lines[0], billingMethod: "MONTHLY_RECURRING", revenueStartDate: "2026-03", revenueEndDate: "2026-08" }],
+    });
+    expect(result.lines[0]).toMatchObject({ billingMethod: "MONTHLY_RECURRING", revenueStartDate: "2026-03", revenueEndDate: "2026-08" });
+    expect(() => contractInputSchema.parse({
+      siteId: "site-1",
+      title: "계약",
+      status: "ACTIVE",
+      lines: [{ ...lines[0], billingMethod: "LEGACY_TOTAL" }],
+    })).toThrow();
+  });
+
+  it("Date 객체로 canonicalize된 품목에서도 계약 헤더 기간을 산정한다", () => {
+    expect(deriveContractPeriod([
+      { revenueStartDate: new Date("2026-03-01T00:00:00.000Z"), revenueEndDate: new Date("2026-08-31T00:00:00.000Z") },
+      { revenueStartDate: new Date("2026-02-10T00:00:00.000Z"), revenueEndDate: new Date("2026-04-20T00:00:00.000Z") },
+    ])).toEqual({ startDate: "2026-02-10", endDate: "2026-08-31" });
+  });
 });
