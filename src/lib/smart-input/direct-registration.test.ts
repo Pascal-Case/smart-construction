@@ -4,6 +4,8 @@ import { buildDirectRegistrationPayload } from "@/lib/smart-input/direct-registr
 import type { SmartInputAppliedDraft } from "@/lib/smart-input/types";
 
 const draft: SmartInputAppliedDraft = {
+  billingMethod: "PRORATED_TOTAL",
+  periodPrecision: "DAY",
   siteId: "site-1",
   itemId: "item-1",
   title: "강남 A현장 하이바",
@@ -28,6 +30,7 @@ describe("buildDirectRegistrationPayload", () => {
       status: "ACTIVE",
       memo: "문장으로 빠른 입력에서 등록",
       lines: [{
+        billingMethod: "PRORATED_TOTAL",
         itemId: "item-1",
         description: "스마트 입력",
         quantity: 5,
@@ -38,6 +41,30 @@ describe("buildDirectRegistrationPayload", () => {
         revenueEndDate: "2026-08-30",
       }],
     });
+  });
+
+  it("월정액 계약은 폼 적용과 같은 월 경계 및 방식을 payload에 전달한다", () => {
+    expect(buildDirectRegistrationPayload("CONTRACT", {
+      ...draft,
+      billingMethod: "MONTHLY_RECURRING",
+      periodPrecision: "MONTH",
+      startDate: "2026-08",
+      endDate: "2026-12",
+    })).toMatchObject({
+      lines: [{
+        billingMethod: "MONTHLY_RECURRING",
+        revenueStartDate: "2026-08",
+        revenueEndDate: "2026-12",
+      }],
+    });
+  });
+
+  it("세 달력 월에 걸친 일할 계약은 바로 등록 payload 생성도 거부한다", () => {
+    expect(() => buildDirectRegistrationPayload("CONTRACT", {
+      ...draft,
+      startDate: "2026-01-31",
+      endDate: "2026-03-01",
+    })).toThrow("일할청구는 최대 두 달력 월");
   });
 
   it("매출을 직접 확정 상태 payload로 만든다", () => {

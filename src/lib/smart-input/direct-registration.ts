@@ -1,7 +1,14 @@
+import { smartInputContractPeriodError } from "@/lib/smart-input/draft";
 import type { SmartInputAppliedDraft, SmartInputTarget } from "@/lib/smart-input/types";
 
 export function buildDirectRegistrationPayload(target: SmartInputTarget, draft: SmartInputAppliedDraft) {
   if (target === "CONTRACT") {
+    const periodError = smartInputContractPeriodError({
+      billingMethod: draft.billingMethod,
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+    });
+    if (periodError) throw new Error(periodError);
     return {
       contractNo: "",
       siteId: draft.siteId,
@@ -9,6 +16,7 @@ export function buildDirectRegistrationPayload(target: SmartInputTarget, draft: 
       status: "ACTIVE",
       memo: "문장으로 빠른 입력에서 등록",
       lines: [{
+        billingMethod: draft.billingMethod,
         itemId: draft.itemId,
         description: draft.description,
         quantity: draft.quantity,
