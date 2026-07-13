@@ -9,7 +9,7 @@ import { recordSyncEvent } from "@/lib/events/bus";
 import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 import { generatedKeyAfterUserCancel } from "@/lib/revenues/generation-policy";
 import { buildRevenueWhere } from "@/lib/revenues/query";
-import type { RevenueInput, RevenueListQuery } from "@/lib/revenues/schemas";
+import type { ContractRevenueBatchConfirmInput, RevenueInput, RevenueListQuery } from "@/lib/revenues/schemas";
 
 const includeRelations = {
   site: { select: { id: true, code: true, name: true } },
@@ -72,6 +72,40 @@ export async function updateRevenue(actor: SessionUser, id: string, input: Reven
 
 export async function confirmRevenue(actor: SessionUser, id: string, version: number) {
   return transitionRevenue(actor, id, version, "CONFIRMED");
+}
+
+export async function confirmContractRevenues(actor: SessionUser, input: ContractRevenueBatchConfirmInput) {
+  return prisma.$transaction(async (tx) => {
+    const first = input.entries[0];
+    if (!first) throw new AuthError("확정할 계약 매출을 선택해 주세요.", 400, "REVENUE_SELECTION_REQUIRED");
+    const ids = input.entries.map((entry) => entry.id);
+    const beforeRows = await tx.revenueEntry.findMany({ where: { id: { in: ids } }, include: includeRelations });
+    if (beforeRows.length !== input.entries.length) throw new AuthError("선택한 매출 중 찾을 수 없는 건이 있습니다.", 404, "REVENUE_NOT_FOUND");
+    if (beforeRows.some((row) => row.sourceType !== "CONTRACT")) throw new AuthError("계약 매출만 일괄 확정할 수 있습니다.", 400, "CONTRACT_REVENUE_REQUIRED");
+    if (beforeRows.some((row) => row.status !== "DRAFT")) throw new AuthError("작성 중 계약 매출만 일괄 확정할 수 있습니다.", 409, "REVENUE_NOT_DRAFT");
+    await assertMonthsOpen(tx, beforeRows.map((row) => ({ siteId: row.siteId, months: [row.revenueDate.toISOString().slice(0, 7)] })));
+
+    const confirmedAt = new Date();
+    const updated = await tx.revenueEntry.updateMany({
+      where: { OR: input.entries.map((entry) => ({ id: entry.id, version: entry.version, sourceType: "CONTRACT" as const, status: "DRAFT" as const })) },
+      data: { status: "CONFIRMED", confirmedById: actor.id, confirmedAt, updatedById: actor.id, version: { increment: 1 } },
+    });
+    if (updated.count !== input.entries.length) throw new AuthError("다른 사용자가 먼저 매출 상태를 변경했습니다. 새로고침 후 다시 선택해 주세요.", 409, "VERSION_CONFLICT");
+
+    const afterRows = await tx.revenueEntry.findMany({ where: { id: { in: ids } }, include: includeRelations });
+    const beforeById = new Map(beforeRows.map((row) => [row.id, row]));
+    const afterById = new Map(afterRows.map((row) => [row.id, row]));
+    const entries = [];
+    for (const id of ids) {
+      const before = beforeById.get(id);
+      const after = afterById.get(id);
+      if (!before || !after) throw new AuthError("확정 결과를 불러오지 못했습니다.", 500, "REVENUE_CONFIRM_RESULT_MISSING");
+      await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CONFIRM", entityType: "REVENUE", entityId: id, before, after });
+      entries.push(after);
+    }
+    await recordSyncEvent(tx, { type: "revenue.changed", entityId: first.id, actorId: actor.id });
+    return entries;
+  });
 }
 
 export async function cancelRevenue(actor: SessionUser, id: string, version: number, reason: string) {

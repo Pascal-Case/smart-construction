@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildRevenueWhere } from "@/lib/revenues/query";
-import { revenueInputSchema, revenueListQuerySchema } from "@/lib/revenues/schemas";
+import { contractRevenueBatchConfirmSchema, revenueInputSchema, revenueListQuerySchema } from "@/lib/revenues/schemas";
 
 const validRevenue = {
   siteId: "site-1",
@@ -14,6 +14,10 @@ const validRevenue = {
 describe("revenueInputSchema", () => {
   it("직접 매출은 별도 선택이 없으면 확정 등록한다", () => {
     expect(revenueInputSchema.parse(validRevenue).saveStatus).toBe("CONFIRMED");
+  });
+
+  it("계약 매출 일괄 확정은 중복 선택을 거부한다", () => {
+    expect(() => contractRevenueBatchConfirmSchema.parse({ entries: [{ id: "revenue-1", version: 1 }, { id: "revenue-1", version: 1 }] })).toThrow("중복된 매출 선택");
   });
 
   it("사용자가 선택하면 작성 중으로 저장할 수 있다", () => {

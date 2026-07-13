@@ -1,5 +1,6 @@
 export type SmartInputTarget = "CONTRACT" | "REVENUE";
 export type SmartFieldStatus = "MATCHED" | "DERIVED" | "AMBIGUOUS" | "MISSING";
+export type SmartContractBillingMethod = "MONTHLY_RECURRING" | "PRORATED_TOTAL";
 
 export type SmartMasterOption = {
   id: string;
@@ -65,6 +66,7 @@ export type SmartInputPreview = {
 };
 
 export type SmartInputAppliedDraft = {
+  billingMethod: SmartContractBillingMethod;
   siteId: string;
   itemId: string | null;
   title: string;

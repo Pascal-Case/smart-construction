@@ -15,7 +15,9 @@ function baseInput(overrides: Partial<MonthCloseEvaluationInput> = {}): MonthClo
       title: "안전모",
       quantity: 1,
       appliedSalesPrice: 100,
+      appliedCostPrice: 70,
       salesAmount: 100,
+      costAmount: 70,
     }],
     revenues: [{
       id: "contract-revenue-1",
@@ -30,6 +32,7 @@ function baseInput(overrides: Partial<MonthCloseEvaluationInput> = {}): MonthClo
       title: "안전모",
       quantity: 1,
       appliedSalesPrice: 100,
+      appliedCostPrice: 70,
       salesAmount: 100,
       costAmount: 70,
       priceOverrideReason: null,
@@ -49,12 +52,12 @@ describe("monthly close evaluator", () => {
         {
           id: "manual-1", version: 1, revenueDate: "2026-07-02", sourceType: "MANUAL", status: "CONFIRMED",
           generatedKey: null, contractId: null, contractLineId: null, itemId: null, title: "추가 운반비",
-          quantity: null, appliedSalesPrice: null, salesAmount: 0, costAmount: null, priceOverrideReason: null,
+          quantity: null, appliedSalesPrice: null, appliedCostPrice: null, salesAmount: 0, costAmount: null, priceOverrideReason: null,
         },
         {
           id: "draft-1", version: 1, revenueDate: "2026-07-03", sourceType: "ADJUSTMENT", status: "DRAFT",
           generatedKey: null, contractId: null, contractLineId: null, itemId: null, title: "조정",
-          quantity: null, appliedSalesPrice: null, salesAmount: -10, costAmount: null, priceOverrideReason: "정산",
+          quantity: null, appliedSalesPrice: null, appliedCostPrice: null, salesAmount: -10, costAmount: null, priceOverrideReason: "정산",
         },
       ],
     });
@@ -81,6 +84,37 @@ describe("monthly close evaluator", () => {
       ...changed,
       reviews: [{ exceptionKey: difference.key, fingerprint: difference.fingerprint, reason: "단가 합의" }],
     }).canClose).toBe(true);
+  });
+
+  it("월청구 기대 금액과 다른 확정 매출도 보호된 계약 차이로 표시한다", () => {
+    const result = evaluateSiteMonth(baseInput({
+      expectedContractRevenues: [{ ...baseInput().expectedContractRevenues[0], salesAmount: 40_000 }],
+      revenues: [{ ...baseInput().revenues[0], status: "CONFIRMED", salesAmount: 27_200 }],
+    }));
+
+    expect(result.exceptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "CONTRACT_DIFFERENCE:line-1:2026-07",
+        kind: "CONTRACT_DIFFERENCE",
+        blocking: true,
+        message: "계약 기준과 원장 금액이 다릅니다.",
+      }),
+    ]));
+    expect(result.canClose).toBe(false);
+  });
+
+  it("매출액이 같아도 확정 매입원가가 계약 기준과 다르면 차이로 표시한다", () => {
+    const result = evaluateSiteMonth(baseInput({
+      revenues: [{ ...baseInput().revenues[0], appliedCostPrice: 60, costAmount: 60 }],
+    }));
+
+    expect(result.exceptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "CONTRACT_DIFFERENCE:line-1:2026-07",
+        kind: "CONTRACT_DIFFERENCE",
+        blocking: true,
+      }),
+    ]));
   });
 
   it("대체발행 이력과 단독 0원은 정보를 남기되 마감을 막지 않는다", () => {

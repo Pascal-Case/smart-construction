@@ -1,12 +1,12 @@
 import "server-only";
 
-import { ContractStatus, Prisma } from "@/generated/prisma/client";
+import { ContractLineBillingMethod, ContractStatus, Prisma } from "@/generated/prisma/client";
 import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
-import { enumerateMonths } from "@/lib/contracts/impact";
+import { enumerateMonths } from "@/lib/contracts/period";
 import { assertMonthsOpen } from "@/lib/monthly-close/guard";
 import { fingerprintLegacyBundle, legacyContractNo, parseLegacyPayload } from "@/lib/migration/legacy";
 import type {
@@ -225,7 +225,8 @@ export async function commitLegacyMigration(actor: SessionUser, raw: unknown, ex
           createdById: actor.id,
           updatedById: actor.id,
           lines: { create: {
-            itemId: item.id, description: "레거시 데이터 이관", quantity: contract.quantity, unit: legacyItem.unit,
+            itemId: item.id, description: "레거시 데이터 이관", billingMethod: ContractLineBillingMethod.LEGACY_TOTAL,
+            quantity: contract.quantity, unit: legacyItem.unit,
             standardSalesPriceSnapshot: item.standardSalesPrice, appliedSalesPrice: legacyItem.salesPrice,
             standardCostPriceSnapshot: item.standardCostPrice, appliedCostPrice: legacyItem.costPrice,
             priceOverrideReason: salesOverridden || costOverridden ? "레거시 이관 시점 단가" : null,

@@ -134,7 +134,9 @@ function sameContractValue(expected: MonthCloseExpectedRevenue, actual: MonthClo
     && expected.itemId === actual.itemId
     && expected.quantity === actual.quantity
     && expected.appliedSalesPrice === actual.appliedSalesPrice
-    && expected.salesAmount === actual.salesAmount;
+    && expected.appliedCostPrice === actual.appliedCostPrice
+    && expected.salesAmount === actual.salesAmount
+    && expected.costAmount === actual.costAmount;
 }
 
 function revenueState(revenue: MonthCloseRevenue) {
@@ -150,6 +152,7 @@ function revenueState(revenue: MonthCloseRevenue) {
     itemId: revenue.itemId,
     quantity: revenue.quantity,
     appliedSalesPrice: revenue.appliedSalesPrice,
+    appliedCostPrice: revenue.appliedCostPrice,
     salesAmount: revenue.salesAmount,
     costAmount: revenue.costAmount,
     priceOverrideReason: revenue.priceOverrideReason,

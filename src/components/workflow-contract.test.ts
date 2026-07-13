@@ -28,6 +28,31 @@ describe("registration workflow contract", () => {
     expect(source).toContain("current.at(-1)");
   });
 
+  it("계약 품목은 월정액 기본과 방식별 기간 입력 및 legacy 복귀를 제공한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
+
+    expect(source).toContain('billingMethod: "MONTHLY_RECURRING"');
+    expect(source).toContain('type={line.billingMethod === "MONTHLY_RECURRING" ? "month" : "date"}');
+    expect(source).toContain("changeBillingMethod");
+    expect(source).toContain("기존 계산 유지");
+    expect(source).toContain("line.legacyPeriod");
+    expect(source).toContain("billingPayloadFields");
+    expect(source).toContain("spansMoreThanTwoCalendarMonths");
+    expect(source).toContain("일할청구는 최대 두 달력 월에 걸쳐 등록할 수 있습니다.");
+  });
+
+  it("계약 목록과 자동 매출 미리보기는 청구 방식별 의미를 사용자 용어로 표시한다", () => {
+    const contractSource = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
+    const revenueSource = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+
+    expect(contractSource).toContain("품목 기준금액 합계");
+    expect(contractSource).toContain("월정액은 월별 금액, 일할·기존 계산은 배분 전 총액");
+    expect(revenueSource).toContain("billingBasisLabel");
+    expect(revenueSource).toContain("월정액 전액");
+    expect(revenueSource).toContain("기존 계산 · 전체기간");
+    expect(revenueSource).not.toContain("계약 총액을 전체 매출기간의 일수로 나눠");
+  });
+
   it("직접 매출 등록에서 확정과 작성 중 저장 결과를 구분한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-editor.tsx"), "utf8");
 
@@ -35,6 +60,21 @@ describe("registration workflow contract", () => {
     expect(source).toContain('value="CONFIRMED"');
     expect(source).toContain("작성 중 저장");
     expect(source).toContain("확정 등록");
+  });
+
+  it("매출 원장은 현재 페이지의 작성 중 계약 매출을 선택해 일괄 확정한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+    const confirmDialogSource = readFileSync(path.join(process.cwd(), "src/components/ui/confirm-dialog.tsx"), "utf8");
+
+    expect(source).toContain("현재 페이지의 작성 중 계약 매출 전체 선택");
+    expect(source).toContain("계약 매출 일괄 확정");
+    expect(source).toContain('fetch("/api/revenues/confirm-batch"');
+    expect(source).toContain('row.sourceType === "CONTRACT" && row.status === "DRAFT"');
+    expect(source).toContain("ConfirmDialog");
+    expect(source).not.toContain("window.confirm(");
+    expect(confirmDialogSource).toContain("DialogFooter");
+    expect(confirmDialogSource).toContain("확인");
+    expect(confirmDialogSource).toContain("취소");
   });
 
   it("월별 상세에서 선택한 현장과 월을 유지한 채 매출 등록을 시작한다", () => {

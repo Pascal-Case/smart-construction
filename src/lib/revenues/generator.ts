@@ -36,7 +36,7 @@ export async function generateContractRevenues(actor: SessionUser, contractId: s
         if (!released.count) throw new AuthError("다른 사용자가 취소 매출을 먼저 변경했습니다. 다시 미리보기해 주세요.", 409, "VERSION_CONFLICT");
         await tx.revenueEntry.create({ data: { ...revenueData(row.draft!), createdById: actor.id, updatedById: actor.id } }); counts.create += 1;
       } else if (row.action === "UPDATE") {
-        const updated = await tx.revenueEntry.updateMany({ where: { id: row.existing!.id, version: row.existing!.version }, data: { ...revenueData(row.draft!), status: RevenueStatus.DRAFT, cancelReason: null, canceledAt: null, canceledById: null, updatedById: actor.id, version: { increment: 1 } } });
+        const updated = await tx.revenueEntry.updateMany({ where: { id: row.existing!.id, version: row.existing!.version, status: row.existing!.status }, data: { ...revenueData(row.draft!), status: RevenueStatus.DRAFT, cancelReason: null, canceledAt: null, canceledById: null, updatedById: actor.id, version: { increment: 1 } } });
         if (!updated.count) throw new AuthError("다른 사용자가 자동 매출을 먼저 수정했습니다. 다시 미리보기해 주세요.", 409, "VERSION_CONFLICT"); counts.update += 1;
       } else if (row.action === "CANCEL") {
         const updated = await tx.revenueEntry.updateMany({ where: { id: row.existing!.id, version: row.existing!.version, status: RevenueStatus.DRAFT }, data: { status: RevenueStatus.CANCELED, cancelReason: AUTO_CANCEL_REASON, canceledById: actor.id, canceledAt: new Date(), updatedById: actor.id, version: { increment: 1 } } });
@@ -64,6 +64,7 @@ async function buildPreview(tx: Prisma.TransactionClient, contractId: string) {
 }
 
 function revenueData(draft: ExpectedContractRevenue) {
-  const { allocationBaseDays, ...data } = draft;
+  const { allocationBaseDays, billingMethod, ...data } = draft;
+  void billingMethod;
   return { ...data, daysInMonth: allocationBaseDays, sourceType: "CONTRACT" as const, status: "DRAFT" as const };
 }

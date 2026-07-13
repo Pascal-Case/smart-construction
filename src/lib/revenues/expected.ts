@@ -1,3 +1,4 @@
+import type { ContractLineBillingMethod } from "@/generated/prisma/client";
 import { contractRevenuePolicy } from "@/lib/revenues/generation-policy";
 import { buildLineRevenueDrafts } from "@/lib/revenues/proration";
 
@@ -7,6 +8,7 @@ export type ExpectedRevenueContract = {
   siteId: string;
   lines: Array<{
     id: string;
+    billingMethod: ContractLineBillingMethod;
     itemId: string;
     description: string | null;
     quantity: number;

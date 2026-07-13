@@ -9,11 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { buildSmartInputDraft } from "@/lib/smart-input/draft";
+import { billingMethodForPrecision, buildSmartInputDraft, smartInputContractPeriodError } from "@/lib/smart-input/draft";
 import { buildDirectRegistrationPayload } from "@/lib/smart-input/direct-registration";
 import { currentTokenAt, moveSuggestionIndex, removeCurrentToken, shouldCommitSuggestion } from "@/lib/smart-input/token-editor";
 import type {
   SmartFieldStatus,
+  SmartContractBillingMethod,
   SmartInputAppliedDraft,
   SmartInputPreview,
   SmartInputSuggestion,
@@ -67,7 +68,12 @@ export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
     () => preview ? buildSmartInputDraft(preview, selectedSiteOption, selectedItemOption) : null,
     [preview, selectedSiteOption, selectedItemOption],
   );
-  const ready = draft != null && (target === "REVENUE" || (draft.itemId != null && draft.quantity != null && draft.appliedSalesPrice != null));
+  const previewPeriod = preview?.fields.period.value ?? null;
+  const previewBillingMethod = previewPeriod ? billingMethodForPrecision(previewPeriod.precision) : null;
+  const periodError = target === "CONTRACT" && previewPeriod && previewBillingMethod
+    ? smartInputContractPeriodError({ billingMethod: previewBillingMethod, startDate: previewPeriod.startDate, endDate: previewPeriod.endDate })
+    : null;
+  const ready = periodError == null && draft != null && (target === "REVENUE" || (draft.itemId != null && draft.quantity != null && draft.appliedSalesPrice != null));
   const effectiveSuggestionStatus = composing || tokenValue.length < 2 ? "idle" : suggestionStatus;
   const suggestionPanelOpen = effectiveSuggestionStatus !== "idle";
   const activeOptionId = activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined;
@@ -353,7 +359,9 @@ export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
           <ValueCard label="단가" status={preview.fields.unitPrice.status} value={money(draft?.appliedSalesPrice)} message={preview.fields.unitPrice.message} />
           <ValueCard label="총액" status={preview.fields.totalAmount.status} value={money(draft?.salesAmount)} message={preview.fields.totalAmount.message} />
           <ValueCard label={target === "CONTRACT" ? "계약·매출 기간" : "매출일"} status={preview.fields.period.status} value={preview.fields.period.value ? preview.fields.period.value.startDate + (preview.fields.period.value.startDate === preview.fields.period.value.endDate ? "" : " ~ " + preview.fields.period.value.endDate) : "-"} message={preview.fields.period.message} />
+          {target === "CONTRACT" && previewBillingMethod && <ValueCard label="청구 방식" status={preview.fields.period.status} value={billingMethodLabel(previewBillingMethod)} message="기간 입력 단위에 따라 자동 선택했습니다." />}
         </div>
+        {periodError && <Alert className="border-destructive/40 bg-destructive/5 text-destructive"><AlertTriangle /><AlertTitle>일할청구 기간 확인</AlertTitle><AlertDescription>{periodError}</AlertDescription></Alert>}
         {preview.warnings.length > 0 && <Alert className="border-amber-300 bg-amber-50 text-amber-950"><AlertTriangle /><AlertTitle>확인이 필요한 항목</AlertTitle><AlertDescription><ul className="list-disc space-y-1 pl-4">{preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></AlertDescription></Alert>}
         <div className="rounded-xl border border-teal-200 bg-teal-50/60 p-3 text-sm text-teal-950">
           <p className="font-medium">적용 예정: {draft?.title ?? "-"}</p>
@@ -397,4 +405,5 @@ function ValueCard({ label, status, value, message }: { label: string; status: S
   return <div className="space-y-2 rounded-xl border bg-card p-3"><div className="flex items-center justify-between"><p className="text-sm font-medium">{label}</p><StatusBadge status={status} /></div><p className="font-semibold tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{message}</p></div>;
 }
 function StatusBadge({ status }: { status: SmartFieldStatus }) { return <Badge variant={status === "MATCHED" || status === "DERIVED" ? "secondary" : "outline"}>{statusLabels[status]}</Badge>; }
+function billingMethodLabel(method: SmartContractBillingMethod) { return method === "MONTHLY_RECURRING" ? "월정액" : "일할청구"; }
 function money(value: number | null | undefined) { return value == null ? "-" : value.toLocaleString() + "원"; }

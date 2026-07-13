@@ -1,10 +1,12 @@
 import "server-only";
 
-import { Prisma } from "@/generated/prisma/client";
+import { ContractLineBillingMethod, Prisma } from "@/generated/prisma/client";
 import { recordAudit } from "@/lib/audit/record";
 import type { SessionUser } from "@/lib/auth/dto";
 import { AuthError } from "@/lib/auth/errors";
-import { buildContractImpact, enumerateMonths } from "@/lib/contracts/impact";
+import { resolveContractLineBilling } from "@/lib/contracts/billing-method";
+import { buildContractImpact } from "@/lib/contracts/impact";
+import { enumerateMonths } from "@/lib/contracts/period";
 import { deriveContractPeriod } from "@/lib/contracts/period";
 import type { ContractInput, ContractListQuery } from "@/lib/contracts/schemas";
 import { prisma } from "@/lib/db/prisma";
@@ -50,13 +52,18 @@ export async function createContract(actor: SessionUser, input: ContractInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       const prepared = await prepareAggregate(tx, actor, input);
-      const period = deriveContractPeriod(input.lines);
+      const period = deriveContractPeriod(prepared);
       await assertMonthsOpen(tx, [{ siteId: input.siteId, months: enumerateMonths(period.startDate, period.endDate) }]);
       const contractNo = input.contractNo ? normalizeCode(input.contractNo) : await nextBusinessCode(tx, "contract");
       const contract = await tx.contract.create({ data: {
         contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), createdById: actor.id, updatedById: actor.id,
-        lines: { create: prepared.map((line, index) => ({ ...line, sortOrder: index, createdById: actor.id, updatedById: actor.id })) },
+        lines: { create: prepared.map((line, index) => ({
+          ...line,
+          sortOrder: index,
+          createdById: actor.id,
+          updatedById: actor.id,
+        })) },
       }, include: contractInclude });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "CREATE", entityType: "CONTRACT", entityId: contract.id, after: contract });
       await recordSyncEvent(tx, { type: "contract.changed", entityId: contract.id, siteId: contract.siteId, actorId: actor.id });
@@ -69,8 +76,8 @@ export async function previewContractChange(actor: SessionUser, id: string, inpu
   return prisma.$transaction(async (tx) => {
     const before = await tx.contract.findUnique({ where: { id }, include: contractIncludeAll });
     if (!before) throw new AuthError("계약을 찾을 수 없습니다.", 404, "CONTRACT_NOT_FOUND");
-    await prepareAggregate(tx, actor, input, before);
-    return buildContractImpact(before, input);
+    const prepared = await prepareAggregate(tx, actor, input, before);
+    return buildContractImpact(before, { ...input, lines: prepared });
   });
 }
 
@@ -80,12 +87,12 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
       const before = await tx.contract.findUnique({ where: { id }, include: contractIncludeAll });
       if (!before) throw new AuthError("계약을 찾을 수 없습니다.", 404, "CONTRACT_NOT_FOUND");
       const prepared = await prepareAggregate(tx, actor, input, before);
-      const impact = buildContractImpact(before, input);
+      const impact = buildContractImpact(before, { ...input, lines: prepared });
       await assertMonthsOpen(tx, [
         { siteId: before.siteId, months: impact.affectedMonths },
         { siteId: input.siteId, months: impact.affectedMonths },
       ]);
-      const period = deriveContractPeriod(input.lines);
+      const period = deriveContractPeriod(prepared);
       const updated = await tx.contract.updateMany({ where: { id, version: input.version }, data: {
         contractNo: input.contractNo ? normalizeCode(input.contractNo) : before.contractNo,
         siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
@@ -98,7 +105,13 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
       for (const [index, line] of prepared.entries()) {
         const { id: lineId, ...data } = line;
         if (lineId) await tx.contractLine.update({ where: { id: lineId }, data: { ...data, isActive: true, sortOrder: index, updatedById: actor.id } });
-        else await tx.contractLine.create({ data: { ...data, contractId: id, sortOrder: index, createdById: actor.id, updatedById: actor.id } });
+        else await tx.contractLine.create({ data: {
+          ...data,
+          contractId: id,
+          sortOrder: index,
+          createdById: actor.id,
+          updatedById: actor.id,
+        } });
       }
       const contract = await tx.contract.findUniqueOrThrow({ where: { id }, include: contractInclude });
       await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "UPDATE", entityType: "CONTRACT", entityId: id, before, after: contract });
@@ -112,7 +125,7 @@ async function prepareAggregate(
   tx: Prisma.TransactionClient,
   actor: SessionUser,
   input: ContractInput,
-  before?: { id: string; siteId: string; lines: Array<{ id: string; contractId: string; itemId: string; isActive: boolean; standardSalesPriceSnapshot: number; standardCostPriceSnapshot: number; appliedSalesPrice: number; appliedCostPrice: number; priceOverrideReason: string | null; priceOverriddenById: string | null; priceOverriddenAt: Date | null }> },
+  before?: { id: string; siteId: string; lines: Array<{ id: string; contractId: string; itemId: string; billingMethod: ContractLineBillingMethod; isActive: boolean; standardSalesPriceSnapshot: number; standardCostPriceSnapshot: number; appliedSalesPrice: number; appliedCostPrice: number; priceOverrideReason: string | null; priceOverriddenById: string | null; priceOverriddenAt: Date | null }> },
 ) {
   const site = await tx.site.findUnique({ where: { id: input.siteId }, select: { id: true, isActive: true } });
   if (!site || (!site.isActive && before?.siteId !== site.id)) throw new AuthError("사용 가능한 현장을 선택해 주세요.", 400, "INVALID_CONTRACT_SITE");
@@ -124,6 +137,7 @@ async function prepareAggregate(
   return input.lines.map((line) => {
     const existing = line.id ? existingMap.get(line.id) : undefined;
     if (line.id && (!existing || existing.contractId !== before?.id || !existing.isActive)) throw new AuthError("계약에 속하지 않은 품목 행이 포함되어 있습니다.", 400, "INVALID_CONTRACT_LINE");
+    const billing = resolveContractLineBilling(line, existing);
     const item = itemMap.get(line.itemId);
     if (!item || (!item.isActive && existing?.itemId !== item.id)) throw new AuthError("사용 가능한 품목을 선택해 주세요.", 400, "INVALID_CONTRACT_ITEM");
     const sameItem = existing?.itemId === item.id;
@@ -138,6 +152,7 @@ async function prepareAggregate(
       id: line.id,
       itemId: line.itemId,
       description: emptyToNull(line.description),
+      billingMethod: billing.billingMethod,
       quantity: line.quantity,
       unit: item.unit,
       standardSalesPriceSnapshot,
@@ -147,8 +162,8 @@ async function prepareAggregate(
       priceOverrideReason: overridden ? reason : null,
       priceOverriddenById: overridden ? (overrideUnchanged ? existing?.priceOverriddenById ?? actor.id : actor.id) : null,
       priceOverriddenAt: overridden ? (overrideUnchanged ? existing?.priceOverriddenAt ?? new Date() : new Date()) : null,
-      revenueStartDate: dbDate(line.revenueStartDate),
-      revenueEndDate: dbDate(line.revenueEndDate),
+      revenueStartDate: dbDate(billing.revenueStartDate),
+      revenueEndDate: dbDate(billing.revenueEndDate),
     };
   });
 }

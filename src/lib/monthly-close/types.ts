@@ -15,7 +15,9 @@ export type MonthCloseExpectedRevenue = {
   title: string;
   quantity: number | null;
   appliedSalesPrice: number | null;
+  appliedCostPrice: number | null;
   salesAmount: number;
+  costAmount: number;
 };
 
 export type MonthCloseRevenue = {
@@ -31,6 +33,7 @@ export type MonthCloseRevenue = {
   title: string;
   quantity: number | null;
   appliedSalesPrice: number | null;
+  appliedCostPrice: number | null;
   salesAmount: number;
   costAmount: number | null;
   priceOverrideReason: string | null;

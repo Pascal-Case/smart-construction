@@ -327,7 +327,9 @@ async function loadEvaluationContext(tx: Prisma.TransactionClient, siteId: strin
       title: row.title,
       quantity: row.quantity,
       appliedSalesPrice: row.appliedSalesPrice,
+      appliedCostPrice: row.appliedCostPrice,
       salesAmount: row.salesAmount,
+      costAmount: row.costAmount,
     }));
   const mappedRevenues = revenues.map((row) => ({
     id: row.id,
@@ -342,6 +344,7 @@ async function loadEvaluationContext(tx: Prisma.TransactionClient, siteId: strin
     title: row.title,
     quantity: row.quantity,
     appliedSalesPrice: row.appliedSalesPrice,
+    appliedCostPrice: row.appliedCostPrice,
     salesAmount: row.salesAmount,
     costAmount: row.costAmount,
     priceOverrideReason: row.priceOverrideReason,
