@@ -9,7 +9,7 @@ import { recordSyncEvent } from "@/lib/events/bus";
 import { assertItemIdentityAvailable } from "@/lib/masters/identity";
 import { cleanAliases, normalizeAlias, normalizeCode } from "@/lib/masters/normalize";
 import { sortItems } from "@/lib/masters/list-order";
-import type { ItemInput, ItemListQuery } from "@/lib/masters/schemas";
+import type { ItemCreateInput, ItemInput, ItemListQuery } from "@/lib/masters/schemas";
 import { nextBusinessCode } from "@/lib/masters/sequence";
 
 const includeAliases = { aliases: { orderBy: { alias: "asc" as const } } };
@@ -30,15 +30,16 @@ export async function listItems(query: ItemListQuery) {
   return { rows: rows.map(toItemView), total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
 }
 
-export async function createItem(actor: SessionUser, input: ItemInput) {
+export async function createItem(actor: SessionUser, input: ItemCreateInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       await assertItemIdentityAvailable(tx, input.name, input.aliases);
-      const code = input.code ? normalizeCode(input.code) : await nextBusinessCode(tx, "item");
+      const code = await nextBusinessCode(tx, "item");
       const item = await tx.item.create({
         data: {
           code, name: input.name, unit: input.unit, standardSalesPrice: input.standardSalesPrice,
-          standardCostPrice: input.standardCostPrice, isActive: input.isActive, memo: emptyToNull(input.memo),
+          standardCostPrice: input.standardCostPrice, isActive: input.isActive,
+          specification: emptyToNull(input.specification), memo: emptyToNull(input.memo),
           createdById: actor.id, updatedById: actor.id, aliases: { create: cleanAliases(input.aliases, input.name) },
         }, include: includeAliases,
       });
@@ -59,7 +60,8 @@ export async function updateItem(actor: SessionUser, id: string, input: ItemInpu
       const result = await tx.item.updateMany({ where: { id, version: input.version }, data: {
         code: input.code ? normalizeCode(input.code) : before.code, name: input.name, unit: input.unit,
         standardSalesPrice: input.standardSalesPrice, standardCostPrice: input.standardCostPrice,
-        isActive: input.isActive, memo: emptyToNull(input.memo), updatedById: actor.id, version: { increment: 1 },
+        isActive: input.isActive, specification: emptyToNull(input.specification), memo: emptyToNull(input.memo),
+        updatedById: actor.id, version: { increment: 1 },
       } });
       if (!result.count) throw new AuthError("다른 사용자가 먼저 수정했습니다. 새로고침 후 다시 시도해 주세요.", 409, "VERSION_CONFLICT");
       await tx.itemAlias.deleteMany({ where: { itemId: id } });

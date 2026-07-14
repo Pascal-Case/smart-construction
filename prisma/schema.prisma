@@ -163,6 +163,7 @@ model Item {
   standardSalesPrice Int            @default(0)
   standardCostPrice  Int            @default(0)
   isActive           Boolean        @default(true)
+  specification      String?
   memo               String?
   version            Int            @default(1)
   createdById        String

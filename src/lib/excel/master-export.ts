@@ -34,6 +34,7 @@ export async function exportItemWorkbook(template: boolean) {
   const rows: MasterRow[] = items.map((item) => ({
     품목코드: item.code,
     품목명: item.name,
+    규격: item.specification,
     단위: item.unit,
     표준매출단가: item.standardSalesPrice,
     표준매입단가: item.standardCostPrice,

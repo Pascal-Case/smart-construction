@@ -12,6 +12,7 @@ const base: InvoiceSourceEntry = {
   title: "5월 CCTV",
   description: "200만 화소",
   itemName: "이동형 CCTV",
+  itemSpecification: "200만 화소",
   quantity: 1,
   unit: "EA",
   unitPrice: 220_000,
@@ -37,6 +38,17 @@ describe("invoice calculation", () => {
     const result = buildInvoiceDrafts([base, { ...base, id: "r2" }], "ITEMIZED");
     expect(result[0].lines).toHaveLength(2);
     expect(result[0].lines.map((line) => line.revenueEntryIds)).toEqual([["r1"], ["r2"]]);
+  });
+
+  it("계약 매출은 거래명세표에 계약명 없이 품목명만 표시한다", () => {
+    const result = buildInvoiceDrafts([
+      { ...base, title: "CCTV 임대 계약 - 이동형 CCTV", description: null, itemSpecification: "200만 화소" },
+    ], "ITEMIZED");
+
+    expect(result[0].lines[0]).toMatchObject({
+      itemName: "이동형 CCTV",
+      specification: "200만 화소",
+    });
   });
 
   it("현장별 문서를 나누고 자유형·음수 조정 금액을 보존한다", () => {

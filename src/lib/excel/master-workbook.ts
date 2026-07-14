@@ -7,7 +7,11 @@ import { safeExcelValue } from "@/lib/excel/safe-value";
 export type MasterRow = Record<string, string | number | boolean | null | undefined>;
 
 const SITE_HEADERS = ["현장코드", "현장명", "거래처", "주소", "담당자", "연락처", "시작일", "종료일", "사용여부", "메모", "별칭"];
-const ITEM_HEADERS = ["품목코드", "품목명", "단위", "표준매출단가", "표준매입단가", "사용여부", "메모", "별칭"];
+const ITEM_HEADERS = ["품목코드", "품목명", "규격", "단위", "표준매출단가", "표준매입단가", "사용여부", "메모", "별칭"];
+const REQUIRED_HEADERS = {
+  site: ["현장코드", "현장명"],
+  item: ["품목코드", "품목명", "단위"],
+} as const;
 
 export async function readMasterWorkbook(buffer: ArrayBuffer, type: "site" | "item") {
   if (buffer.byteLength > 5 * 1024 * 1024) throw new Error("Excel 파일은 5MB 이하여야 합니다.");
@@ -30,7 +34,7 @@ function rowsToObjects(rows: Array<Array<unknown>>, type: "site" | "item") {
   const expected = type === "site" ? SITE_HEADERS : ITEM_HEADERS;
   const headers = rows[0].map((value) => String(value ?? "").normalize("NFKC").trim().replace(/\s+/g, ""));
   const indexes = new Map(expected.map((header) => [header, headers.indexOf(header)]));
-  for (const required of expected.slice(0, type === "site" ? 2 : 3)) {
+  for (const required of REQUIRED_HEADERS[type]) {
     if ((indexes.get(required) ?? -1) < 0) throw new Error(`필수 열이 없습니다: ${required}`);
   }
   return rows.slice(1).map((row, index) => ({
@@ -48,7 +52,7 @@ export async function createMasterWorkbook(type: "site" | "item", rows: MasterRo
   if (template) {
     worksheet.addRow(type === "site"
       ? ["SITE-0001", "강남 A현장", "OO건설", "서울시", "김담당", "010-0000-0000", "2026-01-01", "2026-12-31", "Y", "", "강남A|A현장"]
-      : ["ITEM-0001", "이동형 CCTV", "EA", 220000, 120000, "Y", "", "CCTV|이동형카메라"]);
+      : ["ITEM-0001", "이동형 CCTV", "200만 화소", "EA", 220000, 120000, "Y", "", "CCTV|이동형카메라"]);
   } else {
     for (const row of rows) worksheet.addRow(headers.map((header) => safeExcelValue(row[header])));
   }
