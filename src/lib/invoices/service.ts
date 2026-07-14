@@ -25,7 +25,7 @@ const candidateSelect = {
   sourceType: true,
   currentInvoiceDocumentId: true,
   site: { select: { code: true, name: true, address: true } },
-  item: { select: { name: true } },
+  item: { select: { name: true, specification: true } },
 } satisfies Prisma.RevenueEntrySelect;
 
 type CandidateRow = Prisma.RevenueEntryGetPayload<{ select: typeof candidateSelect }>;
@@ -482,7 +482,7 @@ async function requireCompanySetting(tx: Prisma.TransactionClient) {
 }
 
 function toSourceEntry(row: CandidateRow): InvoiceSourceEntry {
-  return { id: row.id, siteId: row.siteId, siteCode: row.site.code, siteName: row.site.name, siteAddress: row.site.address, revenueDate: row.revenueDate, title: row.title, description: row.description, itemName: row.item?.name ?? null, quantity: row.quantity, unit: row.unit, unitPrice: row.appliedSalesPrice, supplyAmount: row.salesAmount };
+  return { id: row.id, siteId: row.siteId, siteCode: row.site.code, siteName: row.site.name, siteAddress: row.site.address, revenueDate: row.revenueDate, title: row.title, description: row.description, itemName: row.item?.name ?? null, itemSpecification: row.item?.specification ?? null, quantity: row.quantity, unit: row.unit, unitPrice: row.appliedSalesPrice, supplyAmount: row.salesAmount };
 }
 
 async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: string) {

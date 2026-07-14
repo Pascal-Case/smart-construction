@@ -19,6 +19,25 @@ describe("registration workflow contract", () => {
     expect(source).toContain('defaultValue={row?.status ?? "ACTIVE"}');
   });
 
+  it("계약 편집기는 자동 번호를 사용하고 현장·계약명·상태 다음 줄에 메모를 배치한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
+    const editor = source.split("function ContractEditor")[1].split("function newLine")[0];
+
+    expect(editor).not.toContain('label="계약번호"');
+    expect(editor).not.toContain('data.get("contractNo")');
+    expect(editor).toContain("계약번호는 순번에 따라 자동 생성됩니다.");
+    expect(editor).toContain('className="md:col-span-3" label="메모"');
+    const orderedFields = [
+      '<Label htmlFor="siteId">현장</Label>',
+      'label="계약명" name="title"',
+      '<Label htmlFor="status">상태</Label>',
+      'label="메모" name="memo"',
+    ];
+    const positions = orderedFields.map((field) => editor.indexOf(field));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+  });
+
   it("계약 헤더 기간을 입력받지 않고 품목 매출기간만 사용한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
 
@@ -75,6 +94,26 @@ describe("registration workflow contract", () => {
     expect(confirmDialogSource).toContain("DialogFooter");
     expect(confirmDialogSource).toContain("확인");
     expect(confirmDialogSource).toContain("취소");
+  });
+
+  it("품목 편집기는 자동 코드를 사용하고 규격·단가·단위·별칭·메모 순서로 배치한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/masters/master-manager.tsx"), "utf8");
+    const editor = source.split("function MasterEditor")[1].split("function Field")[0];
+    const itemEditor = editor.split('</> : <>')[1];
+
+    expect(editor).not.toContain('label="품목 코드"');
+    const orderedFields = [
+      'label="품목명" name="name"',
+      'label="규격" name="specification"',
+      'label="표준 매입단가" name="standardCostPrice"',
+      'label="표준 매출단가" name="standardSalesPrice"',
+      'label="단위" name="unit"',
+      'label="별칭" name="aliases"',
+      'label="메모" name="memo"',
+    ];
+    const positions = orderedFields.map((field) => itemEditor.indexOf(field));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
   it("계약 매출 생성은 전체 진행 계약 대신 검색 가능한 처리대기 페이지만 조회한다", () => {

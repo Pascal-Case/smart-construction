@@ -19,7 +19,7 @@ import { itemSortKeys, siteSortKeys, type ItemListQuery, type ItemSortKey, type 
 type MasterType = "site" | "item";
 type BaseRow = { id: string; code: string; name: string; aliases: string[]; isActive: boolean; version: number; updatedAt: string };
 export type SiteView = BaseRow & { customerName: string | null; address: string | null; managerName: string | null; managerContact: string | null; startDate: string | null; endDate: string | null; memo: string | null };
-export type ItemView = BaseRow & { unit: string; standardSalesPrice: number; standardCostPrice: number; memo: string | null };
+export type ItemView = BaseRow & { specification: string | null; unit: string; standardSalesPrice: number; standardCostPrice: number; memo: string | null };
 type MasterRow = SiteView | ItemView;
 type MasterSortKey = SiteSortKey | ItemSortKey;
 export type MasterList<T extends MasterRow> = { rows: T[]; total: number; page: number; pageSize: number; totalPages: number };
@@ -133,9 +133,9 @@ function MasterEditor({ type, open, row, onOpenChange, onSaved }: { type: Master
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true);
     const form = new FormData(event.currentTarget);
-    const payload: Record<string, unknown> = { code: form.get("code"), name: form.get("name"), isActive: form.get("isActive") === "on", memo: form.get("memo"), aliases: String(form.get("aliases") ?? "").split(/[|,;]/).map((value) => value.trim()).filter(Boolean) };
-    if (type === "site") Object.assign(payload, { customerName: form.get("customerName"), address: form.get("address"), managerName: form.get("managerName"), managerContact: form.get("managerContact"), startDate: form.get("startDate"), endDate: form.get("endDate") });
-    else Object.assign(payload, { unit: form.get("unit"), standardSalesPrice: Number(form.get("standardSalesPrice")), standardCostPrice: Number(form.get("standardCostPrice")) });
+    const payload: Record<string, unknown> = { name: form.get("name"), isActive: form.get("isActive") === "on", memo: form.get("memo"), aliases: String(form.get("aliases") ?? "").split(/[|,;]/).map((value) => value.trim()).filter(Boolean) };
+    if (type === "site") Object.assign(payload, { code: form.get("code"), customerName: form.get("customerName"), address: form.get("address"), managerName: form.get("managerName"), managerContact: form.get("managerContact"), startDate: form.get("startDate"), endDate: form.get("endDate") });
+    else Object.assign(payload, { specification: form.get("specification"), unit: form.get("unit"), standardSalesPrice: Number(form.get("standardSalesPrice")), standardCostPrice: Number(form.get("standardCostPrice")) });
     if (row) payload.version = row.version;
     try {
       const response = await fetch(`/api/${type === "site" ? "sites" : "items"}${row ? `/${row.id}` : ""}`, { method: row ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -146,10 +146,18 @@ function MasterEditor({ type, open, row, onOpenChange, onSaved }: { type: Master
     finally { setSaving(false); }
   }
   const site = type === "site" ? row as SiteView | null : null; const item = type === "item" ? row as ItemView | null : null;
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{title} {row ? "수정" : "추가"}</DialogTitle><DialogDescription>코드를 비워 두면 순번에 따라 자동 생성됩니다. 이름과 별칭은 다른 코드와 중복될 수 없습니다.</DialogDescription></DialogHeader><form key={row?.id ?? "new"} className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
-    <Field label={`${title} 코드`} name="code" defaultValue={row?.code ?? ""} placeholder="비우면 자동 생성" /><Field label={`${title}명`} name="name" defaultValue={row?.name ?? ""} required />
-    {type === "site" ? <><Field label="거래처" name="customerName" defaultValue={site?.customerName ?? ""} /><Field label="주소" name="address" defaultValue={site?.address ?? ""} /><Field label="담당자" name="managerName" defaultValue={site?.managerName ?? ""} /><Field label="연락처" name="managerContact" defaultValue={site?.managerContact ?? ""} /><Field label="시작일" name="startDate" type="date" defaultValue={site?.startDate?.slice(0, 10) ?? ""} /><Field label="종료일" name="endDate" type="date" defaultValue={site?.endDate?.slice(0, 10) ?? ""} /></> : <><Field label="단위" name="unit" defaultValue={item?.unit ?? "EA"} required /><Field label="표준 매출단가" name="standardSalesPrice" type="number" min="0" defaultValue={String(item?.standardSalesPrice ?? 0)} required /><Field label="표준 매입단가" name="standardCostPrice" type="number" min="0" defaultValue={String(item?.standardCostPrice ?? 0)} required /></>}
-    <Field className="sm:col-span-2" label="별칭" name="aliases" defaultValue={row?.aliases.join("|") ?? ""} placeholder="여러 값은 | 로 구분" /><Field className="sm:col-span-2" label="메모" name="memo" defaultValue={row?.memo ?? ""} />
+  const description = type === "site" ? "코드를 비워 두면 순번에 따라 자동 생성됩니다. 이름과 별칭은 다른 코드와 중복될 수 없습니다." : "품목 코드는 순번에 따라 자동 생성됩니다. 품목명과 별칭은 다른 코드와 중복될 수 없습니다.";
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{title} {row ? "수정" : "추가"}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader><form key={row?.id ?? "new"} className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+    {type === "site" ? <>
+      <Field label="현장 코드" name="code" defaultValue={site?.code ?? ""} placeholder="비우면 자동 생성" /><Field label="현장명" name="name" defaultValue={site?.name ?? ""} required />
+      <Field label="거래처" name="customerName" defaultValue={site?.customerName ?? ""} /><Field label="주소" name="address" defaultValue={site?.address ?? ""} /><Field label="담당자" name="managerName" defaultValue={site?.managerName ?? ""} /><Field label="연락처" name="managerContact" defaultValue={site?.managerContact ?? ""} /><Field label="시작일" name="startDate" type="date" defaultValue={site?.startDate?.slice(0, 10) ?? ""} /><Field label="종료일" name="endDate" type="date" defaultValue={site?.endDate?.slice(0, 10) ?? ""} />
+      <Field className="sm:col-span-2" label="별칭" name="aliases" defaultValue={site?.aliases.join("|") ?? ""} placeholder="여러 값은 | 로 구분" /><Field className="sm:col-span-2" label="메모" name="memo" defaultValue={site?.memo ?? ""} />
+    </> : <>
+      <Field label="품목명" name="name" defaultValue={item?.name ?? ""} required /><Field label="규격" name="specification" defaultValue={item?.specification ?? ""} />
+      <Field label="표준 매입단가" name="standardCostPrice" type="number" min="0" defaultValue={String(item?.standardCostPrice ?? 0)} required /><Field label="표준 매출단가" name="standardSalesPrice" type="number" min="0" defaultValue={String(item?.standardSalesPrice ?? 0)} required />
+      <Field label="단위" name="unit" defaultValue={item?.unit ?? "EA"} required /><Field label="별칭" name="aliases" defaultValue={item?.aliases.join("|") ?? ""} placeholder="여러 값은 | 로 구분" />
+      <Field className="sm:col-span-2" label="메모" name="memo" defaultValue={item?.memo ?? ""} />
+    </>}
     <label className="flex items-center gap-2 text-sm"><input name="isActive" type="checkbox" defaultChecked={row?.isActive ?? true} />사용 중</label><div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>취소</Button><Button type="submit" disabled={saving}>{saving ? "저장 중..." : "저장"}</Button></div>
   </form></DialogContent></Dialog>;
 }

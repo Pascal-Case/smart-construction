@@ -8,6 +8,7 @@ export type InvoiceSourceEntry = {
   title: string;
   description: string | null;
   itemName: string | null;
+  itemSpecification: string | null;
   quantity: number | null;
   unit: string | null;
   unitPrice: number | null;
@@ -72,7 +73,7 @@ function aggregateLines(entries: InvoiceSourceEntry[]) {
 
 function toLine(entry: InvoiceSourceEntry): InvoiceLineDraft {
   const itemName = entry.itemName ?? entry.title;
-  const specification = entry.itemName ? entry.description ?? entry.title : entry.description;
+  const specification = entry.description ?? entry.itemSpecification;
   return {
     itemName,
     specification,

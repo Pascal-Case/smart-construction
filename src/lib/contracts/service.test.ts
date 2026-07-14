@@ -65,8 +65,9 @@ describe("contract service billing boundary", () => {
     }));
   });
 
-  it("stores a new omitted method as canonical monthly data and audits it", async () => {
+  it("always issues a new contract number, stores canonical monthly data, and audits it", async () => {
     await createContract(actor, {
+      contractNo: "MANUAL-0001",
       siteId: "site-1",
       title: "월정액 CCTV",
       status: "ACTIVE",
@@ -78,10 +79,12 @@ describe("contract service billing boundary", () => {
         revenueStartDate: "2026-01-15",
         revenueEndDate: "2026-12-08",
       }],
-    });
+    } as Parameters<typeof createContract>[1]);
 
     const data = mocks.contractCreate.mock.calls[0][0].data;
+    expect(mocks.nextBusinessCode).toHaveBeenCalledWith(expect.anything(), "contract");
     expect(data).toMatchObject({
+      contractNo: "C-0001",
       startDate: new Date("2026-01-01T00:00:00.000Z"),
       endDate: new Date("2026-12-31T00:00:00.000Z"),
       lines: { create: [{

@@ -301,6 +301,6 @@ function candidate(id: string, title: string, salesAmount: number, currentInvoic
     sourceType: "CONTRACT" as const,
     currentInvoiceDocumentId,
     site: { code: "S1", name: "강남 현장", address: "서울" },
-    item: { name: title },
+    item: { name: title, specification: null },
   };
 }

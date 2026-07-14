@@ -25,6 +25,7 @@ export const siteInputSchema = z.object({
 export const itemInputSchema = z.object({
   code: z.union([code, z.literal("")]).optional(),
   name: z.string().trim().min(1, "품목명을 입력해 주세요.").max(100),
+  specification: nullableText,
   unit: z.string().trim().min(1, "단위를 입력해 주세요.").max(30),
   standardSalesPrice: z.number().int().min(0).max(2_000_000_000),
   standardCostPrice: z.number().int().min(0).max(2_000_000_000),
@@ -32,6 +33,8 @@ export const itemInputSchema = z.object({
   memo: nullableText,
   aliases,
 });
+
+export const itemCreateInputSchema = itemInputSchema.omit({ code: true });
 
 export const siteUpdateSchema = siteInputSchema.and(z.object({ version: z.number().int().positive() }));
 export const itemUpdateSchema = itemInputSchema.and(z.object({ version: z.number().int().positive() }));
@@ -58,6 +61,7 @@ export const itemListQuerySchema = masterListQueryBaseSchema.extend({
 
 export type SiteInput = z.infer<typeof siteInputSchema>;
 export type ItemInput = z.infer<typeof itemInputSchema>;
+export type ItemCreateInput = z.infer<typeof itemCreateInputSchema>;
 export type SiteListQuery = z.infer<typeof siteListQuerySchema>;
 export type ItemListQuery = z.infer<typeof itemListQuerySchema>;
 export type SiteSortKey = (typeof siteSortKeys)[number];

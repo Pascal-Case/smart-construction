@@ -9,7 +9,7 @@ import { buildContractImpact } from "@/lib/contracts/impact";
 import { contractBaseAmount } from "@/lib/contracts/list-order";
 import { enumerateMonths } from "@/lib/contracts/period";
 import { deriveContractPeriod } from "@/lib/contracts/period";
-import type { ContractInput, ContractListQuery } from "@/lib/contracts/schemas";
+import type { ContractCreateInput, ContractInput, ContractListQuery } from "@/lib/contracts/schemas";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
 import { normalizeCode } from "@/lib/masters/normalize";
@@ -103,13 +103,13 @@ export async function getContract(id: string) {
   return contract;
 }
 
-export async function createContract(actor: SessionUser, input: ContractInput) {
+export async function createContract(actor: SessionUser, input: ContractCreateInput) {
   try {
     return await prisma.$transaction(async (tx) => {
       const prepared = await prepareAggregate(tx, actor, input);
       const period = deriveContractPeriod(prepared);
       await assertMonthsOpen(tx, [{ siteId: input.siteId, months: enumerateMonths(period.startDate, period.endDate) }]);
-      const contractNo = input.contractNo ? normalizeCode(input.contractNo) : await nextBusinessCode(tx, "contract");
+      const contractNo = await nextBusinessCode(tx, "contract");
       const contract = await tx.contract.create({ data: {
         contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), createdById: actor.id, updatedById: actor.id,
