@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { contractListQuerySchema, contractRevenueCandidateQuerySchema } from "@/lib/contracts/schemas";
+import { contractCreateInputSchema, contractListQuerySchema, contractRevenueCandidateQuerySchema } from "@/lib/contracts/schemas";
+
+describe("contract input schema", () => {
+  it("신규 계약번호를 입력에서 제외한다", () => {
+    const parsed = contractCreateInputSchema.parse({
+      contractNo: "MANUAL-0001",
+      siteId: "site-1",
+      title: "강남 현장 계약",
+      status: "ACTIVE",
+      lines: [{
+        itemId: "item-1",
+        quantity: 1,
+        appliedSalesPrice: 100_000,
+        appliedCostPrice: 50_000,
+        revenueStartDate: "2026-07",
+        revenueEndDate: "2026-12",
+      }],
+    });
+
+    expect(parsed).not.toHaveProperty("contractNo");
+  });
+});
 
 describe("contract revenue candidate query schema", () => {
   it("후보 조회 기본값을 20건 첫 페이지로 정규화한다", () => {

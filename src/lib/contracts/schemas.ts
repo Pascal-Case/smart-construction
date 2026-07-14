@@ -21,17 +21,22 @@ export const contractLineInputSchema = z.object({
   revenueEndDate: billingPeriod,
 });
 
-export const contractInputSchema = z.object({
+const contractInputBaseSchema = z.object({
   contractNo: z.union([code, z.literal("")]).optional(),
   siteId: z.string().min(1, "현장을 선택해 주세요."),
   title: z.string().trim().min(1, "계약명을 입력해 주세요.").max(100),
   status: z.enum(["DRAFT", "ACTIVE", "ENDED", "CANCELED"]),
   memo: nullableText,
   lines: z.array(contractLineInputSchema).min(1, "계약 품목을 한 개 이상 입력해 주세요.").max(100),
-}).superRefine((value, context) => {
+});
+
+function rejectDuplicateLineIds(value: { lines: Array<{ id?: string }> }, context: z.RefinementCtx) {
   const ids = value.lines.flatMap((line) => line.id ? [line.id] : []);
   if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", message: "같은 계약 품목 행이 중복되었습니다.", path: ["lines"] });
-});
+}
+
+export const contractInputSchema = contractInputBaseSchema.superRefine(rejectDuplicateLineIds);
+export const contractCreateInputSchema = contractInputBaseSchema.omit({ contractNo: true }).superRefine(rejectDuplicateLineIds);
 
 export const contractUpdateSchema = contractInputSchema.and(z.object({ version: z.number().int().positive() }));
 
@@ -55,6 +60,7 @@ export const contractRevenueCandidateQuerySchema = z.object({
 });
 
 export type ContractInput = z.infer<typeof contractInputSchema>;
+export type ContractCreateInput = z.infer<typeof contractCreateInputSchema>;
 export type ContractListQuery = z.infer<typeof contractListQuerySchema>;
 export type ContractSortKey = ContractListQuery["sort"];
 export type ContractRevenueCandidateQuery = z.infer<typeof contractRevenueCandidateQuerySchema>;
