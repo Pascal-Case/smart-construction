@@ -33,8 +33,9 @@ const statusLabels: Record<SmartFieldStatus, string> = {
 type SuggestionStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type ApiErrorBody = { error?: { code?: string; message?: string } };
 
-export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
+export function SmartInputDialog({ target, contractCategories, onClose, onApply, onRegistered }: {
   target: SmartInputTarget;
+  contractCategories: Array<{ id: string; name: string; isActive: boolean }>;
   onClose: () => void;
   onApply: (draft: SmartInputAppliedDraft) => void;
   onRegistered: () => void;
@@ -55,6 +56,7 @@ export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
   const [preview, setPreview] = useState<SmartInputPreview | null>(null);
   const [siteId, setSiteId] = useState("");
   const [itemId, setItemId] = useState("");
+  const [contractCategoryId, setContractCategoryId] = useState(contractCategories.find((category) => category.isActive)?.id ?? "");
   const [busy, setBusy] = useState(false);
 
   const placeholder = target === "CONTRACT"
@@ -73,7 +75,7 @@ export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
   const periodError = target === "CONTRACT" && previewPeriod && previewBillingMethod
     ? smartInputContractPeriodError({ billingMethod: previewBillingMethod, startDate: previewPeriod.startDate, endDate: previewPeriod.endDate })
     : null;
-  const ready = periodError == null && draft != null && (target === "REVENUE" || (draft.itemId != null && draft.quantity != null && draft.appliedSalesPrice != null));
+  const ready = contractCategoryId !== "" && periodError == null && draft != null && (target === "REVENUE" || (draft.itemId != null && draft.quantity != null && draft.appliedSalesPrice != null));
   const effectiveSuggestionStatus = composing || tokenValue.length < 2 ? "idle" : suggestionStatus;
   const suggestionPanelOpen = effectiveSuggestionStatus !== "idle";
   const activeOptionId = activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined;
@@ -243,7 +245,7 @@ export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
       const response = await fetch(target === "CONTRACT" ? "/api/contracts" : "/api/revenues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildDirectRegistrationPayload(target, draft)),
+        body: JSON.stringify({ ...buildDirectRegistrationPayload(target, draft), contractCategoryId }),
       });
       const body = await response.json() as ApiErrorBody;
       if (!response.ok) throw new Error(body.error?.message ?? `${label}을 등록하지 못했습니다.`);
@@ -353,6 +355,7 @@ export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
           <Badge variant={preview.confidence >= 80 ? "secondary" : "outline"}>신뢰도 {preview.confidence}%</Badge>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-1.5 rounded-xl border p-3"><Label htmlFor={`smart-contract-category-${target}`}>계약 구분</Label><select id={`smart-contract-category-${target}`} value={contractCategoryId} onChange={(event) => setContractCategoryId(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="">선택</option>{contractCategories.filter((category) => category.isActive).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
           <MasterCard label="현장" field={preview.fields.site} value={siteId} options={preview.options.sites} onChange={(value) => changeFallbackMaster("SITE", value, preview.options.sites)} required />
           <MasterCard label="품목" field={preview.fields.item} value={itemId} options={preview.options.items} onChange={(value) => changeFallbackMaster("ITEM", value, preview.options.items)} required={target === "CONTRACT"} />
           <ValueCard label="수량" status={preview.fields.quantity.status} value={preview.fields.quantity.value == null ? "-" : preview.fields.quantity.value + " " + (preview.fields.quantity.unit ?? selectedItemOption?.unit ?? "")} message={preview.fields.quantity.message} />
@@ -367,7 +370,7 @@ export function SmartInputDialog({ target, onClose, onApply, onRegistered }: {
           <p className="font-medium">적용 예정: {draft?.title ?? "-"}</p>
           <p className="mt-1 text-xs">등록 폼 적용 후에는 모든 값을 수정할 수 있습니다. 바로 등록하면 현재 분석 결과가 즉시 저장됩니다.</p>
         </div>
-        <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={onClose}>취소</Button><Button variant="outline" disabled={busy || !ready} onClick={() => { if (draft && ready) onApply(draft); }}>등록 폼 적용</Button><Button disabled={busy || !ready} onClick={() => void registerDirectly()}>{busy ? "등록 중..." : target === "CONTRACT" ? "계약 등록" : "매출 등록"}</Button></div>
+        <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={onClose}>취소</Button><Button variant="outline" disabled={busy || !ready} onClick={() => { if (draft && ready) onApply({ ...draft, contractCategoryId }); }}>등록 폼 적용</Button><Button disabled={busy || !ready} onClick={() => void registerDirectly()}>{busy ? "등록 중..." : target === "CONTRACT" ? "계약 등록" : "매출 등록"}</Button></div>
       </div>}
     </DialogContent>
   </Dialog>;

@@ -5,6 +5,7 @@ import { contractRevenueBatchConfirmSchema, revenueInputSchema, revenueListQuery
 
 const validRevenue = {
   siteId: "site-1",
+  contractCategoryId: "category-1",
   revenueDate: "2026-07-11",
   sourceType: "MANUAL" as const,
   title: "직접 매출",

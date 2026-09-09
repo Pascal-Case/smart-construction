@@ -39,6 +39,7 @@ const navigation = [
 ];
 
 const adminNavigation = [
+  { label: "계약 구분 관리", icon: Settings2, href: "/settings/contract-categories" },
   { label: "사용자 관리", icon: Settings2, href: "/settings/users" },
   { label: "감사 로그", icon: StickyNote, href: "/settings/audit" },
   { label: "공급자 정보", icon: FileText, href: "/settings/company" },

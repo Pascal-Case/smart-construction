@@ -17,6 +17,7 @@ const candidateSelect = {
   siteId: true,
   revenueDate: true,
   title: true,
+  itemId: true,
   description: true,
   quantity: true,
   unit: true,
@@ -24,8 +25,10 @@ const candidateSelect = {
   salesAmount: true,
   sourceType: true,
   currentInvoiceDocumentId: true,
+  contractCategoryId: true,
+  contractCategory: { select: { code: true, name: true } },
   site: { select: { code: true, name: true, address: true } },
-  item: { select: { name: true, specification: true } },
+  item: { select: { id: true, name: true, specification: true, invoiceDisplayItem: { select: { id: true, name: true } }, invoiceDisplaySources: { select: { id: true }, take: 1 } } },
 } satisfies Prisma.RevenueEntrySelect;
 
 type CandidateRow = Prisma.RevenueEntryGetPayload<{ select: typeof candidateSelect }>;
@@ -77,6 +80,7 @@ export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
           version: true,
           issuedAt: true,
           subtotal: true,
+          closeRevenueFingerprint: true,
           revenueLinks: { select: { revenueEntryId: true } },
         },
         orderBy: [{ issuedAt: "desc" }, { invoiceNo: "desc" }],
@@ -99,10 +103,13 @@ export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
       const pointer = pointerByRevenueId.get(id);
       return pointer != null && !activeDocumentIds.has(pointer);
     });
-    const state = classifyInvoiceCandidateState({
+    const hasScopeConflict = !periodMatches || pointerConflict;
+    const fingerprintChanged = documents.some((document) => document.closeRevenueFingerprint != null)
+      && documents.some((document) => document.closeRevenueFingerprint !== cycle.revenueFingerprint);
+    const state = hasScopeConflict ? "BLOCKED" : fingerprintChanged ? "REPLACEMENT" : classifyInvoiceCandidateState({
       close: { revenueEntryIds: cycleRevenueIds, totalSalesAmount: cycle.totalSalesAmount },
       currentDocuments: documents.map((document) => ({ revenueEntryIds: document.revenueLinks.map((link) => link.revenueEntryId), subtotal: document.subtotal })),
-      hasScopeConflict: !periodMatches || pointerConflict,
+      hasScopeConflict,
     });
     if (state === "UNCHANGED") return [];
     const source = documents[0];
@@ -161,14 +168,14 @@ export async function previewInvoices(input: InvoicePreviewInput) {
       try {
         if (target.kind === "NEW") {
           const context = await loadIssueCycle(tx, target);
-          const document = buildInvoiceDrafts(context.entries.map(toSourceEntry), input.displayMode)[0];
+          const documents = buildInvoiceDrafts(toSourceEntries(context.entries, context.cycle.snapshotJson), input.displayMode);
           results.push({
             targetKey: target.targetKey,
             kind: target.kind,
             outcome: "PREVIEWED" as const,
             commitTarget: target,
             warnings: [],
-            document: {
+            documents: documents.map((document) => ({
               ...document,
               closeCycleId: context.cycle.id,
               issueDate: input.issueDate,
@@ -178,15 +185,15 @@ export async function previewInvoices(input: InvoicePreviewInput) {
               memo: input.memo ?? null,
               supplier: companySnapshot(setting),
               templateConfig: template.config,
-            },
+            })),
           });
           continue;
         }
         const context = await loadReplacementContext(tx, target.sourceInvoiceId);
         if (context.source.version !== target.sourceVersion) throw replacementChanged();
         const warnings = await loadMissingContractWarnings(tx, context.source);
-        const document = buildInvoiceDrafts(context.entries.map(toSourceEntry), input.displayMode)[0];
-        if (!document) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
+        const documents = buildInvoiceDrafts(toSourceEntriesForCycles(context.entries, context.latestCycles), input.displayMode);
+        if (!documents.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
         results.push({
           targetKey: target.targetKey,
           kind: target.kind,
@@ -199,7 +206,7 @@ export async function previewInvoices(input: InvoicePreviewInput) {
           },
           warnings,
           currentInvoices: context.activeDocuments.map((document) => ({ id: document.id, invoiceNo: document.invoiceNo, version: document.version })),
-          document: {
+          documents: documents.map((document) => ({
             ...document,
             issueDate: input.issueDate,
             periodStart: dateKey(context.source.periodStart),
@@ -208,7 +215,7 @@ export async function previewInvoices(input: InvoicePreviewInput) {
             memo: input.memo ?? null,
             supplier: companySnapshot(setting),
             templateConfig: template.config,
-          },
+          })),
         });
       } catch (error) {
         if (!(error instanceof AuthError)) throw error;
@@ -223,7 +230,7 @@ export async function previewInvoices(input: InvoicePreviewInput) {
         newCount: previewed.filter((result) => result.kind === "NEW").length,
         replacementCount: previewed.filter((result) => result.kind === "REPLACEMENT").length,
         blockedCount: results.filter((result) => result.outcome === "BLOCKED").length,
-        supplyAmount: previewed.reduce((sum, result) => sum + (result.outcome === "PREVIEWED" ? result.document.subtotal : 0), 0),
+        supplyAmount: previewed.reduce((sum, result) => sum + (result.outcome === "PREVIEWED" ? result.documents.reduce((total, document) => total + document.subtotal, 0) : 0), 0),
       },
       results,
     };
@@ -234,11 +241,11 @@ export async function issueInvoices(actor: SessionUser, input: InvoiceIssueInput
   const results = [];
   for (const target of input.targets) {
     try {
-      const document = await prisma.$transaction(async (tx) => {
+      const documents = await prisma.$transaction(async (tx) => {
         if (target.kind === "NEW") return issueNewInvoiceInTransaction(tx, actor, target, input);
         return replaceInvoiceInTransaction(tx, actor, target.sourceInvoiceId, { ...input, ...target });
       });
-      results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), outcome: "ISSUED" as const, document });
+      results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), outcome: "ISSUED" as const, documents: Array.isArray(documents) ? documents : [documents] });
     } catch (error) {
       if (error instanceof AuthError) {
         results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), outcome: "BLOCKED" as const, error: { code: error.code, message: error.message } });
@@ -263,16 +270,20 @@ async function issueNewInvoiceInTransaction(
   const setting = await requireCompanySetting(tx);
   const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
   const context = await loadIssueCycle(tx, target);
-  const draft = buildInvoiceDrafts(context.entries.map(toSourceEntry), input.displayMode)[0];
+  const drafts = buildInvoiceDrafts(toSourceEntries(context.entries, context.cycle.snapshotJson), input.displayMode);
   const issuedAt = new Date();
   const snapshotInput = { periodStart: context.month + "-01", periodEnd: monthEnd(context.month), issueDate: input.issueDate, displayMode: input.displayMode, memo: input.memo };
-  const document = await createInvoiceSnapshot(tx, actor, draft, snapshotInput, companySnapshot(setting), template, issuedAt, context.cycle.id);
-  const revenueEntryIds = draft.lines.flatMap((line) => line.revenueEntryIds);
-  const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: revenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
-  if (assigned.count !== revenueEntryIds.length) throw new AuthError("마감 회차의 일부 매출이 이미 발행되었습니다.", 409, "INVOICE_CYCLE_CHANGED");
-  await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, monthlyCloseCycleId: context.cycle.id, siteId: draft.siteId, revenueEntryIds, subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount, templateId: template.id, templateVersion: template.version } });
-  await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, month: context.month, actorId: actor.id });
-  return getInvoiceDocument(document.id, tx);
+  const documents = [];
+  for (const draft of drafts) {
+    const document = await createInvoiceSnapshot(tx, actor, draft, snapshotInput, companySnapshot(setting), template, issuedAt, context.cycle.id, context.cycle.revenueFingerprint);
+    const revenueEntryIds = draft.lines.flatMap((line) => line.revenueEntryIds);
+    const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: revenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
+    if (assigned.count !== revenueEntryIds.length) throw new AuthError("마감 회차의 일부 매출이 이미 발행되었습니다.", 409, "INVOICE_CYCLE_CHANGED");
+    await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, monthlyCloseCycleId: context.cycle.id, contractCategoryCode: draft.contractCategoryCode, siteId: draft.siteId, revenueEntryIds, subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount, templateId: template.id, templateVersion: template.version } });
+    await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, month: context.month, actorId: actor.id });
+    documents.push(await getInvoiceDocument(document.id, tx));
+  }
+  return documents;
 }
 
 export async function previewReplacementInvoice(invoiceId: string, input: InvoiceReplacementPreviewInput) {
@@ -282,12 +293,12 @@ export async function previewReplacementInvoice(invoiceId: string, input: Invoic
     if (context.source.version !== input.sourceVersion) throw replacementChanged();
     const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
     const warnings = await loadMissingContractWarnings(tx, context.source);
-    const draft = buildInvoiceDrafts(context.entries.map(toSourceEntry), input.displayMode)[0];
-    if (!draft) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
+    const drafts = buildInvoiceDrafts(toSourceEntriesForCycles(context.entries, context.latestCycles), input.displayMode);
+    if (!drafts.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
     return {
       expectedRevenueEntryIds: context.entries.map((entry) => entry.id),
       warnings,
-      document: {
+      documents: drafts.map((draft) => ({
         ...draft,
         issueDate: input.issueDate,
         periodStart: dateKey(context.source.periodStart),
@@ -296,7 +307,7 @@ export async function previewReplacementInvoice(invoiceId: string, input: Invoic
         memo: input.memo ?? null,
         supplier: companySnapshot(setting),
         templateConfig: template.config,
-      },
+      })),
     };
   });
 }
@@ -321,24 +332,29 @@ async function replaceInvoiceInTransaction(
     || (input.expectedActiveInvoiceIds && !sameRevenueSet(input.expectedActiveInvoiceIds, activeInvoiceIds))
     || (input.expectedCloseCycleIds && !sameRevenueSet(input.expectedCloseCycleIds, closeCycleIds))) throw replacementChanged();
   const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
-  const draft = buildInvoiceDrafts(context.entries.map(toSourceEntry), input.displayMode)[0];
-  if (!draft) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
+  const drafts = buildInvoiceDrafts(toSourceEntriesForCycles(context.entries, context.latestCycles), input.displayMode);
+  if (!drafts.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
 
   const issuedAt = new Date();
   const snapshotInput = { periodStart: dateKey(context.source.periodStart), periodEnd: dateKey(context.source.periodEnd), issueDate: input.issueDate, displayMode: input.displayMode, memo: input.memo };
-  const document = await createInvoiceSnapshot(tx, actor, draft, snapshotInput, companySnapshot(setting), template, issuedAt, context.latestCycles.length === 1 ? context.latestCycles[0].id : null);
-  const superseded = await tx.invoiceDocument.updateMany({
-    where: { id: { in: activeInvoiceIds }, status: "ISSUED" },
-    data: { status: "SUPERSEDED", supersededAt: issuedAt, supersededByInvoiceId: document.id, version: { increment: 1 } },
-  });
-  if (superseded.count !== activeInvoiceIds.length) throw replacementChanged();
   await tx.revenueEntry.updateMany({ where: { currentInvoiceDocumentId: { in: activeInvoiceIds } }, data: { currentInvoiceDocumentId: null } });
-  const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: actualRevenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
-  if (assigned.count !== actualRevenueEntryIds.length) throw replacementChanged();
-
-  await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "REPLACE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, siteId: document.siteId, replacedInvoiceIds: activeInvoiceIds, revenueEntryIds: actualRevenueEntryIds, subtotal: document.subtotal, taxAmount: document.taxAmount, totalAmount: document.totalAmount, templateId: template.id, templateVersion: template.version } });
-  await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, actorId: actor.id });
-  return getInvoiceDocument(document.id, tx);
+  const documents = [];
+  for (const draft of drafts) {
+    const document = await createInvoiceSnapshot(tx, actor, draft, snapshotInput, companySnapshot(setting), template, issuedAt, context.latestCycles.length === 1 ? context.latestCycles[0].id : null, closeFingerprint(context.latestCycles));
+    const revenueEntryIds = draft.lines.flatMap((line) => line.revenueEntryIds);
+    const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: revenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
+    if (assigned.count !== revenueEntryIds.length) throw replacementChanged();
+    await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "REPLACE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, contractCategoryCode: draft.contractCategoryCode, siteId: document.siteId, replacedInvoiceIds: activeInvoiceIds, revenueEntryIds, subtotal: document.subtotal, taxAmount: document.taxAmount, totalAmount: document.totalAmount, templateId: template.id, templateVersion: template.version } });
+    await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, actorId: actor.id });
+    documents.push(document);
+  }
+  const replacementByCategory = new Map(documents.map((document) => [document.contractCategoryId, document.id]));
+  for (const active of context.activeDocuments) {
+    const supersededByInvoiceId = replacementByCategory.get(active.contractCategoryId) ?? documents[0].id;
+    const superseded = await tx.invoiceDocument.updateMany({ where: { id: active.id, status: "ISSUED" }, data: { status: "SUPERSEDED", supersededAt: issuedAt, supersededByInvoiceId, version: { increment: 1 } } });
+    if (superseded.count !== 1) throw replacementChanged();
+  }
+  return Promise.all(documents.map((document) => getInvoiceDocument(document.id, tx)));
 }
 
 export async function listInvoices(query: InvoiceListQuery) {
@@ -359,6 +375,8 @@ export async function listInvoices(query: InvoiceListQuery) {
         periodStart: true,
         periodEnd: true,
         recipientName: true,
+        contractCategoryName: true,
+        closeRevenueFingerprint: true,
         subtotal: true,
         taxAmount: true,
         totalAmount: true,
@@ -396,6 +414,7 @@ export async function listInvoices(query: InvoiceListQuery) {
         periodStart: true,
         periodEnd: true,
         subtotal: true,
+        closeRevenueFingerprint: true,
         revenueLinks: { select: { revenueEntryId: true } },
       },
     }),
@@ -408,7 +427,10 @@ export async function listInvoices(query: InvoiceListQuery) {
     if (closeStates.some((close) => close?.state !== "CLOSED" || !close.cycles[0])) return { ...row, replacementRequired: false };
     const latestCycles = closeStates.map((close) => close!.cycles[0]);
     const documents = documentsByPeriod.get(periodKey(row)) ?? [];
-    const replacementRequired = replacementRequiredForPeriod(
+    const expectedFingerprint = closeFingerprint(latestCycles);
+    const fingerprintChanged = documents.some((document) => document.closeRevenueFingerprint != null)
+      && documents.some((document) => document.closeRevenueFingerprint !== expectedFingerprint);
+    const replacementRequired = fingerprintChanged || replacementRequiredForPeriod(
       latestCycles.map((cycle) => ({ revenueEntryIds: snapshotRevenueIds(cycle.snapshotJson), totalSalesAmount: cycle.totalSalesAmount })),
       documents.map((document) => ({ revenueEntryIds: document.revenueLinks.map((link) => link.revenueEntryId), subtotal: document.subtotal })),
     );
@@ -443,7 +465,7 @@ async function loadIssueCycle(
       monthlyClose: {
         include: { site: { select: { code: true, name: true, address: true } } },
       },
-      invoiceDocument: { select: { id: true } },
+      invoiceDocuments: { where: { status: "ISSUED" }, select: { id: true } },
     },
   });
   if (!cycle) throw new AuthError("마감 회차를 찾을 수 없습니다.", 404, "INVOICE_CLOSE_CYCLE_NOT_FOUND");
@@ -454,7 +476,7 @@ async function loadIssueCycle(
     || cycle.revenueFingerprint !== target.expectedRevenueFingerprint) {
     throw new AuthError("마감 상태가 변경되었습니다. 월마감에서 다시 시작해 주세요.", 409, "INVOICE_CLOSE_CHANGED");
   }
-  if (cycle.invoiceDocument) throw new AuthError("이미 발행된 마감 회차입니다.", 409, "INVOICE_CYCLE_ALREADY_ISSUED");
+  if (cycle.invoiceDocuments.length) throw new AuthError("이미 발행된 마감 회차입니다.", 409, "INVOICE_CYCLE_ALREADY_ISSUED");
   const ids = snapshotRevenueIds(cycle.snapshotJson);
   if (!ids.length) throw new AuthError("발행할 확정 매출이 없는 마감 회차입니다.", 409, "INVOICE_CYCLE_EMPTY");
   const { start, end } = monthRange(close.month);
@@ -482,7 +504,33 @@ async function requireCompanySetting(tx: Prisma.TransactionClient) {
 }
 
 function toSourceEntry(row: CandidateRow): InvoiceSourceEntry {
-  return { id: row.id, siteId: row.siteId, siteCode: row.site.code, siteName: row.site.name, siteAddress: row.site.address, revenueDate: row.revenueDate, title: row.title, description: row.description, itemName: row.item?.name ?? null, itemSpecification: row.item?.specification ?? null, quantity: row.quantity, unit: row.unit, unitPrice: row.appliedSalesPrice, supplyAmount: row.salesAmount };
+  if (!row.contractCategoryId || !row.contractCategory) throw new AuthError("계약 구분이 없는 매출이 포함되어 있습니다.", 409, "REVENUE_CONTRACT_CATEGORY_REQUIRED");
+  const displayItem = row.item?.invoiceDisplayItem ?? (row.item?.invoiceDisplaySources?.length ? row.item : null);
+  return { id: row.id, siteId: row.siteId, siteCode: row.site.code, siteName: row.site.name, siteAddress: row.site.address, revenueDate: row.revenueDate, title: row.title, description: row.description, itemId: row.itemId, itemName: row.item?.name ?? null, itemSpecification: row.item?.specification ?? null, quantity: row.quantity, unit: row.unit, unitPrice: row.appliedSalesPrice, supplyAmount: row.salesAmount, contractCategoryId: row.contractCategoryId, contractCategoryCode: row.contractCategory.code, contractCategoryName: row.contractCategory.name, invoiceDisplayItemId: displayItem?.id ?? null, invoiceDisplayItemName: displayItem?.name ?? null };
+}
+
+function toSourceEntries(rows: CandidateRow[], snapshotJson: string) {
+  const snapshots = snapshotRevenueEntries(snapshotJson);
+  return rows.map((row) => {
+    const source = toSourceEntry(row);
+    const snapshot = snapshots.get(row.id);
+    if (!snapshot) return source;
+    const hasCategory = Object.prototype.hasOwnProperty.call(snapshot, "contractCategoryId");
+    const hasDisplayItem = Object.prototype.hasOwnProperty.call(snapshot, "invoiceDisplayItemId");
+    return { ...source, contractCategoryId: hasCategory ? (snapshot.contractCategoryId ?? source.contractCategoryId) : source.contractCategoryId, contractCategoryCode: hasCategory ? (snapshot.contractCategoryCode ?? source.contractCategoryCode) : source.contractCategoryCode, contractCategoryName: hasCategory ? (snapshot.contractCategoryName ?? source.contractCategoryName) : source.contractCategoryName, invoiceDisplayItemId: hasDisplayItem ? (snapshot.invoiceDisplayItemId ?? null) : source.invoiceDisplayItemId, invoiceDisplayItemName: hasDisplayItem ? (snapshot.invoiceDisplayItemName ?? null) : source.invoiceDisplayItemName };
+  });
+}
+
+function toSourceEntriesForCycles(rows: CandidateRow[], cycles: Array<{ snapshotJson: string }>) {
+  const snapshots = new Map(cycles.flatMap((cycle) => [...snapshotRevenueEntries(cycle.snapshotJson)]));
+  return rows.map((row) => {
+    const source = toSourceEntry(row);
+    const snapshot = snapshots.get(row.id);
+    if (!snapshot) return source;
+    const hasCategory = Object.prototype.hasOwnProperty.call(snapshot, "contractCategoryId");
+    const hasDisplayItem = Object.prototype.hasOwnProperty.call(snapshot, "invoiceDisplayItemId");
+    return { ...source, contractCategoryId: hasCategory ? (snapshot.contractCategoryId ?? source.contractCategoryId) : source.contractCategoryId, contractCategoryCode: hasCategory ? (snapshot.contractCategoryCode ?? source.contractCategoryCode) : source.contractCategoryCode, contractCategoryName: hasCategory ? (snapshot.contractCategoryName ?? source.contractCategoryName) : source.contractCategoryName, invoiceDisplayItemId: hasDisplayItem ? (snapshot.invoiceDisplayItemId ?? null) : source.invoiceDisplayItemId, invoiceDisplayItemName: hasDisplayItem ? (snapshot.invoiceDisplayItemName ?? null) : source.invoiceDisplayItemName };
+  });
 }
 
 async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: string) {
@@ -496,6 +544,7 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
       status: true,
       version: true,
       subtotal: true,
+      closeRevenueFingerprint: true,
       revenueLinks: { select: { revenueEntryId: true } },
     },
   });
@@ -515,7 +564,9 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
         id: true,
         invoiceNo: true,
         version: true,
+        contractCategoryId: true,
         subtotal: true,
+        closeRevenueFingerprint: true,
         revenueLinks: { select: { revenueEntryId: true } },
       },
       orderBy: { issuedAt: "asc" },
@@ -538,7 +589,10 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
   }
   const issuedRevenueIds = activeDocuments.flatMap((document) => document.revenueLinks.map((link) => link.revenueEntryId));
   const issuedAmount = activeDocuments.reduce((sum, document) => sum + document.subtotal, 0);
-  if (sameRevenueState(issuedRevenueIds, issuedAmount, closedRevenueIds, closedAmount)) {
+  const expectedCloseFingerprint = closeFingerprint(latestCycles);
+  const fingerprintChanged = activeDocuments.some((document) => document.closeRevenueFingerprint != null)
+    && activeDocuments.some((document) => document.closeRevenueFingerprint !== expectedCloseFingerprint);
+  if (!fingerprintChanged && sameRevenueState(issuedRevenueIds, issuedAmount, closedRevenueIds, closedAmount)) {
     throw new AuthError("재마감 결과가 현재 거래명세표와 같아 대체 발행할 내용이 없습니다.", 409, "INVOICE_REPLACEMENT_NOT_REQUIRED");
   }
   if (!entries.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
@@ -568,12 +622,16 @@ async function createInvoiceSnapshot(
   template: Awaited<ReturnType<typeof resolveInvoiceTemplate>>,
   issuedAt: Date,
   monthlyCloseCycleId?: string | null,
+  closeRevenueFingerprint?: string | null,
 ) {
   const issueDate = dbDate(input.issueDate);
   const invoiceNo = await nextInvoiceNo(tx, issueDate);
   const document = await tx.invoiceDocument.create({ data: {
     invoiceNo,
     siteId: draft.siteId,
+    contractCategoryId: draft.contractCategoryId,
+    contractCategoryCode: draft.contractCategoryCode,
+    contractCategoryName: draft.contractCategoryName,
     periodStart: dbDate(input.periodStart),
     periodEnd: endOfDay(input.periodEnd),
     issueDate,
@@ -601,6 +659,7 @@ async function createInvoiceSnapshot(
     issuedById: actor.id,
     issuedAt,
     monthlyCloseCycleId: monthlyCloseCycleId ?? null,
+    closeRevenueFingerprint: closeRevenueFingerprint ?? null,
   } });
   for (const [index, line] of draft.lines.entries()) {
     const savedLine = await tx.invoiceLine.create({ data: { invoiceDocumentId: document.id, itemName: line.itemName, specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, supplyAmount: line.supplyAmount, taxAmount: line.taxAmount, sortOrder: index } });
@@ -622,6 +681,10 @@ function monthEnd(month: string) {
 function monthRange(month: string) {
   return { start: dbDate(month + "-01"), end: endOfDay(monthEnd(month)) };
 }
+function closeFingerprint(cycles: Array<{ id: string; revenueFingerprint: string }>) {
+  if (cycles.length === 1) return cycles[0].revenueFingerprint;
+  return [...cycles].sort((a, b) => a.id.localeCompare(b.id)).map((cycle) => `${cycle.id}:${cycle.revenueFingerprint}`).join("|");
+}
 function snapshotRevenueIds(snapshotJson: string) {
   try {
     const parsed = JSON.parse(snapshotJson) as { revenueEntryIds?: unknown };
@@ -630,6 +693,15 @@ function snapshotRevenueIds(snapshotJson: string) {
       : [];
   } catch {
     return [];
+  }
+}
+
+function snapshotRevenueEntries(snapshotJson: string) {
+  try {
+    const parsed = JSON.parse(snapshotJson) as { revenueEntries?: Array<{ id?: unknown; contractCategoryId?: string | null; contractCategoryCode?: string | null; contractCategoryName?: string | null; invoiceDisplayItemId?: string | null; invoiceDisplayItemName?: string | null }> };
+    return new Map((parsed.revenueEntries ?? []).flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
+  } catch {
+    return new Map<string, never>();
   }
 }
 

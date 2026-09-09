@@ -19,13 +19,14 @@ import { itemSortKeys, siteSortKeys, type ItemListQuery, type ItemSortKey, type 
 type MasterType = "site" | "item";
 type BaseRow = { id: string; code: string; name: string; aliases: string[]; isActive: boolean; version: number; updatedAt: string };
 export type SiteView = BaseRow & { customerName: string | null; address: string | null; managerName: string | null; managerContact: string | null; startDate: string | null; endDate: string | null; memo: string | null };
-export type ItemView = BaseRow & { specification: string | null; unit: string; standardSalesPrice: number; standardCostPrice: number; memo: string | null };
+export type ItemView = BaseRow & { specification: string | null; unit: string; standardSalesPrice: number; standardCostPrice: number; memo: string | null; invoiceDisplayItemId: string | null; invoiceDisplayItem: { id: string; code: string; name: string; isActive: boolean } | null };
+type ItemOption = { id: string; code: string; name: string; isActive: boolean; invoiceDisplayItemId: string | null };
 type MasterRow = SiteView | ItemView;
 type MasterSortKey = SiteSortKey | ItemSortKey;
 export type MasterList<T extends MasterRow> = { rows: T[]; total: number; page: number; pageSize: number; totalPages: number };
 type Preview = { rows: Array<{ rowNumber: number; status: "CREATE" | "UPDATE" | "UNCHANGED" | "ERROR"; code: string; name: string; errors: string[] }>; counts: { total: number; create: number; update: number; unchanged: number; error: number } };
 
-export function MasterManager({ type, initialData, initialQuery, initialSort, canEdit }: { type: MasterType; initialData: MasterList<MasterRow>; initialQuery: SiteListQuery | ItemListQuery; initialSort: ExplicitSort<MasterSortKey>; canEdit: boolean }) {
+export function MasterManager({ type, initialData, initialQuery, initialSort, itemOptions = [], canEdit }: { type: MasterType; initialData: MasterList<MasterRow>; initialQuery: SiteListQuery | ItemListQuery; initialSort: ExplicitSort<MasterSortKey>; itemOptions?: ItemOption[]; canEdit: boolean }) {
   const [data, setData] = useState(initialData);
   const [query, setQuery] = useState(initialQuery.q);
   const [status, setStatus] = useState(initialQuery.status);
@@ -110,7 +111,7 @@ export function MasterManager({ type, initialData, initialQuery, initialSort, ca
     </div>
     <div className="flex items-center justify-between text-sm text-muted-foreground"><span>총 {data.total.toLocaleString()}건 · {data.page}/{data.totalPages} 페이지</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loading || data.page <= 1} onClick={() => void load({ page: data.page - 1, nextSort: sort, filters: { q: query, status }, historyMode: "push" })}>이전</Button><Button size="sm" variant="outline" disabled={loading || data.page >= data.totalPages} onClick={() => void load({ page: data.page + 1, nextSort: sort, filters: { q: query, status }, historyMode: "push" })}>다음</Button></div></div>
 
-    <MasterEditor type={type} open={editorOpen} row={editing} onOpenChange={setEditorOpen} onSaved={() => void load({ page: data.page, nextSort: sort, filters: { q: query, status }, historyMode: "none" })} />
+    <MasterEditor type={type} open={editorOpen} row={editing} itemOptions={itemOptions} onOpenChange={setEditorOpen} onSaved={() => void load({ page: data.page, nextSort: sort, filters: { q: query, status }, historyMode: "none" })} />
     <ImportDialog type={type} open={importOpen} onOpenChange={setImportOpen} onCommitted={() => void load({ page: 1, nextSort: sort, filters: { q: query, status }, historyMode: "none" })} />
   </div>;
 }
@@ -127,7 +128,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
   return <div className="space-y-1.5"><Label>{label}</Label><select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 min-w-28 rounded-lg border bg-background px-3 text-sm">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>;
 }
 
-function MasterEditor({ type, open, row, onOpenChange, onSaved }: { type: MasterType; open: boolean; row: MasterRow | null; onOpenChange: (open: boolean) => void; onSaved: () => void }) {
+function MasterEditor({ type, open, row, itemOptions, onOpenChange, onSaved }: { type: MasterType; open: boolean; row: MasterRow | null; itemOptions: ItemOption[]; onOpenChange: (open: boolean) => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const title = type === "site" ? "현장" : "품목";
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -135,7 +136,7 @@ function MasterEditor({ type, open, row, onOpenChange, onSaved }: { type: Master
     const form = new FormData(event.currentTarget);
     const payload: Record<string, unknown> = { name: form.get("name"), isActive: form.get("isActive") === "on", memo: form.get("memo"), aliases: String(form.get("aliases") ?? "").split(/[|,;]/).map((value) => value.trim()).filter(Boolean) };
     if (type === "site") Object.assign(payload, { code: form.get("code"), customerName: form.get("customerName"), address: form.get("address"), managerName: form.get("managerName"), managerContact: form.get("managerContact"), startDate: form.get("startDate"), endDate: form.get("endDate") });
-    else Object.assign(payload, { specification: form.get("specification"), unit: form.get("unit"), standardSalesPrice: Number(form.get("standardSalesPrice")), standardCostPrice: Number(form.get("standardCostPrice")) });
+    else Object.assign(payload, { specification: form.get("specification"), unit: form.get("unit"), standardSalesPrice: Number(form.get("standardSalesPrice")), standardCostPrice: Number(form.get("standardCostPrice")), invoiceDisplayItemId: form.get("invoiceDisplayItemId") || null });
     if (row) payload.version = row.version;
     try {
       const response = await fetch(`/api/${type === "site" ? "sites" : "items"}${row ? `/${row.id}` : ""}`, { method: row ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -156,6 +157,7 @@ function MasterEditor({ type, open, row, onOpenChange, onSaved }: { type: Master
       <Field label="품목명" name="name" defaultValue={item?.name ?? ""} required /><Field label="규격" name="specification" defaultValue={item?.specification ?? ""} />
       <Field label="표준 매입단가" name="standardCostPrice" type="number" min="0" defaultValue={String(item?.standardCostPrice ?? 0)} required /><Field label="표준 매출단가" name="standardSalesPrice" type="number" min="0" defaultValue={String(item?.standardSalesPrice ?? 0)} required />
       <Field label="단위" name="unit" defaultValue={item?.unit ?? "EA"} required /><Field label="별칭" name="aliases" defaultValue={item?.aliases.join("|") ?? ""} placeholder="여러 값은 | 로 구분" />
+      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="invoiceDisplayItemId">거래명세표 표시 품목</Label><select id="invoiceDisplayItemId" name="invoiceDisplayItemId" defaultValue={item?.invoiceDisplayItemId ?? ""} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="">원본 품목명 사용</option>{itemOptions.filter((option) => option.id !== item?.id && !option.invoiceDisplayItemId).map((option) => <option key={option.id} value={option.id} disabled={!option.isActive && item?.invoiceDisplayItemId !== option.id}>{option.code} · {option.name}{option.isActive ? "" : " (중지)"}</option>)}</select><p className="text-xs text-muted-foreground">합산 출력에서 선택한 대표 품목명과 금액으로 합칩니다.</p></div>
       <Field className="sm:col-span-2" label="메모" name="memo" defaultValue={item?.memo ?? ""} />
     </>}
     <label className="flex items-center gap-2 text-sm"><input name="isActive" type="checkbox" defaultChecked={row?.isActive ?? true} />사용 중</label><div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>취소</Button><Button type="submit" disabled={saving}>{saving ? "저장 중..." : "저장"}</Button></div>

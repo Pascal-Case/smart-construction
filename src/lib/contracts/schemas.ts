@@ -24,6 +24,7 @@ export const contractLineInputSchema = z.object({
 const contractInputBaseSchema = z.object({
   contractNo: z.union([code, z.literal("")]).optional(),
   siteId: z.string().min(1, "현장을 선택해 주세요."),
+  contractCategoryId: z.string().min(1, "계약 구분을 선택해 주세요."),
   title: z.string().trim().min(1, "계약명을 입력해 주세요.").max(100),
   status: z.enum(["DRAFT", "ACTIVE", "ENDED", "CANCELED"]),
   memo: nullableText,

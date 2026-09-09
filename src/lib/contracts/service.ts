@@ -19,10 +19,12 @@ import { syncContractRevenueGenerationQueue } from "@/lib/revenues/generator";
 
 const contractInclude = {
   site: { select: { id: true, code: true, name: true, isActive: true } },
+  contractCategory: { select: { id: true, code: true, name: true, isActive: true } },
   lines: { where: { isActive: true }, include: { item: { select: { id: true, code: true, name: true, isActive: true } } }, orderBy: { sortOrder: "asc" as const } },
 };
 const contractIncludeAll = {
   site: { select: { id: true, code: true, name: true, isActive: true } },
+  contractCategory: { select: { id: true, code: true, name: true, isActive: true } },
   lines: { include: { item: { select: { id: true, code: true, name: true, isActive: true } } }, orderBy: { sortOrder: "asc" as const } },
 };
 
@@ -111,7 +113,7 @@ export async function createContract(actor: SessionUser, input: ContractCreateIn
       await assertMonthsOpen(tx, [{ siteId: input.siteId, months: enumerateMonths(period.startDate, period.endDate) }]);
       const contractNo = await nextBusinessCode(tx, "contract");
       const contract = await tx.contract.create({ data: {
-        contractNo, siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
+        contractNo, siteId: input.siteId, contractCategoryId: input.contractCategoryId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), createdById: actor.id, updatedById: actor.id,
         ...(input.status === "ACTIVE" ? { revenueGenerationQueue: { create: {} } } : {}),
         lines: { create: prepared.map((line, index) => ({
@@ -151,7 +153,7 @@ export async function updateContract(actor: SessionUser, id: string, input: Cont
       const period = deriveContractPeriod(prepared);
       const updated = await tx.contract.updateMany({ where: { id, version: input.version }, data: {
         contractNo: input.contractNo ? normalizeCode(input.contractNo) : before.contractNo,
-        siteId: input.siteId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
+        siteId: input.siteId, contractCategoryId: input.contractCategoryId, title: input.title, startDate: dbDate(period.startDate), endDate: dbDate(period.endDate),
         status: input.status, memo: emptyToNull(input.memo), updatedById: actor.id, version: { increment: 1 },
       } });
       if (!updated.count) throw new AuthError("다른 사용자가 먼저 계약을 수정했습니다. 새로고침 후 다시 시도해 주세요.", 409, "VERSION_CONFLICT");
@@ -182,10 +184,12 @@ async function prepareAggregate(
   tx: Prisma.TransactionClient,
   actor: SessionUser,
   input: ContractInput,
-  before?: { id: string; siteId: string; lines: Array<{ id: string; contractId: string; itemId: string; billingMethod: ContractLineBillingMethod; isActive: boolean; standardSalesPriceSnapshot: number; standardCostPriceSnapshot: number; appliedSalesPrice: number; appliedCostPrice: number; priceOverrideReason: string | null; priceOverriddenById: string | null; priceOverriddenAt: Date | null }> },
+  before?: { id: string; siteId: string; contractCategoryId: string | null; lines: Array<{ id: string; contractId: string; itemId: string; billingMethod: ContractLineBillingMethod; isActive: boolean; standardSalesPriceSnapshot: number; standardCostPriceSnapshot: number; appliedSalesPrice: number; appliedCostPrice: number; priceOverrideReason: string | null; priceOverriddenById: string | null; priceOverriddenAt: Date | null }> },
 ) {
   const site = await tx.site.findUnique({ where: { id: input.siteId }, select: { id: true, isActive: true } });
   if (!site || (!site.isActive && before?.siteId !== site.id)) throw new AuthError("사용 가능한 현장을 선택해 주세요.", 400, "INVALID_CONTRACT_SITE");
+  const category = await tx.contractCategory.findUnique({ where: { id: input.contractCategoryId }, select: { id: true, isActive: true } });
+  if (!category || (!category.isActive && before?.contractCategoryId !== category.id)) throw new AuthError("사용 가능한 계약 구분을 선택해 주세요.", 400, "INVALID_CONTRACT_CATEGORY");
   const itemIds = [...new Set(input.lines.map((line) => line.itemId))];
   const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, unit: true, standardSalesPrice: true, standardCostPrice: true, isActive: true } });
   const itemMap = new Map(items.map((item) => [item.id, item]));

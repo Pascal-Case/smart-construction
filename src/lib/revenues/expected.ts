@@ -6,6 +6,7 @@ export type ExpectedRevenueContract = {
   id: string;
   title: string;
   siteId: string;
+  contractCategoryId: string | null;
   lines: Array<{
     id: string;
     billingMethod: ContractLineBillingMethod;
@@ -33,6 +34,7 @@ export type ContractRevenueExisting = {
   cancelReason: string | null;
   generatedKey: string | null;
   siteId: string;
+  contractCategoryId: string | null;
   itemId: string | null;
   title: string;
   description: string | null;
@@ -64,6 +66,7 @@ export function buildContractRevenueDrafts(contract: ExpectedRevenueContract) {
   return contract.lines.flatMap((line) => buildLineRevenueDrafts(line).map((month) => ({
     ...month,
     siteId: contract.siteId,
+    contractCategoryId: contract.contractCategoryId,
     contractId: contract.id,
     contractLineId: line.id,
     itemId: line.itemId,
@@ -130,6 +133,7 @@ export function hasActionableGenerationRows(rows: GenerationRow[]) {
 
 export function sameExpectedRevenue(row: ContractRevenueExisting, draft: ExpectedContractRevenue) {
   return row.siteId === draft.siteId
+    && row.contractCategoryId === draft.contractCategoryId
     && row.itemId === draft.itemId
     && row.title === draft.title
     && row.description === draft.description

@@ -127,6 +127,7 @@ async function loadContractRevenueGeneration(tx: Prisma.TransactionClient, contr
     lines: { where: { isActive: true }, include: { item: { select: { name: true } } }, orderBy: { sortOrder: "asc" } },
   } });
   if (!contract) throw new AuthError("계약을 찾을 수 없습니다.", 404, "CONTRACT_NOT_FOUND");
+  if (!contract.contractCategoryId) throw new AuthError("계약 구분이 없는 계약은 매출을 생성할 수 없습니다.", 409, "CONTRACT_CATEGORY_REQUIRED");
   const drafts = buildContractRevenueDrafts(contract);
   const existing = await tx.revenueEntry.findMany({ where: { contractId, sourceType: "CONTRACT" } });
   const rows = buildGenerationRows(drafts, existing);

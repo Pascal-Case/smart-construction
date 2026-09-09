@@ -33,8 +33,8 @@ describe("monthly close cycle snapshot", () => {
 
     expect(left).toEqual(right);
     expect(JSON.parse(left.snapshotJson).revenueEntries).toEqual([
-      { costAmount: 50, id: "a", salesAmount: 100, version: 2 },
-      { costAmount: 0, id: "b", salesAmount: 200, version: 1 },
+      { costAmount: 50, id: "a", salesAmount: 100, version: 2, contractCategoryId: null, contractCategoryCode: null, contractCategoryName: null, invoiceDisplayItemId: null, invoiceDisplayItemName: null },
+      { costAmount: 0, id: "b", salesAmount: 200, version: 1, contractCategoryId: null, contractCategoryCode: null, contractCategoryName: null, invoiceDisplayItemId: null, invoiceDisplayItemName: null },
     ]);
     expect(left).toMatchObject({ revenueCount: 2, totalSalesAmount: 300, totalCostAmount: 50 });
   });

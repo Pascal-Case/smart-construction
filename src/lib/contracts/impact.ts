@@ -8,6 +8,7 @@ type ExistingLine = {
 
 type ImpactInput = {
   siteId: string;
+  contractCategoryId?: string;
   title?: string;
   status: string;
   lines: Array<{
@@ -23,7 +24,7 @@ type ImpactInput = {
 };
 
 export function buildContractImpact(
-  before: { siteId: string; startDate: Date; endDate: Date; status: string; lines: ExistingLine[] },
+  before: { siteId: string; contractCategoryId?: string | null; startDate: Date; endDate: Date; status: string; lines: ExistingLine[] },
   input: ImpactInput,
 ) {
   const previous = new Map(before.lines.filter((line) => line.isActive).map((line) => [line.id, line]));
@@ -49,7 +50,7 @@ export function buildContractImpact(
   }
   for (const removed of previous.values()) addMonths(affectedMonths, dateOnly(removed.revenueStartDate), dateOnly(removed.revenueEndDate));
   const period = deriveContractPeriod(input.lines);
-  const headerChanged = before.siteId !== input.siteId || dateOnly(before.startDate) !== period.startDate || dateOnly(before.endDate) !== period.endDate || before.status !== input.status;
+  const headerChanged = before.siteId !== input.siteId || (input.contractCategoryId !== undefined && before.contractCategoryId !== input.contractCategoryId) || dateOnly(before.startDate) !== period.startDate || dateOnly(before.endDate) !== period.endDate || before.status !== input.status;
   if (headerChanged) {
     addMonths(affectedMonths, dateOnly(before.startDate), dateOnly(before.endDate));
     addMonths(affectedMonths, period.startDate, period.endDate);

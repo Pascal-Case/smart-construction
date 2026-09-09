@@ -12,11 +12,12 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
   const query = parsedQuery.success ? parsedQuery.data : contractListQuerySchema.parse({});
   const params = new URLSearchParams(Object.entries(rawQuery).flatMap(([key, value]) => typeof value === "string" ? [[key, value]] : []));
   const initialSort = parseExplicitSort(params, contractSortKeys);
-  const [result, sites, items] = await Promise.all([
+  const [result, sites, items, contractCategories] = await Promise.all([
     listContracts(query),
     prisma.site.findMany({ select: { id: true, code: true, name: true, isActive: true }, orderBy: { name: "asc" } }),
     prisma.item.findMany({ select: { id: true, code: true, name: true, unit: true, standardSalesPrice: true, standardCostPrice: true, isActive: true }, orderBy: { name: "asc" } }),
+    prisma.contractCategory.findMany({ select: { id: true, code: true, name: true, isActive: true }, orderBy: { name: "asc" } }),
   ]);
   const initialData: ContractList = { ...result, rows: result.rows.map((row) => ({ ...row, startDate: row.startDate.toISOString(), endDate: row.endDate.toISOString(), updatedAt: row.updatedAt.toISOString(), lines: row.lines.map((line) => ({ ...line, revenueStartDate: line.revenueStartDate.toISOString(), revenueEndDate: line.revenueEndDate.toISOString() })) })) };
-  return <div className="mx-auto max-w-[1500px] space-y-6"><div><p className="text-sm font-semibold text-teal-700">계약·단가</p><h1 className="text-2xl font-semibold">계약 관리</h1><p className="mt-1 text-sm text-muted-foreground">현장별 다중 품목 계약과 표준단가 예외를 관리합니다.</p></div><ContractManager initialData={initialData} initialFilters={query} initialSort={initialSort} sites={sites} items={items} canEdit={user?.role === "ADMIN" || user?.role === "MANAGER"} /></div>;
+  return <div className="mx-auto max-w-[1500px] space-y-6"><div><p className="text-sm font-semibold text-teal-700">계약·단가</p><h1 className="text-2xl font-semibold">계약 관리</h1><p className="mt-1 text-sm text-muted-foreground">현장별 다중 품목 계약과 표준단가 예외를 관리합니다.</p></div><ContractManager initialData={initialData} initialFilters={query} initialSort={initialSort} sites={sites} items={items} contractCategories={contractCategories} canEdit={user?.role === "ADMIN" || user?.role === "MANAGER"} /></div>;
 }

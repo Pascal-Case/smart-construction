@@ -5,6 +5,7 @@ import { ContractLineBillingMethod, UserRole } from "@/generated/prisma/client";
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   siteFindUnique: vi.fn(),
+  categoryFindUnique: vi.fn(),
   itemFindMany: vi.fn(),
   contractCreate: vi.fn(),
   contractFindUnique: vi.fn(),
@@ -36,6 +37,7 @@ describe("contract service billing boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.siteFindUnique.mockResolvedValue({ id: "site-1", isActive: true });
+    mocks.categoryFindUnique.mockResolvedValue({ id: "category-1", isActive: true });
     mocks.itemFindMany.mockResolvedValue([{
       id: "item-1",
       unit: "EA",
@@ -50,6 +52,7 @@ describe("contract service billing boundary", () => {
     mocks.contractLineUpdate.mockResolvedValue({});
     mocks.transaction.mockImplementation(async (callback) => callback({
       site: { findUnique: mocks.siteFindUnique },
+      contractCategory: { findUnique: mocks.categoryFindUnique },
       item: { findMany: mocks.itemFindMany },
       contract: {
         create: mocks.contractCreate,
@@ -69,6 +72,7 @@ describe("contract service billing boundary", () => {
     await createContract(actor, {
       contractNo: "MANUAL-0001",
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "월정액 CCTV",
       status: "ACTIVE",
       lines: [{
@@ -106,6 +110,7 @@ describe("contract service billing boundary", () => {
   it("does not queue a draft contract for revenue generation", async () => {
     await createContract(actor, {
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "작성 중 CCTV",
       status: "DRAFT",
       lines: [{
@@ -126,6 +131,7 @@ describe("contract service billing boundary", () => {
       id: "contract-1",
       contractNo: "C-0001",
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "기존 계약",
       startDate: new Date("2026-01-15T00:00:00.000Z"),
       endDate: new Date("2026-12-08T00:00:00.000Z"),
@@ -160,6 +166,7 @@ describe("contract service billing boundary", () => {
     await updateContract(actor, "contract-1", {
       version: 1,
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "기존 계약",
       status: "ACTIVE",
       lines: [{
@@ -219,7 +226,7 @@ describe("contract service billing boundary", () => {
     mocks.contractFindUniqueOrThrow.mockResolvedValue({ ...before, version: 2 });
 
     await updateContract(actor, "contract-1", {
-      version: 1, siteId: "site-1", title: "기존 계약", status: "ACTIVE",
+      version: 1, siteId: "site-1", contractCategoryId: "category-1", title: "기존 계약", status: "ACTIVE",
       lines: [{
         id: "line-1", itemId: "item-1", billingMethod, quantity: 2,
         appliedSalesPrice: 20_000, appliedCostPrice: 10_000,

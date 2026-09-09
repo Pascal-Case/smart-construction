@@ -14,6 +14,7 @@ const contract: ExpectedRevenueContract = {
   id: "contract-1",
   title: "안전용품 공급",
   siteId: "site-1",
+  contractCategoryId: "category-1",
   lines: [{
     id: "line-1",
     billingMethod: ContractLineBillingMethod.MONTHLY_RECURRING,
@@ -41,6 +42,7 @@ function existing(overrides: Partial<ContractRevenueExisting> = {}): ContractRev
     cancelReason: null,
     generatedKey: draft.generatedKey,
     siteId: draft.siteId,
+    contractCategoryId: draft.contractCategoryId,
     itemId: draft.itemId,
     title: draft.title,
     description: draft.description,
@@ -113,6 +115,11 @@ describe("expected contract revenues", () => {
     expect(buildGenerationRows([draft], [existing({ status: "CANCELED", cancelReason: "사용자 취소" })])[0].action)
       .toBe("RECREATE");
     expect(buildGenerationRows([draft], [existing()])[0].action).toBe("UNCHANGED");
+  });
+
+  it("계약 구분만 바뀌어도 작성 중 자동 매출을 갱신한다", () => {
+    const draft = buildContractRevenueDrafts(contract)[0];
+    expect(buildGenerationRows([draft], [existing({ contractCategoryId: "category-before" })])[0].action).toBe("UPDATE");
   });
 
   it("실제 쓰기가 필요한 생성 액션만 처리대기로 판정한다", () => {

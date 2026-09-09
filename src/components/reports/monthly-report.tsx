@@ -9,7 +9,7 @@ import {
   useRealtimeEvent,
   useRealtimeRefresh,
 } from "@/components/realtime-provider";
-import { RevenueEditor, type RevenueEditorContext, type RevenueEditorItem, type RevenueEditorSite } from "@/components/revenues/revenue-editor";
+import { RevenueEditor, type RevenueEditorContext, type RevenueEditorContractCategory, type RevenueEditorItem, type RevenueEditorSite } from "@/components/revenues/revenue-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -90,12 +90,14 @@ export function MonthlyReport({
   initialData,
   sites,
   items,
+  contractCategories,
   canEdit,
   currentUserId,
 }: {
   initialData: MonthlyReportData;
   sites: RevenueEditorSite[];
   items: RevenueEditorItem[];
+  contractCategories: RevenueEditorContractCategory[];
   canEdit: boolean;
   currentUserId: string;
 }) {
@@ -310,6 +312,7 @@ export function MonthlyReport({
           draft={null}
           sites={sites}
           items={items}
+          contractCategories={contractCategories}
           initialContext={registration}
           onClose={() => setRegistration(null)}
           onSaved={() => void load()}

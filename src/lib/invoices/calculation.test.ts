@@ -10,6 +10,7 @@ const base: InvoiceSourceEntry = {
   siteAddress: "서울",
   revenueDate: new Date("2026-05-20T00:00:00.000Z"),
   title: "5월 CCTV",
+  itemId: "item-cctv",
   description: "200만 화소",
   itemName: "이동형 CCTV",
   itemSpecification: "200만 화소",
@@ -17,6 +18,11 @@ const base: InvoiceSourceEntry = {
   unit: "EA",
   unitPrice: 220_000,
   supplyAmount: 220_000,
+  contractCategoryId: "category-safety",
+  contractCategoryCode: "CONTRACT-TYPE-0001",
+  contractCategoryName: "스마트건설안전",
+  invoiceDisplayItemId: null,
+  invoiceDisplayItemName: null,
 };
 
 describe("invoice calculation", () => {
@@ -60,5 +66,31 @@ describe("invoice calculation", () => {
     expect(result).toHaveLength(2);
     expect(result[0].lines[0]).toMatchObject({ itemName: "A/S 작업", quantity: null, unitPrice: null, supplyAmount: 101, taxAmount: 10 });
     expect(result[1]).toMatchObject({ siteId: "site-b", subtotal: -55, taxAmount: -5, totalAmount: -60 });
+  });
+
+  it("같은 현장의 매출을 계약 구분별 거래명세표로 나눈다", () => {
+    const result = buildInvoiceDrafts([
+      base,
+      { ...base, id: "r2", contractCategoryId: "category-worker", contractCategoryCode: "CONTRACT-TYPE-0002", contractCategoryName: "근로자안전보건" },
+    ], "AGGREGATED");
+
+    expect(result).toHaveLength(2);
+    expect(result.map((document) => document.contractCategoryName)).toEqual(["근로자안전보건", "스마트건설안전"]);
+    expect(result.map((document) => document.lines.flatMap((line) => line.revenueEntryIds))).toEqual([["r2"], ["r1"]]);
+  });
+
+  it("합산 출력은 대표 품목이 같은 원본 품목의 금액을 합치고 서로 다른 산출 필드를 비운다", () => {
+    const result = buildInvoiceDrafts([
+      { ...base, id: "platform", itemId: "item-platform", itemName: "플랫폼 사용료", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+      { ...base, id: "analysis", itemId: "item-analysis", itemName: "사진 분석 개발비용", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 500_000, supplyAmount: 500_000 },
+    ], "AGGREGATED");
+
+    expect(result[0].lines).toEqual([expect.objectContaining({ itemName: "플랫폼 사용료", specification: null, quantity: null, unit: null, unitPrice: null, supplyAmount: 800_000, taxAmount: 80_000, revenueEntryIds: ["platform", "analysis"] })]);
+  });
+
+  it("건별 출력은 대표 품목 설정이 있어도 원본 품목을 유지한다", () => {
+    const result = buildInvoiceDrafts([base, { ...base, id: "r2", itemName: "사진 분석 개발비용", invoiceDisplayItemId: "item-cctv", invoiceDisplayItemName: "이동형 CCTV" }], "ITEMIZED");
+
+    expect(result[0].lines.map((line) => line.itemName)).toEqual(["이동형 CCTV", "사진 분석 개발비용"]);
   });
 });

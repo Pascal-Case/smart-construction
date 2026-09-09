@@ -71,7 +71,7 @@ export default async function HomePage() {
           select: {
             closedAt: true,
             totalSalesAmount: true,
-            invoiceDocument: { select: { id: true } },
+            invoiceDocuments: { where: { status: "ISSUED" }, select: { id: true } },
           },
         },
       },
@@ -80,7 +80,7 @@ export default async function HomePage() {
   const summary = buildDashboardSummary({ year, siteCount, invoiceCount, revenues });
   const unissuedCloseCycles = closedMonths.flatMap((close) => {
     const cycle = close.cycles[0];
-    return cycle && !cycle.invoiceDocument ? [cycle] : [];
+    return cycle && cycle.invoiceDocuments.length === 0 ? [cycle] : [];
   });
   const actionDesk = buildDashboardActionDesk(actionRevenues, unissuedCloseCycles);
   const recentActions = auditLogs.map((log) => ({ ...log, message: formatRecentAction(log) }));

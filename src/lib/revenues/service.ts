@@ -190,9 +190,11 @@ async function transitionRevenue(actor: SessionUser, id: string, version: number
   });
 }
 
-async function prepareRevenue(tx: Prisma.TransactionClient, input: RevenueInput, before?: { siteId: string; itemId: string | null; standardSalesPriceSnapshot: number | null; standardCostPriceSnapshot: number | null }) {
+async function prepareRevenue(tx: Prisma.TransactionClient, input: RevenueInput, before?: { siteId: string; contractCategoryId: string | null; itemId: string | null; standardSalesPriceSnapshot: number | null; standardCostPriceSnapshot: number | null }) {
   const site = await tx.site.findUnique({ where: { id: input.siteId }, select: { id: true, isActive: true } });
   if (!site || (!site.isActive && before?.siteId !== site.id)) throw new AuthError("사용 가능한 현장을 선택해 주세요.", 400, "INVALID_REVENUE_SITE");
+  const category = await tx.contractCategory.findUnique({ where: { id: input.contractCategoryId }, select: { id: true, isActive: true } });
+  if (!category || (!category.isActive && before?.contractCategoryId !== category.id)) throw new AuthError("사용 가능한 계약 구분을 선택해 주세요.", 400, "INVALID_REVENUE_CONTRACT_CATEGORY");
   const item = input.itemId ? await tx.item.findUnique({ where: { id: input.itemId }, select: { id: true, unit: true, standardSalesPrice: true, standardCostPrice: true, isActive: true } }) : null;
   if (input.itemId && (!item || (!item.isActive && before?.itemId !== item.id))) throw new AuthError("사용 가능한 품목을 선택해 주세요.", 400, "INVALID_REVENUE_ITEM");
   if (input.sourceType === "MANUAL" && ((input.appliedSalesPrice ?? 0) < 0 || (input.appliedCostPrice ?? 0) < 0 || (input.costAmount ?? 0) < 0)) throw new AuthError("음수 단가·금액은 조정 유형으로 입력해 주세요.", 400, "NEGATIVE_MANUAL_AMOUNT");
@@ -207,7 +209,7 @@ async function prepareRevenue(tx: Prisma.TransactionClient, input: RevenueInput,
   const reason = emptyToNull(input.priceOverrideReason);
   if ((priceOverridden || amountOverridden || costAmountOverridden) && !reason) throw new AuthError("표준단가 또는 계산 금액과 다른 값에는 예외 사유가 필요합니다.", 400, "REVENUE_OVERRIDE_REASON_REQUIRED");
   return {
-    siteId: input.siteId, revenueDate: dbDate(input.revenueDate), sourceType: input.sourceType, itemId: item?.id ?? null,
+    siteId: input.siteId, contractCategoryId: input.contractCategoryId, revenueDate: dbDate(input.revenueDate), sourceType: input.sourceType, itemId: item?.id ?? null,
     title: input.title, description: emptyToNull(input.description), quantity: input.quantity, unit: item?.unit ?? emptyToNull(input.unit),
     standardSalesPriceSnapshot, appliedSalesPrice: input.appliedSalesPrice, salesAmount: input.salesAmount,
     standardCostPriceSnapshot, appliedCostPrice: input.appliedCostPrice, costAmount: input.costAmount ?? calculatedCost,

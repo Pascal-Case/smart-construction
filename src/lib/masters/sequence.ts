@@ -2,19 +2,21 @@ import type { Prisma } from "@/generated/prisma/client";
 
 export async function nextBusinessCode(
   tx: Prisma.TransactionClient,
-  key: "site" | "item" | "contract",
+  key: "site" | "item" | "contract" | "contractCategory",
 ) {
   let sequence = await tx.businessSequence.upsert({
     where: { key },
     create: { key, value: 1 },
     update: { value: { increment: 1 } },
   });
-  const prefix = key === "site" ? "SITE" : key === "item" ? "ITEM" : "CONTRACT";
+  const prefix = key === "site" ? "SITE" : key === "item" ? "ITEM" : key === "contractCategory" ? "CONTRACT-TYPE" : "CONTRACT";
   const codes = key === "site"
     ? await tx.site.findMany({ where: { code: { startsWith: `${prefix}-` } }, select: { code: true } })
     : key === "item"
       ? await tx.item.findMany({ where: { code: { startsWith: `${prefix}-` } }, select: { code: true } })
-      : await tx.contract.findMany({ where: { contractNo: { startsWith: `${prefix}-` } }, select: { contractNo: true } });
+      : key === "contractCategory"
+        ? await tx.contractCategory.findMany({ where: { code: { startsWith: `${prefix}-` } }, select: { code: true } })
+        : await tx.contract.findMany({ where: { contractNo: { startsWith: `${prefix}-` } }, select: { contractNo: true } });
   const codePattern = new RegExp(`^${prefix}-(\\d+)$`);
   const highestExisting = codes.reduce((highest, row) => {
     const code = "code" in row ? row.code : row.contractNo;

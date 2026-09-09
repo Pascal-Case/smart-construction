@@ -19,16 +19,17 @@ describe("registration workflow contract", () => {
     expect(source).toContain('defaultValue={row?.status ?? "ACTIVE"}');
   });
 
-  it("계약 편집기는 자동 번호를 사용하고 현장·계약명·상태 다음 줄에 메모를 배치한다", () => {
+  it("계약 편집기는 자동 번호를 사용하고 현장·계약 구분·계약명·상태 다음 줄에 메모를 배치한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
     const editor = source.split("function ContractEditor")[1].split("function newLine")[0];
 
     expect(editor).not.toContain('label="계약번호"');
     expect(editor).not.toContain('data.get("contractNo")');
     expect(editor).toContain("계약번호는 순번에 따라 자동 생성됩니다.");
-    expect(editor).toContain('className="md:col-span-3" label="메모"');
+    expect(editor).toContain('className="md:col-span-4" label="메모"');
     const orderedFields = [
       '<Label htmlFor="siteId">현장</Label>',
+      '<Label htmlFor="contractCategoryId">계약 구분</Label>',
       'label="계약명" name="title"',
       '<Label htmlFor="status">상태</Label>',
       'label="메모" name="memo"',

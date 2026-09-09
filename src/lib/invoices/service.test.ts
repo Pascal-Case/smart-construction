@@ -45,6 +45,7 @@ const source = {
   id: "invoice-old",
   invoiceNo: "I-OLD",
   siteId: "site-1",
+  contractCategoryId: "category-1",
   periodStart: new Date("2026-07-01T00:00:00.000Z"),
   periodEnd: new Date("2026-07-31T23:59:59.999Z"),
   issueDate: new Date("2026-07-20T00:00:00.000Z"),
@@ -82,6 +83,7 @@ describe("invoice replacement service", () => {
       id: source.id,
       invoiceNo: source.invoiceNo,
       version: source.version,
+      contractCategoryId: source.contractCategoryId,
       subtotal: source.subtotal,
       revenueLinks: source.revenueLinks,
     }]);
@@ -89,7 +91,7 @@ describe("invoice replacement service", () => {
     mocks.contractFindMany.mockResolvedValue([{ id: "contract-missing", contractNo: "C-NEW", title: "말일 추가 계약" }]);
     mocks.resolveTemplate.mockResolvedValue({ id: "system-default", version: 1, name: "기본", config: DEFAULT_INVOICE_TEMPLATE_CONFIG, configJson: JSON.stringify(DEFAULT_INVOICE_TEMPLATE_CONFIG) });
     mocks.nextInvoiceNo.mockResolvedValue("I-NEW");
-    mocks.invoiceCreate.mockResolvedValue({ id: "invoice-new", invoiceNo: "I-NEW", siteId: "site-1", subtotal: 300_000, taxAmount: 30_000, totalAmount: 330_000 });
+    mocks.invoiceCreate.mockResolvedValue({ id: "invoice-new", invoiceNo: "I-NEW", siteId: "site-1", contractCategoryId: "category-1", subtotal: 300_000, taxAmount: 30_000, totalAmount: 330_000 });
     mocks.lineCreate.mockImplementation(({ data }: { data: { itemName: string } }) => Promise.resolve({ id: `line-${data.itemName}` }));
     mocks.linkCreateMany.mockResolvedValue({ count: 1 });
     mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
@@ -114,20 +116,29 @@ describe("invoice replacement service", () => {
     })]);
   });
 
+  it("계약 구분 또는 대표 품목 snapshot만 바뀐 재마감도 대체 대상으로 분류한다", async () => {
+    mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 300_000, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] }]);
+    mocks.rootRevenueFindMany.mockResolvedValue([{ id: "r1", currentInvoiceDocumentId: source.id }, { id: "r2", currentInvoiceDocumentId: source.id }]);
+
+    expect(await getInvoiceCandidates({ month: "2026-07", siteId: "" })).toMatchObject({
+      rows: [expect.objectContaining({ kind: "REPLACEMENT", sourceInvoiceId: source.id })],
+    });
+  });
+
   it("previews every confirmed revenue in the source period and reports missing-contract warnings", async () => {
     const preview = await previewReplacementInvoice(source.id, settings);
 
     expect(preview.expectedRevenueEntryIds).toEqual(["r1", "r2"]);
-    expect(preview.document).toMatchObject({ siteId: "site-1", subtotal: 300_000, periodStart: "2026-07-01", periodEnd: "2026-07-31" });
+    expect(preview.documents).toEqual([expect.objectContaining({ siteId: "site-1", subtotal: 300_000, periodStart: "2026-07-01", periodEnd: "2026-07-31" })]);
     expect(preview.warnings).toEqual([{ id: "contract-missing", contractNo: "C-NEW", title: "말일 추가 계약" }]);
   });
 
   it("atomically creates a new snapshot, supersedes the current document, and moves active revenue pointers", async () => {
-    const document = await replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1", "r2"] });
+    const documents = await replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1", "r2"] });
 
-    expect(document).toMatchObject({ id: "invoice-new", invoiceNo: "I-NEW" });
+    expect(documents).toEqual([expect.objectContaining({ id: "invoice-new", invoiceNo: "I-NEW" })]);
     expect(mocks.invoiceUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: { in: [source.id] }, status: "ISSUED" },
+      where: { id: source.id, status: "ISSUED" },
       data: expect.objectContaining({ status: "SUPERSEDED", supersededByInvoiceId: "invoice-new" }),
     }));
     expect(mocks.revenueUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { currentInvoiceDocumentId: "invoice-new" } }));
@@ -179,7 +190,7 @@ describe("invoice replacement service", () => {
     ]);
 
     await expect(previewReplacementInvoice(source.id, settings)).resolves.toMatchObject({
-      document: { subtotal: 300_000 },
+      documents: [expect.objectContaining({ subtotal: 300_000 })],
     });
   });
 
@@ -274,7 +285,7 @@ function closeCycle() {
     totalSalesAmount: 300_000,
     revenueFingerprint: "a".repeat(64),
     snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }),
-    invoiceDocument: null,
+    invoiceDocuments: [],
     monthlyClose: {
       id: "close-1",
       siteId: "site-1",
@@ -300,7 +311,9 @@ function candidate(id: string, title: string, salesAmount: number, currentInvoic
     salesAmount,
     sourceType: "CONTRACT" as const,
     currentInvoiceDocumentId,
+    contractCategoryId: "category-1",
+    contractCategory: { code: "CONTRACT-TYPE-0001", name: "스마트건설안전" },
     site: { code: "S1", name: "강남 현장", address: "서울" },
-    item: { name: title, specification: null },
+    item: { name: title, specification: null, invoiceDisplayItem: null },
   };
 }

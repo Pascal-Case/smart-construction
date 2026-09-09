@@ -22,27 +22,32 @@ if not exist ".env" (
   if errorlevel 1 goto :failed
 )
 
-echo [1/5] 프로그램 구성요소를 설치합니다.
+echo [1/6] 프로그램 구성요소를 설치합니다.
 call npm.cmd ci
 if errorlevel 1 goto :failed
 
 echo.
-echo [2/5] 환경설정을 확인합니다.
+echo [2/6] 환경설정을 확인합니다.
 call npm.cmd run env:check
 if errorlevel 1 goto :failed
 
 echo.
-echo [3/5] 데이터베이스 코드를 생성합니다.
+echo [3/6] 데이터베이스 코드를 생성합니다.
 call npm.cmd run db:generate
 if errorlevel 1 goto :failed
 
 echo.
-echo [4/5] 데이터베이스를 준비합니다.
+echo [4/6] 기존 데이터베이스를 백업하고 무결성을 확인합니다.
+call npm.cmd run ops:pre-deploy-backup
+if errorlevel 1 goto :failed
+
+echo.
+echo [5/6] 데이터베이스를 준비합니다.
 call npm.cmd run db:deploy
 if errorlevel 1 goto :failed
 
 echo.
-echo [5/5] 운영용 프로그램을 빌드합니다.
+echo [6/6] 운영용 프로그램을 빌드합니다.
 call npm.cmd run build
 if errorlevel 1 goto :failed
 

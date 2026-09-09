@@ -8,8 +8,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const actor = await requireUser([UserRole.ADMIN, UserRole.MANAGER]);
     const { id } = await context.params;
-    const document = await replaceInvoice(actor, id, invoiceReplacementIssueInputSchema.parse(await request.json()));
-    return Response.json({ document }, { status: 201 });
+    const documents = await replaceInvoice(actor, id, invoiceReplacementIssueInputSchema.parse(await request.json()));
+    return Response.json({ documents }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

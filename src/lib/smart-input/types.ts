@@ -66,6 +66,7 @@ export type SmartInputPreview = {
 };
 
 export type SmartInputAppliedDraft = {
+  contractCategoryId?: string;
   billingMethod: SmartContractBillingMethod;
   siteId: string;
   itemId: string | null;

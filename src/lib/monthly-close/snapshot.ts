@@ -9,6 +9,11 @@ type SnapshotInput = {
     status: "DRAFT" | "CONFIRMED" | "CANCELED";
     salesAmount: number;
     costAmount: number | null;
+    contractCategoryId?: string | null;
+    contractCategoryCode?: string | null;
+    contractCategoryName?: string | null;
+    invoiceDisplayItemId?: string | null;
+    invoiceDisplayItemName?: string | null;
   }>;
   expectedContractRevenues: Array<{ generatedKey: string; salesAmount: number }>;
   exceptions: Array<{ key: string; kind: string; blocking: boolean; fingerprint: string }>;
@@ -22,6 +27,11 @@ export function buildCloseCycleSnapshot(input: SnapshotInput) {
       version: row.version,
       salesAmount: row.salesAmount,
       costAmount: row.costAmount ?? 0,
+      contractCategoryId: row.contractCategoryId ?? null,
+      contractCategoryCode: row.contractCategoryCode ?? null,
+      contractCategoryName: row.contractCategoryName ?? null,
+      invoiceDisplayItemId: row.invoiceDisplayItemId ?? null,
+      invoiceDisplayItemName: row.invoiceDisplayItemName ?? null,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
   const expectedContractRevenues = [...input.expectedContractRevenues]

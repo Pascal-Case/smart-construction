@@ -1,10 +1,13 @@
 [CmdletBinding()]
-param([string]$DatabasePath, [string]$BackupDirectory, [string]$SqliteExe, [ValidateRange(0, 3650)][int]$RetentionDays = 30)
+param([string]$DatabasePath, [string]$BackupDirectory, [string]$SqliteExe, [ValidateRange(0, 3650)][int]$RetentionDays = 30, [switch]$SkipIfMissing)
 
 . (Join-Path $PSScriptRoot "lib\SmartConstruction.Common.ps1")
 $root = Get-SmartConstructionRoot
 $database = Resolve-SmartConstructionDatabase -DatabasePath $DatabasePath
-if (-not (Test-Path -LiteralPath $database)) { throw "백업할 DB가 없습니다: $database" }
+if (-not (Test-Path -LiteralPath $database)) {
+    if ($SkipIfMissing) { Write-Host "새 설치이므로 백업할 기존 데이터베이스가 없습니다."; return }
+    throw "백업할 DB가 없습니다: $database"
+}
 $sqlite = Resolve-SqliteExecutable -SqliteExe $SqliteExe
 $backupRoot = if ($BackupDirectory) { Resolve-SmartConstructionPath -Path $BackupDirectory -BasePath $root } else { Join-Path $root "data\backups" }
 New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null

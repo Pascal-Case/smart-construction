@@ -16,6 +16,7 @@ describe("contract period", () => {
   it("계약 헤더 기간을 받지 않고 이전 요청의 헤더 기간도 안전하게 무시한다", () => {
     const result = contractInputSchema.parse({
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "계약",
       startDate: "2000-01-01",
       endDate: "2100-12-31",
@@ -30,6 +31,7 @@ describe("contract period", () => {
   it("공개 청구 방식과 월 단위 기간을 받고 legacy 선택은 거부한다", () => {
     const result = contractInputSchema.parse({
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "계약",
       status: "ACTIVE",
       lines: [{ ...lines[0], billingMethod: "MONTHLY_RECURRING", revenueStartDate: "2026-03", revenueEndDate: "2026-08" }],
@@ -37,6 +39,7 @@ describe("contract period", () => {
     expect(result.lines[0]).toMatchObject({ billingMethod: "MONTHLY_RECURRING", revenueStartDate: "2026-03", revenueEndDate: "2026-08" });
     expect(() => contractInputSchema.parse({
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "계약",
       status: "ACTIVE",
       lines: [{ ...lines[0], billingMethod: "LEGACY_TOTAL" }],

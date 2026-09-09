@@ -7,6 +7,7 @@ describe("contract input schema", () => {
     const parsed = contractCreateInputSchema.parse({
       contractNo: "MANUAL-0001",
       siteId: "site-1",
+      contractCategoryId: "category-1",
       title: "강남 현장 계약",
       status: "ACTIVE",
       lines: [{

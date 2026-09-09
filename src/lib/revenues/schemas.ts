@@ -5,6 +5,7 @@ const optionalMoney = z.number().int().min(-2_000_000_000).max(2_000_000_000).op
 
 export const revenueInputSchema = z.object({
   siteId: z.string().min(1, "현장을 선택해 주세요."),
+  contractCategoryId: z.string().min(1, "계약 구분을 선택해 주세요."),
   revenueDate: z.iso.date(),
   sourceType: z.enum(["MANUAL", "ADJUSTMENT"]),
   itemId: z.string().optional().nullable(),

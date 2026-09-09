@@ -50,6 +50,7 @@ type InvoiceRow = {
   periodStart: string;
   periodEnd: string;
   recipientName: string;
+  contractCategoryName: string | null;
   subtotal: number;
   taxAmount: number;
   totalAmount: number;
@@ -129,6 +130,7 @@ type PreviewResult = {
   kind: "NEW" | "REPLACEMENT";
   outcome: "PREVIEWED" | "BLOCKED";
   document?: PreviewDocument;
+  documents?: PreviewDocument[];
   commitTarget?: IssuePayload["targets"][number];
   currentInvoices?: Array<{ id: string; invoiceNo: string; version: number }>;
   warnings?: Array<{ id: string; contractNo: string; title: string }>;
@@ -145,7 +147,7 @@ type ReplacementState = {
   memo: string;
   templateId: string;
   preview: {
-    document: PreviewDocument;
+    documents: PreviewDocument[];
     expectedRevenueEntryIds: string[];
     warnings: Array<{ id: string; contractNo: string; title: string }>;
   } | null;
@@ -285,13 +287,14 @@ export function InvoiceManager({
         targetKey: string;
         outcome: "ISSUED" | "BLOCKED" | "ALREADY_ISSUED";
         document?: { id: string };
+        documents?: Array<{ id: string }>;
         error?: { message: string };
       }>;
-      const ids = results.flatMap((result) => result.outcome === "ISSUED" && result.document ? [result.document.id] : []);
+      const ids = results.flatMap((result) => result.outcome === "ISSUED" ? (result.documents?.map((document) => document.id) ?? (result.document ? [result.document.id] : [])) : []);
       const blocked = results.filter((result) => result.outcome === "BLOCKED").length;
       const alreadyIssued = results.filter((result) => result.outcome === "ALREADY_ISSUED").length;
       const summary = `발행 ${ids.length} · 차단 ${blocked} · 이미 발행 ${alreadyIssued}`;
-      if (ids.length === results.length) toast.success(summary);
+      if (blocked === 0 && alreadyIssued === 0) toast.success(summary);
       else toast.warning(summary);
       const reconciled = reconcileIssueResults(selected, results);
       setPreview(null);
@@ -337,7 +340,7 @@ export function InvoiceManager({
       setReplacement((current) => current ? {
         ...current,
         preview: {
-          document: body.document,
+          documents: body.documents,
           expectedRevenueEntryIds: body.expectedRevenueEntryIds,
           warnings: body.warnings,
         },
@@ -371,10 +374,11 @@ export function InvoiceManager({
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "거래명세표를 대체 발행하지 못했습니다.");
-      toast.success(`${replacement.source.invoiceNo}을(를) ${body.document.invoiceNo}(으)로 대체했습니다.`);
+      const invoiceNos = body.documents.map((document: { invoiceNo: string }) => document.invoiceNo).join(", ");
+      toast.success(`${replacement.source.invoiceNo}을(를) ${invoiceNos}(으)로 대체했습니다.`);
       setReplacement(null);
       await Promise.all([candidates ? loadCandidates() : Promise.resolve(), loadInvoices(1)]);
-      window.open(`/invoices/print?ids=${body.document.id}`, "_blank", "noopener,noreferrer");
+      window.open(`/invoices/print?ids=${body.documents.map((document: { id: string }) => document.id).join(",")}`, "_blank", "noopener,noreferrer");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "거래명세표를 대체 발행하지 못했습니다.");
     } finally {
@@ -491,11 +495,11 @@ export function InvoiceManager({
       </div>
       <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
-          <TableHeader><TableRow><TableHead>발행번호</TableHead><TableHead>상태</TableHead><TableHead>발행일</TableHead><TableHead>수신처</TableHead><TableHead>매출기간</TableHead><TableHead>원장/표시행</TableHead><TableHead className="text-right">공급가액</TableHead><TableHead>방식</TableHead><TableHead>최종수정일</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
-          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={10} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" ? "opacity-65" : undefined}>
+          <TableHeader><TableRow><TableHead>발행번호</TableHead><TableHead>상태</TableHead><TableHead>발행일</TableHead><TableHead>수신처</TableHead><TableHead>계약 구분</TableHead><TableHead>매출기간</TableHead><TableHead>원장/표시행</TableHead><TableHead className="text-right">공급가액</TableHead><TableHead>방식</TableHead><TableHead>최종수정일</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
+          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={11} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" ? "opacity-65" : undefined}>
             <TableCell className="font-mono text-xs">{row.invoiceNo}{row.supersededBy && <span className="block font-sans text-[11px] text-muted-foreground">→ {row.supersededBy.invoiceNo}</span>}</TableCell>
             <TableCell><Badge variant={row.status === "ISSUED" ? "secondary" : "outline"}>{row.status === "ISSUED" ? "유효" : row.status === "SUPERSEDED" ? "대체됨" : "작성 중"}</Badge></TableCell>
-            <TableCell>{row.issueDate.slice(0, 10)}</TableCell><TableCell>{row.recipientName}</TableCell>
+            <TableCell>{row.issueDate.slice(0, 10)}</TableCell><TableCell>{row.recipientName}</TableCell><TableCell>{row.contractCategoryName ?? "-"}</TableCell>
             <TableCell className="text-xs">{row.periodStart.slice(0, 10)} ~ {row.periodEnd.slice(0, 10)}{row.monthlyCloseCycle && <span className="block text-muted-foreground">마감 {row.monthlyCloseCycle.cycleNo}회차 근거</span>}</TableCell>
             <TableCell>{row._count.revenueLinks}/{row._count.lines}</TableCell>
             <TableCell className="text-right font-medium tabular-nums">{row.subtotal.toLocaleString()}</TableCell>
@@ -519,7 +523,7 @@ export function InvoiceManager({
         <DialogHeader><DialogTitle>거래명세표 발행 미리보기</DialogTitle><DialogDescription>전체 {preview.summary.total}건 · 신규 {preview.summary.newCount}건 · 대체 {preview.summary.replacementCount}건 · 차단 {preview.summary.blockedCount}건을 확인하세요.</DialogDescription></DialogHeader>
         {preview.results.some((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED") && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong>대체될 현재 발행본</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED" ? (result.currentInvoices ?? []).map((invoice) => <li key={`${result.targetKey}:${invoice.id}`}>{invoice.invoiceNo}</li>) : [])}</ul></div>}
         {preview.results.some((result) => result.outcome === "BLOCKED") && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"><strong>미리보기에서 제외된 대상</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.outcome === "BLOCKED" ? [<li key={result.targetKey}>{result.error?.message ?? "최신 상태를 확인해 주세요."}</li>] : [])}</ul></div>}
-        <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={preview.results.flatMap((result) => result.outcome === "PREVIEWED" && result.document ? [result.document] : []).map(toPrintPreview)} /></div>
+        <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={preview.results.flatMap((result) => result.outcome === "PREVIEWED" ? (result.documents ?? (result.document ? [result.document] : [])) : []).map(toPrintPreview)} /></div>
         <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPreview(null)}>돌아가기</Button><Button disabled={busy || !pending?.targets.length} onClick={() => void issue()}><FileCheck2 data-icon="inline-start" />{busy ? "발행 중..." : `${pending?.targets.length ?? 0}건 발행`}</Button></div>
       </DialogContent>
     </Dialog>}
@@ -535,7 +539,7 @@ export function InvoiceManager({
         </div>
         {replacement.preview ? <>
           <div className="rounded-lg border bg-muted/40 p-3 text-sm"><strong>재마감 매출 {replacement.preview.expectedRevenueEntryIds.length}건</strong>{replacement.preview.warnings.length > 0 && <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900"><p className="font-medium">확정 매출이 없는 진행 계약이 있습니다.</p><ul className="mt-1 list-disc pl-5">{replacement.preview.warnings.map((warning) => <li key={warning.id}>{warning.contractNo} · {warning.title}</li>)}</ul><p className="mt-1 text-xs">필요한 계약 매출을 생성·확정하고 재마감한 뒤 다시 미리보기하세요.</p></div>}</div>
-          <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={[toPrintPreview(replacement.preview.document, 0)]} /></div>
+          <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={replacement.preview.documents.map(toPrintPreview)} /></div>
         </> : <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">월을 되돌려 수정한 뒤 재마감한 회차가 있어야 대체 발행할 수 있습니다.</div>}
         <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setReplacement(null)}>취소</Button>{replacement.preview ? <><Button variant="outline" disabled={busy} onClick={() => updateReplacement({ preview: null })}>설정 변경</Button><Button disabled={busy} onClick={() => void replaceCurrentInvoice()}><FileCheck2 data-icon="inline-start" />{busy ? "대체 발행 중..." : "재마감 회차로 월 전체 대체 발행"}</Button></> : <Button disabled={busy} onClick={() => void showReplacementPreview()}><Eye data-icon="inline-start" />대체 발행 미리보기</Button>}</div>
       </DialogContent>

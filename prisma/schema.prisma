@@ -116,8 +116,8 @@ model AuditLog {
 }
 
 model Site {
-  id               String            @id @default(cuid())
-  code             String            @unique
+  id               String                        @id @default(cuid())
+  code             String                        @unique
   name             String
   customerName     String?
   address          String?
@@ -125,13 +125,13 @@ model Site {
   managerContact   String?
   startDate        DateTime?
   endDate          DateTime?
-  isActive         Boolean           @default(true)
+  isActive         Boolean                       @default(true)
   memo             String?
-  version          Int               @default(1)
+  version          Int                           @default(1)
   createdById      String
   updatedById      String
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
   aliases          SiteAlias[]
   contracts        Contract[]
   revenueEntries   RevenueEntry[]
@@ -156,25 +156,47 @@ model SiteAlias {
 }
 
 model Item {
-  id                 String         @id @default(cuid())
-  code               String         @unique
-  name               String
-  unit               String
-  standardSalesPrice Int            @default(0)
-  standardCostPrice  Int            @default(0)
-  isActive           Boolean        @default(true)
-  specification      String?
-  memo               String?
-  version            Int            @default(1)
-  createdById        String
-  updatedById        String
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  aliases            ItemAlias[]
-  contractLines      ContractLine[]
-  revenueEntries     RevenueEntry[]
+  id                    String         @id @default(cuid())
+  code                  String         @unique
+  name                  String
+  unit                  String
+  standardSalesPrice    Int            @default(0)
+  standardCostPrice     Int            @default(0)
+  isActive              Boolean        @default(true)
+  specification         String?
+  memo                  String?
+  invoiceDisplayItemId  String?
+  version               Int            @default(1)
+  createdById           String
+  updatedById           String
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  aliases               ItemAlias[]
+  contractLines         ContractLine[]
+  revenueEntries        RevenueEntry[]
+  invoiceDisplayItem    Item?          @relation("InvoiceDisplayItem", fields: [invoiceDisplayItemId], references: [id], onDelete: Restrict)
+  invoiceDisplaySources Item[]         @relation("InvoiceDisplayItem")
 
   @@index([name])
+  @@index([isActive, name])
+  @@index([invoiceDisplayItemId])
+}
+
+model ContractCategory {
+  id               String            @id @default(cuid())
+  code             String            @unique
+  name             String
+  normalizedName   String            @unique
+  isActive         Boolean           @default(true)
+  version          Int               @default(1)
+  createdById      String
+  updatedById      String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  contracts        Contract[]
+  revenueEntries   RevenueEntry[]
+  invoiceDocuments InvoiceDocument[]
+
   @@index([isActive, name])
 }
 
@@ -215,6 +237,7 @@ model Contract {
   id                     String                          @id @default(cuid())
   contractNo             String                          @unique
   siteId                 String
+  contractCategoryId     String?
   title                  String
   startDate              DateTime
   endDate                DateTime
@@ -226,11 +249,13 @@ model Contract {
   createdAt              DateTime                        @default(now())
   updatedAt              DateTime                        @updatedAt
   site                   Site                            @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  contractCategory       ContractCategory?               @relation(fields: [contractCategoryId], references: [id], onDelete: Restrict)
   lines                  ContractLine[]
   revenueEntries         RevenueEntry[]
   revenueGenerationQueue ContractRevenueGenerationQueue?
 
   @@index([siteId, status])
+  @@index([contractCategoryId])
   @@index([startDate, endDate])
   @@index([status, updatedAt])
 }
@@ -244,7 +269,7 @@ model ContractRevenueGenerationQueue {
 }
 
 model ContractLine {
-  id                         String         @id @default(cuid())
+  id                         String                    @id @default(cuid())
   contractId                 String
   itemId                     String
   description                String?
@@ -260,14 +285,14 @@ model ContractLine {
   priceOverriddenAt          DateTime?
   revenueStartDate           DateTime
   revenueEndDate             DateTime
-  isActive                   Boolean        @default(true)
-  sortOrder                  Int            @default(0)
+  isActive                   Boolean                   @default(true)
+  sortOrder                  Int                       @default(0)
   createdById                String
   updatedById                String
-  createdAt                  DateTime       @default(now())
-  updatedAt                  DateTime       @updatedAt
-  contract                   Contract       @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  item                       Item           @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+  contract                   Contract                  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  item                       Item                      @relation(fields: [itemId], references: [id], onDelete: Restrict)
   revenueEntries             RevenueEntry[]
 
   @@index([contractId, isActive, sortOrder])
@@ -278,6 +303,7 @@ model ContractLine {
 model RevenueEntry {
   id                         String               @id @default(cuid())
   siteId                     String
+  contractCategoryId         String?
   revenueDate                DateTime
   servicePeriodStart         DateTime?
   servicePeriodEnd           DateTime?
@@ -312,6 +338,7 @@ model RevenueEntry {
   updatedAt                  DateTime             @updatedAt
   currentInvoiceDocumentId   String?
   site                       Site                 @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  contractCategory           ContractCategory?    @relation(fields: [contractCategoryId], references: [id], onDelete: Restrict)
   contract                   Contract?            @relation(fields: [contractId], references: [id], onDelete: Restrict)
   contractLine               ContractLine?        @relation(fields: [contractLineId], references: [id], onDelete: Restrict)
   item                       Item?                @relation(fields: [itemId], references: [id], onDelete: Restrict)
@@ -322,6 +349,7 @@ model RevenueEntry {
   @@index([siteId, revenueDate])
   @@index([sourceType, status])
   @@index([contractId])
+  @@index([contractCategoryId])
   @@index([contractLineId])
   @@index([currentInvoiceDocumentId])
 }
@@ -344,17 +372,17 @@ model MonthlyMemo {
 }
 
 model MonthlyClose {
-  id             String            @id @default(cuid())
-  siteId         String
-  month          String
-  state          MonthlyCloseState @default(OPEN)
-  latestCycleNo  Int               @default(0)
-  version        Int               @default(1)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  site           Site              @relation(fields: [siteId], references: [id], onDelete: Restrict)
-  cycles         MonthlyCloseCycle[]
-  reopens        MonthlyCloseReopen[]
+  id            String               @id @default(cuid())
+  siteId        String
+  month         String
+  state         MonthlyCloseState    @default(OPEN)
+  latestCycleNo Int                  @default(0)
+  version       Int                  @default(1)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  site          Site                 @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  cycles        MonthlyCloseCycle[]
+  reopens       MonthlyCloseReopen[]
 
   @@unique([siteId, month])
   @@index([month, state])
@@ -377,7 +405,7 @@ model MonthlyCloseCycle {
   createdAt            DateTime             @default(now())
   monthlyClose         MonthlyClose         @relation(fields: [monthlyCloseId], references: [id], onDelete: Restrict)
   reopens              MonthlyCloseReopen[]
-  invoiceDocument      InvoiceDocument?     @relation("InvoiceCloseCycle")
+  invoiceDocuments     InvoiceDocument[]    @relation("InvoiceCloseCycle")
 
   @@unique([monthlyCloseId, cycleNo])
   @@index([closedAt])
@@ -465,6 +493,10 @@ model InvoiceDocument {
   id                             String               @id @default(cuid())
   invoiceNo                      String               @unique
   siteId                         String
+  contractCategoryId             String?
+  contractCategoryCode           String?
+  contractCategoryName           String?
+  closeRevenueFingerprint        String?
   periodStart                    DateTime
   periodEnd                      DateTime
   issueDate                      DateTime
@@ -494,18 +526,21 @@ model InvoiceDocument {
   issuedAt                       DateTime
   supersededAt                   DateTime?
   supersededByInvoiceId          String?
-  monthlyCloseCycleId            String?              @unique
+  monthlyCloseCycleId            String?
   createdAt                      DateTime             @default(now())
   updatedAt                      DateTime             @updatedAt
   site                           Site                 @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  contractCategory               ContractCategory?    @relation(fields: [contractCategoryId], references: [id], onDelete: Restrict)
   lines                          InvoiceLine[]
   revenueLinks                   InvoiceRevenueLink[]
   currentRevenueEntries          RevenueEntry[]       @relation("CurrentInvoiceRevenues")
-  supersededBy                   InvoiceDocument?      @relation("InvoiceReplacement", fields: [supersededByInvoiceId], references: [id], onDelete: Restrict)
-  supersedes                     InvoiceDocument[]     @relation("InvoiceReplacement")
-  monthlyCloseCycle              MonthlyCloseCycle?    @relation("InvoiceCloseCycle", fields: [monthlyCloseCycleId], references: [id], onDelete: Restrict)
+  supersededBy                   InvoiceDocument?     @relation("InvoiceReplacement", fields: [supersededByInvoiceId], references: [id], onDelete: Restrict)
+  supersedes                     InvoiceDocument[]    @relation("InvoiceReplacement")
+  monthlyCloseCycle              MonthlyCloseCycle?   @relation("InvoiceCloseCycle", fields: [monthlyCloseCycleId], references: [id], onDelete: Restrict)
 
   @@index([siteId, issueDate])
+  @@index([contractCategoryId])
+  @@index([monthlyCloseCycleId])
   @@index([status, issuedAt])
   @@index([periodStart, periodEnd])
   @@index([supersededByInvoiceId])
@@ -537,10 +572,10 @@ model InvoiceRevenueLink {
   invoiceLine       InvoiceLine     @relation(fields: [invoiceLineId], references: [id], onDelete: Cascade)
   revenueEntry      RevenueEntry    @relation(fields: [revenueEntryId], references: [id], onDelete: Restrict)
 
+  @@unique([invoiceDocumentId, revenueEntryId])
   @@index([invoiceDocumentId])
   @@index([invoiceLineId])
   @@index([revenueEntryId])
-  @@unique([invoiceDocumentId, revenueEntryId])
 }
 
 model SystemSetting {

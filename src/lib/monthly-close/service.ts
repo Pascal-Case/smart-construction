@@ -294,6 +294,10 @@ async function loadEvaluationContext(tx: Prisma.TransactionClient, siteId: strin
     }),
     tx.revenueEntry.findMany({
       where: { siteId, revenueDate: { gte: start, lte: end } },
+      include: {
+        contractCategory: { select: { code: true, name: true } },
+        item: { select: { id: true, name: true, invoiceDisplayItem: { select: { id: true, name: true } }, invoiceDisplaySources: { select: { id: true }, take: 1 } } },
+      },
       orderBy: [{ revenueDate: "asc" }, { createdAt: "asc" }],
     }),
     tx.monthlyCloseExceptionReview.findMany({ where: { siteId, month }, orderBy: { reviewedAt: "asc" } }),
@@ -340,6 +344,7 @@ async function loadEvaluationContext(tx: Prisma.TransactionClient, siteId: strin
     status: row.status,
     generatedKey: row.generatedKey,
     contractId: row.contractId,
+    contractCategoryId: row.contractCategoryId,
     contractLineId: row.contractLineId,
     itemId: row.itemId,
     title: row.title,
@@ -349,6 +354,10 @@ async function loadEvaluationContext(tx: Prisma.TransactionClient, siteId: strin
     salesAmount: row.salesAmount,
     costAmount: row.costAmount,
     priceOverrideReason: row.priceOverrideReason,
+    contractCategoryCode: row.contractCategory?.code ?? null,
+    contractCategoryName: row.contractCategory?.name ?? null,
+    invoiceDisplayItemId: row.item?.invoiceDisplayItem?.id ?? (row.item?.invoiceDisplaySources.length ? row.item.id : null),
+    invoiceDisplayItemName: row.item?.invoiceDisplayItem?.name ?? (row.item?.invoiceDisplaySources.length ? row.item.name : null),
   }));
   const latestCycle = close?.cycles[0] ?? null;
   const evaluationInput: MonthCloseEvaluationInput = {

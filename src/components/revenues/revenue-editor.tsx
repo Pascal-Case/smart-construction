@@ -12,9 +12,11 @@ import type { SmartInputAppliedDraft } from "@/lib/smart-input/types";
 
 export type RevenueEditorSite = { id: string; name: string; isActive: boolean };
 export type RevenueEditorItem = { id: string; name: string; unit: string; standardSalesPrice: number; standardCostPrice: number; isActive: boolean };
+export type RevenueEditorContractCategory = { id: string; name: string; isActive: boolean };
 export type RevenueEditorRow = {
   id: string;
   siteId: string;
+  contractCategoryId: string | null;
   revenueDate: string;
   sourceType: "CONTRACT" | "MANUAL" | "ADJUSTMENT";
   itemId: string | null;
@@ -36,6 +38,7 @@ export function RevenueEditor({
   draft,
   sites,
   items,
+  contractCategories,
   initialContext,
   onClose,
   onSaved,
@@ -44,12 +47,14 @@ export function RevenueEditor({
   draft: SmartInputAppliedDraft | null;
   sites: RevenueEditorSite[];
   items: RevenueEditorItem[];
+  contractCategories: RevenueEditorContractCategory[];
   initialContext?: RevenueEditorContext;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [sourceType, setSourceType] = useState<"MANUAL" | "ADJUSTMENT">(row?.sourceType === "ADJUSTMENT" ? "ADJUSTMENT" : "MANUAL");
   const [itemId, setItemId] = useState(row?.itemId ?? draft?.itemId ?? "");
+  const [contractCategoryId, setContractCategoryId] = useState(row?.contractCategoryId ?? draft?.contractCategoryId ?? contractCategories.find((category) => category.isActive)?.id ?? "");
   const [quantity, setQuantity] = useState<number | "">(row?.quantity ?? draft?.quantity ?? "");
   const [salesPrice, setSalesPrice] = useState<number | "">(row?.appliedSalesPrice ?? draft?.appliedSalesPrice ?? "");
   const [costPrice, setCostPrice] = useState<number | "">(row?.appliedCostPrice ?? draft?.appliedCostPrice ?? "");
@@ -83,6 +88,7 @@ export function RevenueEditor({
     const saveStatus = row ? "DRAFT" : submitter?.value === "DRAFT" ? "DRAFT" : "CONFIRMED";
     const body = {
       siteId: data.get("siteId"),
+      contractCategoryId,
       revenueDate: data.get("revenueDate"),
       sourceType,
       itemId: itemId || null,
@@ -136,6 +142,7 @@ export function RevenueEditor({
           )}
           <SelectName label="유형" name="sourceType" value={sourceType} onChange={(value) => setSourceType(value as "MANUAL" | "ADJUSTMENT")} options={[{ value: "MANUAL", label: "직접 매출" }, { value: "ADJUSTMENT", label: "조정(음수 가능)" }]} />
           <SelectName label="현장" name="siteId" defaultValue={defaultSiteId} options={sites.map((site) => ({ value: site.id, label: site.name }))} />
+          <SelectName label="계약 구분" name="contractCategoryId" value={contractCategoryId} onChange={setContractCategoryId} options={contractCategories.filter((category) => category.isActive || category.id === contractCategoryId).map((category) => ({ value: category.id, label: category.name }))} />
           <FormField label="매출일" name="revenueDate" type="date" defaultValue={defaultRevenueDate} min={monthBounds?.min} max={monthBounds?.max} required />
           <FormField label="제목" name="title" defaultValue={row?.title ?? draft?.title ?? ""} required />
           <div className="space-y-1.5 sm:col-span-2"><Label>품목(선택)</Label><select value={itemId} onChange={(event) => selectItem(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="">품목 없이 자유 입력</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>

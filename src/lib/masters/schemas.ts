@@ -31,6 +31,7 @@ export const itemInputSchema = z.object({
   standardCostPrice: z.number().int().min(0).max(2_000_000_000),
   isActive: z.boolean().default(true),
   memo: nullableText,
+  invoiceDisplayItemId: z.string().optional().nullable(),
   aliases,
 });
 
