@@ -23,8 +23,18 @@ if not exist ".env" (
 )
 
 echo [1/6] 프로그램 구성요소를 설치합니다.
+set INSTALL_ATTEMPT=0
+:install_dependencies
 call npm.cmd ci
-if errorlevel 1 goto :failed
+if not errorlevel 1 goto :dependencies_installed
+set /a INSTALL_ATTEMPT+=1
+if %INSTALL_ATTEMPT% GEQ 3 goto :failed
+echo.
+echo [재시도] 다른 프로그램이 설치 파일을 사용 중일 수 있습니다. 3초 후 다시 시도합니다. (%INSTALL_ATTEMPT%/3)
+timeout /t 3 /nobreak >nul
+goto :install_dependencies
+
+:dependencies_installed
 
 echo.
 echo [2/6] 환경설정을 확인합니다.
