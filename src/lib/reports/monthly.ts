@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
-import { enumerateMonths, monthlyReportQuerySchema } from "@/lib/reports/monthly-query";
+import { enumerateMonths, monthlyReportQuerySchema, monthlyRevenueScope } from "@/lib/reports/monthly-query";
 import type { z } from "zod";
 
 export { monthlyReportQuerySchema } from "@/lib/reports/monthly-query";
@@ -13,7 +13,7 @@ export async function getMonthlyReport(input: z.infer<typeof monthlyReportQueryS
   const endDate = new Date(Date.UTC(endYear, endMonth, 0, 23, 59, 59, 999));
   const [sites, entries, memos] = await prisma.$transaction([
     prisma.site.findMany({ where: input.siteId ? { id: input.siteId } : { OR: [{ isActive: true }, { revenueEntries: { some: { revenueDate: { gte: startDate, lte: endDate } } } }, { monthlyMemos: { some: { month: { in: months } } } }] }, select: { id: true, code: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.revenueEntry.findMany({ where: { ...(input.siteId ? { siteId: input.siteId } : {}), revenueDate: { gte: startDate, lte: endDate }, status: { not: "CANCELED" } }, select: { id: true, siteId: true, revenueDate: true, sourceType: true, status: true, title: true, quantity: true, unit: true, appliedSalesPrice: true, salesAmount: true, costAmount: true, item: { select: { name: true } } }, orderBy: [{ revenueDate: "asc" }, { createdAt: "asc" }] }),
+    prisma.revenueEntry.findMany({ where: { ...monthlyRevenueScope(input), revenueDate: { gte: startDate, lte: endDate }, status: { not: "CANCELED" } }, select: { id: true, siteId: true, revenueDate: true, sourceType: true, status: true, title: true, quantity: true, unit: true, appliedSalesPrice: true, salesAmount: true, costAmount: true, item: { select: { name: true } } }, orderBy: [{ revenueDate: "asc" }, { createdAt: "asc" }] }),
     prisma.monthlyMemo.findMany({ where: { ...(input.siteId ? { siteId: input.siteId } : {}), month: { in: months } }, select: { siteId: true, month: true } }),
   ]);
   const memoKeys = new Set(memos.map((memo) => `${memo.siteId}:${memo.month}`));

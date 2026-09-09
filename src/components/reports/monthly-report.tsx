@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Maximize2, MessageSquare, Minimize2, Plus, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Download, Maximize2, MessageSquare, Minimize2, Plus, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -105,6 +105,7 @@ export function MonthlyReport({
   const [startMonth, setStartMonth] = useState(initialData.startMonth);
   const [endMonth, setEndMonth] = useState(initialData.endMonth);
   const [siteId, setSiteId] = useState("");
+  const [contractCategoryId, setContractCategoryId] = useState("");
   const [metric, setMetric] = useState<Metric>("salesAmount");
   const [loading, setLoading] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
@@ -122,7 +123,7 @@ export function MonthlyReport({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ startMonth, endMonth, siteId });
+      const params = new URLSearchParams({ startMonth, endMonth, siteId, contractCategoryId });
       const response = await fetch(`/api/reports/monthly?${params}`);
       const body = await response.json();
       if (!response.ok)
@@ -139,7 +140,7 @@ export function MonthlyReport({
     } finally {
       setLoading(false);
     }
-  }, [startMonth, endMonth, siteId]);
+  }, [startMonth, endMonth, siteId, contractCategoryId]);
   useRealtimeRefresh(
     ["monthlyMemo.changed", "revenue.changed"],
     () => void load(),
@@ -159,7 +160,7 @@ export function MonthlyReport({
       {focusMode && <DialogHeader><DialogTitle className="text-2xl">월별 현황과 메모</DialogTitle><DialogDescription>월별 집계 집중 보기</DialogDescription></DialogHeader>}
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 xl:flex-row xl:items-end">
         <form
-          className="grid flex-1 gap-3 sm:grid-cols-4 sm:items-end"
+          className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end"
           onSubmit={(event) => {
             event.preventDefault();
             void load();
@@ -186,12 +187,25 @@ export function MonthlyReport({
               ))}
             </select>
           </div>
+          <div className="space-y-1.5">
+            <Label>계약 구분</Label>
+            <select value={contractCategoryId} onChange={(event) => setContractCategoryId(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-3 text-sm">
+              <option value="">전체 계약 구분</option>
+              {contractCategories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.isActive ? "" : " (중지)"}</option>)}
+            </select>
+          </div>
           <Button type="submit" variant="outline" disabled={loading}>
             <Search data-icon="inline-start" />
             조회
           </Button>
         </form>
         <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => {
+            const params = new URLSearchParams({ startMonth, endMonth, siteId, contractCategoryId, metric });
+            window.location.href = `/api/reports/monthly/export?${params}`;
+          }}>
+            <Download data-icon="inline-start" />Excel
+          </Button>
           {(Object.keys(metricLabels) as Metric[]).map((value) => (
             <Button
               key={value}
