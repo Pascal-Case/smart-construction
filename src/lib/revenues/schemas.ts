@@ -32,6 +32,12 @@ export const revenueConfirmSchema = z.object({ version: z.number().int().positiv
 export const contractRevenueBatchConfirmSchema = z.object({
   entries: z.array(z.object({ id: z.string().min(1), version: z.number().int().positive() })).min(1).max(100),
 }).refine((value) => new Set(value.entries.map((entry) => entry.id)).size === value.entries.length, { message: "중복된 매출 선택이 포함되어 있습니다.", path: ["entries"] });
+export const contractRevenueGenerationBatchPreviewSchema = z.object({
+  contractIds: z.array(z.string().min(1)).min(1, "일괄 처리할 계약을 선택해 주세요.").max(100, "한 번에 최대 100건까지 처리할 수 있습니다."),
+}).refine((value) => new Set(value.contractIds).size === value.contractIds.length, { message: "중복된 계약 선택이 포함되어 있습니다.", path: ["contractIds"] });
+export const contractRevenueGenerationBatchSchema = z.object({
+  targets: z.array(z.object({ contractId: z.string().min(1), expectedVersion: z.number().int().positive() })).min(1, "생성할 계약을 선택해 주세요.").max(100, "한 번에 최대 100건까지 처리할 수 있습니다."),
+}).refine((value) => new Set(value.targets.map((target) => target.contractId)).size === value.targets.length, { message: "중복된 계약 선택이 포함되어 있습니다.", path: ["targets"] });
 export const revenueSortKeys = ["revenueDate", "site", "source", "content", "quantityPrice", "salesAmount", "costAmount", "status", "updatedAt"] as const;
 export const revenueListQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),
@@ -51,3 +57,5 @@ export type RevenueInput = z.infer<typeof revenueInputSchema>;
 export type RevenueListQuery = z.infer<typeof revenueListQuerySchema>;
 export type RevenueSortKey = RevenueListQuery["sort"];
 export type ContractRevenueBatchConfirmInput = z.infer<typeof contractRevenueBatchConfirmSchema>;
+export type ContractRevenueGenerationBatchPreviewInput = z.infer<typeof contractRevenueGenerationBatchPreviewSchema>;
+export type ContractRevenueGenerationBatchInput = z.infer<typeof contractRevenueGenerationBatchSchema>;

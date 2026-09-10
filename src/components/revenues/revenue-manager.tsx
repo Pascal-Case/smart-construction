@@ -1,16 +1,16 @@
 "use client";
 
 import { Calculator, Check, CheckCheck, Download, Pencil, Plus, Search, WandSparkles, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useRealtimeRefresh } from "@/components/realtime-provider";
+import { ContractRevenueGenerationDialog } from "@/components/revenues/contract-revenue-generation-dialog";
 import { RevenueEditor } from "@/components/revenues/revenue-editor";
 import { SmartInputDialog } from "@/components/smart-input/smart-input-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SortableTableHead } from "@/components/ui/sortable-table-head";
@@ -23,15 +23,10 @@ import { revenueSortKeys, type RevenueListQuery, type RevenueSortKey } from "@/l
 type SiteOption = { id: string; name: string; isActive: boolean };
 type ItemOption = { id: string; name: string; unit: string; standardSalesPrice: number; standardCostPrice: number; isActive: boolean };
 type ContractCategoryOption = { id: string; name: string; isActive: boolean };
-type ContractRevenueCandidate = { id: string; contractNo: string; title: string; pendingAt: string; site: { id: string; name: string } };
-type ContractRevenueCandidateList = { rows: ContractRevenueCandidate[]; total: number; page: number; pageSize: number; totalPages: number };
 export type RevenueView = { id: string; siteId: string; contractCategoryId: string | null; revenueDate: string; updatedAt: string; sourceType: "CONTRACT" | "MANUAL" | "ADJUSTMENT"; itemId: string | null; title: string; description: string | null; quantity: number | null; unit: string | null; appliedSalesPrice: number | null; salesAmount: number; appliedCostPrice: number | null; costAmount: number | null; priceOverrideReason: string | null; status: "DRAFT" | "CONFIRMED" | "CANCELED"; version: number; site: { name: string }; item: { name: string } | null; contract: { contractNo: string } | null };
 export type RevenueList = { rows: RevenueView[]; total: number; page: number; pageSize: number; totalPages: number; totals: { salesAmount: number; costAmount: number } };
-type PreviewDraft = { generatedKey: string; billingMethod: "LEGACY_TOTAL" | "MONTHLY_RECURRING" | "PRORATED_TOTAL"; revenueDate: string; salesAmount: number; costAmount: number; prorationDays: number; allocationBaseDays: number; title: string };
-type Preview = { contract: { title: string; siteName: string }; rows: Array<{ action: string; reason?: string; draft?: PreviewDraft }>; counts: Record<string, number>; totalSalesAmount: number; totalCostAmount: number };
 
 const sourceLabels = { CONTRACT: "계약", MANUAL: "직접", ADJUSTMENT: "조정" }; const statusLabels = { DRAFT: "작성 중", CONFIRMED: "확정", CANCELED: "취소" };
-const generationActionLabels: Record<string, string> = { CREATE: "신규", RECREATE: "취소 후 재등록", UPDATE: "갱신", UNCHANGED: "변경 없음", PROTECTED: "보호됨", CANCEL: "자동 취소" };
 
 export function RevenueManager({ initialData, initialFilters, initialSort, sites, items, contractCategories, canEdit }: { initialData: RevenueList; initialFilters: RevenueListQuery; initialSort: ExplicitSort<RevenueSortKey>; sites: SiteOption[]; items: ItemOption[]; contractCategories: ContractCategoryOption[]; canEdit: boolean }) {
   const [data, setData] = useState(initialData); const [q, setQ] = useState(initialFilters.q); const [siteId, setSiteId] = useState(initialFilters.siteId); const [source, setSource] = useState(initialFilters.sourceType); const [status, setStatus] = useState(initialFilters.status); const [exception, setException] = useState(initialFilters.exception); const [startDate, setStartDate] = useState(initialFilters.startDate); const [endDate, setEndDate] = useState(initialFilters.endDate); const [sort, setSort] = useState<ExplicitSort<RevenueSortKey>>(initialSort); const [loading, setLoading] = useState(false); const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false); const [bulkConfirming, setBulkConfirming] = useState(false); const [selectedContractRevenueIds, setSelectedContractRevenueIds] = useState<string[]>([]); const [editor, setEditor] = useState<RevenueView | "new" | null>(null); const [generatorOpen, setGeneratorOpen] = useState(false); const [smartOpen, setSmartOpen] = useState(false); const [smartDraft, setSmartDraft] = useState<SmartInputAppliedDraft | null>(null);
@@ -68,121 +63,11 @@ export function RevenueManager({ initialData, initialFilters, initialSort, sites
     <div className="flex items-center justify-between text-sm text-muted-foreground"><span>총 {data.total}건 · {data.page}/{data.totalPages} 페이지</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={data.page <= 1} onClick={() => void load(data.page - 1, { historyMode: "push" })}>이전</Button><Button size="sm" variant="outline" disabled={data.page >= data.totalPages} onClick={() => void load(data.page + 1, { historyMode: "push" })}>다음</Button></div></div>
     {smartOpen && <SmartInputDialog target="REVENUE" contractCategories={contractCategories} onClose={() => setSmartOpen(false)} onApply={(draft) => { setSmartDraft(draft); setSmartOpen(false); setEditor("new"); }} onRegistered={() => { setSmartOpen(false); void load(data.page); }} />}
     {editor && <RevenueEditor row={editor === "new" ? null : editor} draft={smartDraft} sites={sites} items={items} contractCategories={contractCategories} onClose={() => setEditor(null)} onSaved={() => void load(data.page)} />}
-    {generatorOpen && <GeneratorDialog sites={sites} onClose={() => setGeneratorOpen(false)} onGenerated={() => void load(1)} />}
+    {generatorOpen && <ContractRevenueGenerationDialog sites={sites} onClose={() => setGeneratorOpen(false)} onGenerated={() => void load(1)} />}
     <ConfirmDialog open={bulkConfirmOpen} title="계약 매출 일괄 확정" description={`선택한 계약 매출 ${selectedContractRevenueIds.length}건을 확정합니다. 확정 후에는 일반 수정이 제한됩니다.`} confirmLabel="일괄 확정" pendingLabel="확정 중..." pending={bulkConfirming} onOpenChange={setBulkConfirmOpen} onConfirm={() => void confirmSelectedContractRevenues()} />
   </div>;
 }
 
-function GeneratorDialog({ sites, onClose, onGenerated }: { sites: SiteOption[]; onClose: () => void; onGenerated: () => void }) {
-  const [q, setQ] = useState("");
-  const [siteId, setSiteId] = useState("");
-  const [candidates, setCandidates] = useState<ContractRevenueCandidateList | null>(null);
-  const [contractId, setContractId] = useState("");
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [loadingCandidates, setLoadingCandidates] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const candidateRequest = useRef<AbortController | null>(null);
-
-  const loadCandidates = useCallback(async ({ query, site, page }: { query: string; site: string; page: number }) => {
-    candidateRequest.current?.abort();
-    const controller = new AbortController();
-    candidateRequest.current = controller;
-    setLoadingCandidates(true);
-    try {
-      const params = new URLSearchParams({ q: query, siteId: site, page: String(page), pageSize: "20" });
-      const response = await fetch(`/api/contracts/revenue-candidates?${params}`, { signal: controller.signal });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message ?? "처리할 계약을 불러오지 못했습니다.");
-      const next = body as ContractRevenueCandidateList;
-      setCandidates(next);
-      setContractId((current) => next.rows.some((row) => row.id === current) ? current : (next.rows[0]?.id ?? ""));
-      setPreview(null);
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      toast.error(error instanceof Error ? error.message : "처리할 계약을 불러오지 못했습니다.");
-    } finally {
-      if (candidateRequest.current === controller) {
-        candidateRequest.current = null;
-        setLoadingCandidates(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadCandidates({ query: "", site: "", page: 1 });
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      const controller = candidateRequest.current;
-      candidateRequest.current = null;
-      controller?.abort();
-    };
-  }, [loadCandidates]);
-  useRealtimeRefresh(["contract.changed", "revenue.changed"], () => {
-    void loadCandidates({ query: q, site: siteId, page: candidates?.page ?? 1 });
-  });
-
-  async function call(action: "preview" | "generate") {
-    if (!contractId) return;
-    setBusy(true);
-    try {
-      const response = await fetch(`/api/contracts/${contractId}/revenue-${action}`, { method: "POST" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message ?? "자동 매출을 처리하지 못했습니다.");
-      if (action === "preview") setPreview(body);
-      else {
-        toast.success(`신규 ${body.counts.create}건, 갱신 ${body.counts.update}건을 처리했습니다.`);
-        onClose();
-        onGenerated();
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "자동 매출을 처리하지 못했습니다.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return <Dialog open onOpenChange={(value) => { if (!value) onClose(); }}>
-    <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
-      <DialogHeader>
-        <DialogTitle>계약 월 매출 생성</DialogTitle>
-        <DialogDescription>처리 대기 계약만 검색합니다. 확정 매출은 보호하고, 사용자 취소 매출은 새 매출로 다시 등록합니다.</DialogDescription>
-      </DialogHeader>
-      <form className="grid gap-3 sm:grid-cols-[1fr_14rem_auto] sm:items-end" onSubmit={(event) => { event.preventDefault(); void loadCandidates({ query: q, site: siteId, page: 1 }); }}>
-        <Field label="계약번호·계약명 검색" value={q} onChange={setQ} placeholder="계약번호, 계약명, 현장명" />
-        <Select label="현장" value={siteId} onChange={setSiteId} options={[{ value: "", label: "전체 현장" }, ...sites.map((site) => ({ value: site.id, label: site.name }))]} />
-        <Button type="submit" variant="outline" disabled={loadingCandidates}><Search data-icon="inline-start" />조회</Button>
-      </form>
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
-          <TableHeader><TableRow><TableHead className="w-10">선택</TableHead><TableHead>계약번호</TableHead><TableHead>현장</TableHead><TableHead>계약명</TableHead><TableHead>처리 대기</TableHead></TableRow></TableHeader>
-          <TableBody>
-            {loadingCandidates && !candidates ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">처리할 계약을 불러오는 중입니다.</TableCell></TableRow>
-              : !candidates?.rows.length ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">처리할 계약 매출이 없습니다.</TableCell></TableRow>
-                : candidates.rows.map((candidate) => <TableRow key={candidate.id}>
-                  <TableCell><input type="radio" name="contractRevenueCandidate" aria-label={`${candidate.contractNo} 선택`} checked={contractId === candidate.id} onChange={() => { setContractId(candidate.id); setPreview(null); }} /></TableCell>
-                  <TableCell className="font-medium">{candidate.contractNo}</TableCell>
-                  <TableCell>{candidate.site.name}</TableCell>
-                  <TableCell>{candidate.title}</TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatSeoulDateTime(candidate.pendingAt)}</TableCell>
-                </TableRow>)}
-          </TableBody>
-        </Table>
-      </div>
-      {candidates && <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>처리 대기 {candidates.total}건 · {candidates.page}/{candidates.totalPages} 페이지</span>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={loadingCandidates || candidates.page <= 1} onClick={() => void loadCandidates({ query: q, site: siteId, page: candidates.page - 1 })}>이전</Button>
-          <Button size="sm" variant="outline" disabled={loadingCandidates || candidates.page >= candidates.totalPages} onClick={() => void loadCandidates({ query: q, site: siteId, page: candidates.page + 1 })}>다음</Button>
-        </div>
-      </div>}
-      <div className="flex justify-end"><Button disabled={busy || loadingCandidates || !contractId} onClick={() => void call("preview")}>미리보기</Button></div>
-      {preview && <div className="space-y-3"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Summary label="예정 매출" value={preview.totalSalesAmount} /><Summary label="예정 매입" value={preview.totalCostAmount} /><Summary label="신규/갱신" value={(preview.counts.create ?? 0) + (preview.counts.update ?? 0)} plain /><Summary label="보호/취소" value={(preview.counts.protected ?? 0) + (preview.counts.cancel ?? 0)} plain /></div><div className="max-h-64 overflow-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>처리</TableHead><TableHead>매출월</TableHead><TableHead>내용</TableHead><TableHead>청구 근거</TableHead><TableHead className="text-right">매출액</TableHead></TableRow></TableHeader><TableBody>{preview.rows.map((row, index) => <TableRow key={row.draft?.generatedKey ?? index}><TableCell><Badge variant="outline">{generationActionLabels[row.action] ?? row.action}</Badge></TableCell><TableCell>{row.draft?.revenueDate?.slice(0, 7) ?? "-"}</TableCell><TableCell>{row.draft?.title ?? "-"}{row.reason && <span className="block text-xs text-muted-foreground">{row.reason}</span>}</TableCell><TableCell>{row.draft ? billingBasisLabel(row.draft) : "-"}</TableCell><TableCell className="text-right">{row.draft?.salesAmount.toLocaleString() ?? "-"}</TableCell></TableRow>)}</TableBody></Table></div><div className="flex justify-end"><Button disabled={busy || ((preview.counts.create ?? 0) + (preview.counts.update ?? 0) + (preview.counts.cancel ?? 0) === 0)} onClick={() => void call("generate")}>매출 생성·갱신</Button></div></div>}
-    </DialogContent>
-  </Dialog>;
-}
-function billingBasisLabel(draft: PreviewDraft) { if (draft.billingMethod === "MONTHLY_RECURRING") return "월정액 전액"; if (draft.billingMethod === "PRORATED_TOTAL") return `${draft.prorationDays}일 / 전체 ${draft.allocationBaseDays}일`; return `기존 계산 · 전체기간 ${draft.allocationBaseDays}일 배분`; }
 function isConfirmableContractRevenue(row: RevenueView) { return row.sourceType === "CONTRACT" && row.status === "DRAFT"; }
 function Summary({ label, value, plain = false }: { label: string; value: number; plain?: boolean }) { return <div className="rounded-xl border bg-card p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-semibold tabular-nums">{plain ? value.toLocaleString() : `${value.toLocaleString()}원`}</p></div>; }
 function Field({ label, value, onChange, type = "text", placeholder }: { label: string; value: string; onChange: (value: string) => void; type?: string; placeholder?: string }) { return <div className="space-y-1.5"><Label>{label}</Label><Input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></div>; }

@@ -43,11 +43,10 @@ describe("sortable main-table workflow", () => {
   it("keeps selection, management, and secondary dialog tables non-sortable", () => {
     const masters = source("src/components/masters/master-manager.tsx");
     const contracts = source("src/components/contracts/contract-manager.tsx");
-    const revenues = source("src/components/revenues/revenue-manager.tsx");
 
     expect(masters.split("function MasterEditor")[1]).not.toContain("SortableTableHead");
     expect(contracts.split("function ContractEditor")[1]).not.toContain("SortableTableHead");
-    expect(revenues.split("function GeneratorDialog")[1]).not.toContain("SortableTableHead");
+    expect(source("src/components/revenues/contract-revenue-generation-dialog.tsx")).not.toContain("SortableTableHead");
   });
 
   it("documents the default orders and URL-restored click cycle", () => {

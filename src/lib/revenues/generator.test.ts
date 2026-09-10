@@ -15,7 +15,7 @@ import { recordAudit } from "@/lib/audit/record";
 import { prisma } from "@/lib/db/prisma";
 import { recordSyncEvent } from "@/lib/events/bus";
 import { assertMonthsOpen } from "@/lib/monthly-close/guard";
-import { generateContractRevenues, listContractRevenueCandidates, syncContractRevenueGenerationQueue } from "@/lib/revenues/generator";
+import { generateContractRevenues, generateContractRevenuesBatch, listContractRevenueCandidates, previewContractRevenuesBatch, syncContractRevenueGenerationQueue } from "@/lib/revenues/generator";
 
 const actor = { id: "manager-1", loginId: "manager", name: "매니저", role: UserRole.MANAGER, isActive: true, version: 1 };
 const contract = {
@@ -84,6 +84,7 @@ function transactionWith(rows: ReturnType<typeof existing>[]) {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     contractRevenueGenerationQueue: {
+      findMany: vi.fn().mockResolvedValue([{ contractId: contract.id }]),
       upsert: vi.fn(),
       deleteMany: vi.fn(),
     },
@@ -223,5 +224,56 @@ describe("contract revenue generation candidates", () => {
       totalPages: 2,
     });
     expect(vi.mocked(prisma.$transaction).mock.calls.at(-1)?.[0]).toEqual([countQuery, rowsQuery]);
+  });
+});
+
+describe("contract revenue generation batches", () => {
+  it("미리보기는 처리 대기 시각과 계약번호 순서로 계약별 결과를 만든다", async () => {
+    const tx = transactionWith([]);
+    const secondContract = { ...contract, id: "contract-2", contractNo: "C-002", title: "공조기 임대" };
+    tx.contract.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => where.id === secondContract.id ? secondContract : contract);
+    tx.contractRevenueGenerationQueue.findMany.mockResolvedValue([
+      { contractId: secondContract.id, pendingAt: new Date("2026-07-01T00:00:00Z") },
+      { contractId: contract.id, pendingAt: new Date("2026-07-02T00:00:00Z") },
+    ]);
+
+    const result = await previewContractRevenuesBatch([contract.id, secondContract.id]);
+
+    expect(result.results.map((item) => item.contractId)).toEqual([secondContract.id, contract.id]);
+    expect(result.results.every((item) => item.outcome === "PREVIEWED")).toBe(true);
+    expect(result.summary).toMatchObject({ totalContracts: 2, successfulContracts: 2, blockedContracts: 0 });
+  });
+
+  it("일괄 생성은 한 계약의 버전 충돌을 차단하고 다른 계약은 커밋한다", async () => {
+    const first = { ...contract, id: "contract-1", version: 1 };
+    const second = { ...contract, id: "contract-2", version: 2 };
+    const firstTx = transactionWith([]);
+    const secondTx = transactionWith([]);
+    firstTx.contract.findUnique.mockResolvedValue(first);
+    secondTx.contract.findUnique.mockResolvedValue(second);
+    vi.mocked(prisma.contractRevenueGenerationQueue.findMany).mockResolvedValue([
+      { contractId: second.id, pendingAt: new Date("2026-07-01T00:00:00Z") },
+      { contractId: first.id, pendingAt: new Date("2026-07-02T00:00:00Z") },
+    ] as never);
+    let transactionIndex = 0;
+    vi.mocked(prisma.$transaction).mockImplementation((async (callback: (client: typeof firstTx) => Promise<unknown>) => {
+      if (transactionIndex === 0) { transactionIndex += 1; return callback(secondTx); }
+      if (transactionIndex === 1) { transactionIndex += 1; return callback(firstTx); }
+      return callback({} as typeof firstTx);
+    }) as never);
+
+    const result = await generateContractRevenuesBatch(actor, [
+      { contractId: first.id, expectedVersion: 1 },
+      { contractId: second.id, expectedVersion: 1 },
+    ]);
+
+    expect(result.results.map((item) => [item.contractId, item.outcome])).toEqual([
+      [second.id, "BLOCKED"],
+      [first.id, "GENERATED"],
+    ]);
+    expect(result.results[0]?.error).toMatchObject({ code: "CONTRACT_CHANGED" });
+    expect(result.summary).toMatchObject({ successfulContracts: 1, blockedContracts: 1 });
+    expect(firstTx.revenueEntry.create).toHaveBeenCalledTimes(1);
+    expect(secondTx.revenueEntry.create).not.toHaveBeenCalled();
   });
 });

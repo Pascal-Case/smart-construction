@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildRevenueWhere } from "@/lib/revenues/query";
-import { contractRevenueBatchConfirmSchema, revenueInputSchema, revenueListQuerySchema } from "@/lib/revenues/schemas";
+import { contractRevenueBatchConfirmSchema, contractRevenueGenerationBatchPreviewSchema, contractRevenueGenerationBatchSchema, revenueInputSchema, revenueListQuerySchema } from "@/lib/revenues/schemas";
 
 const validRevenue = {
   siteId: "site-1",
@@ -19,6 +19,12 @@ describe("revenueInputSchema", () => {
 
   it("계약 매출 일괄 확정은 중복 선택을 거부한다", () => {
     expect(() => contractRevenueBatchConfirmSchema.parse({ entries: [{ id: "revenue-1", version: 1 }, { id: "revenue-1", version: 1 }] })).toThrow("중복된 매출 선택");
+  });
+
+  it("계약 매출 일괄 생성은 중복과 100건 초과 선택을 거부한다", () => {
+    expect(() => contractRevenueGenerationBatchPreviewSchema.parse({ contractIds: ["contract-1", "contract-1"] })).toThrow("중복된 계약 선택");
+    expect(() => contractRevenueGenerationBatchPreviewSchema.parse({ contractIds: Array.from({ length: 101 }, (_, index) => `contract-${index}`) })).toThrow("최대 100건");
+    expect(() => contractRevenueGenerationBatchSchema.parse({ targets: [{ contractId: "contract-1", expectedVersion: 1 }, { contractId: "contract-1", expectedVersion: 1 }] })).toThrow("중복된 계약 선택");
   });
 
   it("사용자가 선택하면 작성 중으로 저장할 수 있다", () => {

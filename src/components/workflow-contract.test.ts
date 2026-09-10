@@ -63,7 +63,7 @@ describe("registration workflow contract", () => {
 
   it("계약 목록과 자동 매출 미리보기는 청구 방식별 의미를 사용자 용어로 표시한다", () => {
     const contractSource = readFileSync(path.join(process.cwd(), "src/components/contracts/contract-manager.tsx"), "utf8");
-    const revenueSource = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+    const revenueSource = readFileSync(path.join(process.cwd(), "src/components/revenues/contract-revenue-generation-dialog.tsx"), "utf8");
 
     expect(contractSource).toContain("품목 기준금액 합계");
     expect(contractSource).toContain("월정액은 월별 금액, 일할·기존 계산은 배분 전 총액");
@@ -119,7 +119,7 @@ describe("registration workflow contract", () => {
 
   it("계약 매출 생성은 전체 진행 계약 대신 검색 가능한 처리대기 페이지만 조회한다", () => {
     const pageSource = readFileSync(path.join(process.cwd(), "src/app/(main)/revenues/page.tsx"), "utf8");
-    const source = readFileSync(path.join(process.cwd(), "src/components/revenues/revenue-manager.tsx"), "utf8");
+    const source = readFileSync(path.join(process.cwd(), "src/components/revenues/contract-revenue-generation-dialog.tsx"), "utf8");
     const routeSource = readFileSync(path.join(process.cwd(), "src/app/api/contracts/revenue-candidates/route.ts"), "utf8");
 
     expect(pageSource).not.toContain("prisma.contract.findMany");

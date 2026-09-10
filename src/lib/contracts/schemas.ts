@@ -57,7 +57,7 @@ export const contractRevenueCandidateQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),
   siteId: z.string().default(""),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(10).max(50).default(20),
+  pageSize: z.coerce.number().int().min(10).max(100).default(20),
 });
 
 export type ContractInput = z.infer<typeof contractInputSchema>;

@@ -34,11 +34,11 @@ describe("contract revenue candidate query schema", () => {
     });
   });
 
-  it("검색어를 정리하고 페이지 크기를 10~50건으로 제한한다", () => {
-    expect(contractRevenueCandidateQuerySchema.parse({ q: "  C-001  ", page: "2", pageSize: "50" }))
-      .toMatchObject({ q: "C-001", page: 2, pageSize: 50 });
+  it("검색어를 정리하고 페이지 크기를 10~100건으로 제한한다", () => {
+    expect(contractRevenueCandidateQuerySchema.parse({ q: "  C-001  ", page: "2", pageSize: "100" }))
+      .toMatchObject({ q: "C-001", page: 2, pageSize: 100 });
     expect(() => contractRevenueCandidateQuerySchema.parse({ pageSize: "9" })).toThrow();
-    expect(() => contractRevenueCandidateQuerySchema.parse({ pageSize: "51" })).toThrow();
+    expect(() => contractRevenueCandidateQuerySchema.parse({ pageSize: "101" })).toThrow();
   });
 });
 
