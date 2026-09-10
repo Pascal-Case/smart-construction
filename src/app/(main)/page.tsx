@@ -19,7 +19,7 @@ import { PhaseReadyToast } from "@/components/phase-ready-toast";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth/session";
-import { buildDashboardActionDesk } from "@/lib/dashboard/action-desk";
+import { buildDashboardActionDesk, getUnissuedCloseCycle } from "@/lib/dashboard/action-desk";
 import { formatRecentAction } from "@/lib/dashboard/recent-actions";
 import { buildDashboardSummary, dashboardYearRange } from "@/lib/dashboard/summary";
 import { prisma } from "@/lib/db/prisma";
@@ -71,7 +71,11 @@ export default async function HomePage() {
           select: {
             closedAt: true,
             totalSalesAmount: true,
-            invoiceDocuments: { where: { status: "ISSUED" }, select: { id: true } },
+            snapshotJson: true,
+            invoiceDocuments: {
+              where: { status: "ISSUED" },
+              select: { subtotal: true, revenueLinks: { select: { revenueEntryId: true } } },
+            },
           },
         },
       },
@@ -80,7 +84,17 @@ export default async function HomePage() {
   const summary = buildDashboardSummary({ year, siteCount, invoiceCount, revenues });
   const unissuedCloseCycles = closedMonths.flatMap((close) => {
     const cycle = close.cycles[0];
-    return cycle && cycle.invoiceDocuments.length === 0 ? [cycle] : [];
+    if (!cycle) return [];
+    const unissued = getUnissuedCloseCycle({
+      closedAt: cycle.closedAt,
+      totalSalesAmount: cycle.totalSalesAmount,
+      snapshotJson: cycle.snapshotJson,
+      invoiceDocuments: cycle.invoiceDocuments.map((document) => ({
+        subtotal: document.subtotal,
+        revenueEntryIds: document.revenueLinks.map((link) => link.revenueEntryId),
+      })),
+    });
+    return unissued ? [unissued] : [];
   });
   const actionDesk = buildDashboardActionDesk(actionRevenues, unissuedCloseCycles);
   const recentActions = auditLogs.map((log) => ({ ...log, message: formatRecentAction(log) }));

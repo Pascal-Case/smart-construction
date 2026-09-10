@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyInvoiceCandidateState, isReplaceableInvoiceStatus, replacementRequiredForPeriod, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
+import { classifyInvoiceCandidateState, isPartialRevenueIssuance, isReplaceableInvoiceStatus, replacementRequiredForPeriod, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
 
 describe("invoice replacement policy", () => {
   it("allows only the current issued document to start a replacement", () => {
@@ -30,6 +30,12 @@ describe("invoice replacement policy", () => {
     expect(replacementRequiredForPeriod(cycles, [
       { revenueEntryIds: ["r1"], subtotal: 300 },
     ])).toBe(true);
+  });
+
+  it("strict subset of a close is recognized as partial issuance", () => {
+    expect(isPartialRevenueIssuance([{ revenueEntryIds: ["r1", "r2"] }], [{ revenueEntryIds: ["r1"] }])).toBe(true);
+    expect(isPartialRevenueIssuance([{ revenueEntryIds: ["r1", "r2"] }], [{ revenueEntryIds: ["r1", "r2"] }])).toBe(false);
+    expect(isPartialRevenueIssuance([{ revenueEntryIds: ["r1", "r2"] }], [{ revenueEntryIds: ["other"] }])).toBe(false);
   });
 
   it("최신 마감과 현재 발행본을 신규·대체·변경 없음으로 분류한다", () => {

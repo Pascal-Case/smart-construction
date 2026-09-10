@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { reconcileIssueResults, selectionSummary, toggleAllSelectable } from "@/components/invoices/invoice-issuance-state";
+import { applyIssueDateToSelected, preserveCandidateIssueDates, reconcileIssueResults, selectionSummary, toggleAllSelectable } from "@/components/invoices/invoice-issuance-state";
 
 const candidates = [
   { targetKey: "new:1", kind: "NEW" as const, selectable: true, supplyAmount: 100 },
@@ -23,5 +23,11 @@ describe("invoice issuance selection state", () => {
       { targetKey: "new:1", outcome: "ISSUED" as const },
       { targetKey: "replacement:2", outcome: "BLOCKED" as const, error: { message: "마감이 변경되었습니다." } },
     ])).toEqual({ selected: ["replacement:2"], errors: { "replacement:2": "마감이 변경되었습니다." } });
+  });
+
+  it("preserves edited dates when candidates are refreshed and applies bulk dates only to selected rows", () => {
+    const dates = preserveCandidateIssueDates({ "new:1": "2026-07-21" }, [{ targetKey: "new:1" }, { targetKey: "new:2" }], "2026-07-25");
+    expect(dates).toEqual({ "new:1": "2026-07-21", "new:2": "2026-07-25" });
+    expect(applyIssueDateToSelected(dates, ["new:2"], "2026-08-01")).toEqual({ "new:1": "2026-07-21", "new:2": "2026-08-01" });
   });
 });

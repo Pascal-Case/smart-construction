@@ -34,3 +34,16 @@ export function reconcileIssueResults(selected: string[], results: IssuanceResul
     errors: Object.fromEntries(blocked.map((result) => [result.targetKey, result.error?.message ?? "발행하지 못했습니다."])),
   };
 }
+
+export function preserveCandidateIssueDates(
+  current: Record<string, string>,
+  candidates: Array<{ targetKey: string }>,
+  defaultDate: string,
+) {
+  return Object.fromEntries(candidates.map((candidate) => [candidate.targetKey, current[candidate.targetKey] ?? defaultDate]));
+}
+
+export function applyIssueDateToSelected(current: Record<string, string>, selected: string[], issueDate: string) {
+  const selectedKeys = new Set(selected);
+  return Object.fromEntries(Object.entries(current).map(([targetKey, value]) => [targetKey, selectedKeys.has(targetKey) ? issueDate : value]));
+}

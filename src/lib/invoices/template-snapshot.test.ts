@@ -10,6 +10,7 @@ const baseInput = {
     cycleId: "cycle-1",
     expectedCloseVersion: 2,
     expectedRevenueFingerprint: "a".repeat(64),
+    contractCategoryId: "category-1",
   }],
   issueDate: "2026-07-12",
   displayMode: "AGGREGATED" as const,

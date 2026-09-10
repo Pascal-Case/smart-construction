@@ -99,26 +99,65 @@ describe("invoice replacement service", () => {
     mocks.closeCycleFindUnique.mockResolvedValue(closeCycle());
     mocks.closeFindMany.mockResolvedValue([{ id: "close-1", month: "2026-07", cycles: [{ id: "cycle-1", totalSalesAmount: 300_000, snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }) }] }]);
     mocks.rootCloseFindMany.mockResolvedValue([{ id: "close-1", siteId: "site-1", month: "2026-07", version: 2, site: { id: "site-1", code: "S1", name: "강남 현장" }, cycles: [{ id: "cycle-2", cycleNo: 2, revenueCount: 2, totalSalesAmount: 300_000, revenueFingerprint: "b".repeat(64), snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }) }] }]);
-    mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 100_000, revenueLinks: source.revenueLinks }]);
-    mocks.rootRevenueFindMany.mockResolvedValue([{ id: "r1", currentInvoiceDocumentId: source.id }, { id: "r2", currentInvoiceDocumentId: null }]);
+    mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 100_000, contractCategoryId: source.contractCategoryId, issueItemId: "item-1", issueItemName: "기존 계약", revenueFingerprint: null, closeRevenueFingerprint: "before", revenueLinks: source.revenueLinks }]);
+    mocks.rootRevenueFindMany.mockResolvedValue(entries);
   });
 
-  it("classifies a reclosed month with a changed current invoice as replacement", async () => {
+  it("keeps the remaining item as a new candidate after partial issuance", async () => {
     const result = await getInvoiceCandidates({ month: "2026-07", siteId: "" });
 
     expect(result.rows).toEqual([expect.objectContaining({
-      targetKey: "replacement:site-1:2026-07",
-      kind: "REPLACEMENT",
+      targetKey: "new:cycle-2:category-1:item-1",
+      kind: "NEW",
       cycleId: "cycle-2",
-      sourceInvoiceId: source.id,
-      sourceVersion: source.version,
-      currentInvoices: [{ id: source.id, invoiceNo: source.invoiceNo, version: source.version }],
+      issueItemId: "item-1",
     })]);
   });
 
+  it("품목별 신규 후보를 만들고 선택한 품목의 발행일을 문서 snapshot에 저장한다", async () => {
+    const itemA = candidate("r1", "안전 점검", 100_000, null);
+    const itemB = { ...candidate("r2", "교육", 200_000, null), itemId: "item-2", item: { id: "item-2", name: "교육", specification: null, invoiceDisplayItem: null, invoiceDisplaySources: [] } };
+    mocks.rootInvoiceFindMany.mockResolvedValue([]);
+    mocks.rootRevenueFindMany.mockResolvedValue([itemA, itemB]);
+
+    const result = await getInvoiceCandidates({ month: "2026-07", siteId: "" });
+
+    expect(result.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "NEW", issueItemId: "item-1", issueItemName: "안전 점검", supplyAmount: 100_000 }),
+      expect.objectContaining({ kind: "NEW", issueItemId: "item-2", issueItemName: "교육", supplyAmount: 200_000 }),
+    ]));
+
+    mocks.revenueFindMany.mockResolvedValue([itemA, itemB]);
+    mocks.revenueUpdateMany.mockResolvedValue({ count: 1 });
+    const issueDate = "2026-08-03";
+    await issueInvoices(actor, {
+      ...issueSettings(),
+      targets: [{ ...newTarget(), issueItemId: "item-2", issueDate }],
+    });
+
+    expect(mocks.invoiceCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.invoiceCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ issueItemId: "item-2", issueItemName: "교육", issueDate: new Date(`${issueDate}T00:00:00.000Z`) }),
+    }));
+    expect(mocks.revenueUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["r2"] }, currentInvoiceDocumentId: null } }));
+  });
+
+  it("같은 품목 ID라도 계약 구분이 다르면 선택한 계약 구분만 발행한다", async () => {
+    const categoryOne = candidate("r1", "안전 점검", 100_000, null);
+    const categoryTwo = { ...candidate("r2", "안전 점검", 200_000, null), contractCategoryId: "category-2", contractCategory: { code: "CONTRACT-TYPE-0002", name: "시설관리" } };
+    mocks.revenueFindMany.mockResolvedValue([categoryOne, categoryTwo]);
+
+    await issueInvoices(actor, {
+      ...issueSettings(),
+      targets: [{ ...newTarget(), issueItemId: "item-1", contractCategoryId: "category-1" }],
+    });
+
+    expect(mocks.revenueUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["r1"] }, currentInvoiceDocumentId: null } }));
+  });
+
   it("계약 구분 또는 대표 품목 snapshot만 바뀐 재마감도 대체 대상으로 분류한다", async () => {
-    mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 300_000, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] }]);
-    mocks.rootRevenueFindMany.mockResolvedValue([{ id: "r1", currentInvoiceDocumentId: source.id }, { id: "r2", currentInvoiceDocumentId: source.id }]);
+    mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 300_000, contractCategoryId: source.contractCategoryId, issueItemId: "item-1", issueItemName: "기존 계약", revenueFingerprint: null, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] }]);
+    mocks.rootRevenueFindMany.mockResolvedValue(entries.map((entry) => ({ ...entry, currentInvoiceDocumentId: source.id })));
 
     expect(await getInvoiceCandidates({ month: "2026-07", siteId: "" })).toMatchObject({
       rows: [expect.objectContaining({ kind: "REPLACEMENT", sourceInvoiceId: source.id })],
@@ -131,6 +170,26 @@ describe("invoice replacement service", () => {
     expect(preview.expectedRevenueEntryIds).toEqual(["r1", "r2"]);
     expect(preview.documents).toEqual([expect.objectContaining({ siteId: "site-1", subtotal: 300_000, periodStart: "2026-07-01", periodEnd: "2026-07-31" })]);
     expect(preview.warnings).toEqual([{ id: "contract-missing", contractNo: "C-NEW", title: "말일 추가 계약" }]);
+  });
+
+  it("partial issuance replacement keeps unissued item groups as later NEW candidates", async () => {
+    const issuedEntry = candidate("r1", "기존 계약", 100_000, source.id);
+    const unissuedEntry = { ...candidate("r2", "추가 계약", 200_000, null), itemId: "item-2", item: { id: "item-2", name: "추가 계약", specification: null, invoiceDisplayItem: null, invoiceDisplaySources: [] } };
+    const snapshotJson = JSON.stringify({
+      revenueEntryIds: ["r1", "r2"],
+      revenueEntries: [
+        { id: "r1", itemId: "item-1", contractCategoryId: "category-1", salesAmount: 100_000 },
+        { id: "r2", itemId: "item-2", contractCategoryId: "category-1", salesAmount: 200_000 },
+      ],
+    });
+    mocks.revenueFindMany.mockResolvedValue([issuedEntry, unissuedEntry]);
+    mocks.invoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, version: source.version, issueItemId: "item-1", revenueFingerprint: "changed", subtotal: 100_000, revenueLinks: [{ revenueEntryId: "r1" }] }]);
+    mocks.closeFindMany.mockResolvedValue([{ id: "close-1", month: "2026-07", cycles: [{ id: "cycle-1", totalSalesAmount: 300_000, revenueFingerprint: "new-close", snapshotJson }] }]);
+
+    const preview = await previewReplacementInvoice(source.id, settings);
+
+    expect(preview.expectedRevenueEntryIds).toEqual(["r1"]);
+    expect(preview.documents).toEqual([expect.objectContaining({ subtotal: 100_000, issueItemId: "item-1" })]);
   });
 
   it("atomically creates a new snapshot, supersedes the current document, and moves active revenue pointers", async () => {
@@ -274,7 +333,7 @@ function issueSettings() {
 }
 
 function newTarget() {
-  return { targetKey: "new:cycle-1", kind: "NEW" as const, cycleId: "cycle-1", expectedCloseVersion: 2, expectedRevenueFingerprint: "a".repeat(64) };
+  return { targetKey: "new:cycle-1", kind: "NEW" as const, cycleId: "cycle-1", expectedCloseVersion: 2, expectedRevenueFingerprint: "a".repeat(64), contractCategoryId: "category-1" };
 }
 
 function closeCycle() {
@@ -314,6 +373,7 @@ function candidate(id: string, title: string, salesAmount: number, currentInvoic
     contractCategoryId: "category-1",
     contractCategory: { code: "CONTRACT-TYPE-0001", name: "스마트건설안전" },
     site: { code: "S1", name: "강남 현장", address: "서울" },
-    item: { name: title, specification: null, invoiceDisplayItem: null },
+    itemId: "item-1",
+    item: { id: "item-1", name: title, specification: null, invoiceDisplayItem: null, invoiceDisplaySources: [] },
   };
 }

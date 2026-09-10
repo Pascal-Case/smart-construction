@@ -1,3 +1,5 @@
+import { stableFingerprint } from "@/lib/monthly-close/fingerprint";
+
 export type InvoiceSourceEntry = {
   id: string;
   siteId: string;
@@ -40,6 +42,9 @@ export type InvoiceDocumentDraft = {
   contractCategoryId: string;
   contractCategoryCode: string;
   contractCategoryName: string;
+  issueItemId: string | null;
+  issueItemName: string;
+  revenueFingerprint: string;
   lines: InvoiceLineDraft[];
   subtotal: number;
   taxAmount: number;
@@ -49,11 +54,13 @@ export type InvoiceDocumentDraft = {
 export function buildInvoiceDrafts(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" | "ITEMIZED") {
   const documentGroups = new Map<string, InvoiceSourceEntry[]>();
   for (const entry of entries) {
-    const key = JSON.stringify([entry.siteId, entry.contractCategoryId]);
+    const key = JSON.stringify([entry.siteId, entry.contractCategoryId, entry.itemId]);
     documentGroups.set(key, [...(documentGroups.get(key) ?? []), entry]);
   }
   return [...documentGroups.values()]
-    .sort((a, b) => a[0].siteName.localeCompare(b[0].siteName) || a[0].contractCategoryName.localeCompare(b[0].contractCategoryName))
+    .sort((a, b) => a[0].siteName.localeCompare(b[0].siteName)
+      || a[0].contractCategoryName.localeCompare(b[0].contractCategoryName)
+      || issueItemName(a[0]).localeCompare(issueItemName(b[0])))
     .map((rows) => buildDocument(rows, displayMode));
 }
 
@@ -70,11 +77,32 @@ function buildDocument(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" 
     contractCategoryId: site.contractCategoryId,
     contractCategoryCode: site.contractCategoryCode,
     contractCategoryName: site.contractCategoryName,
+    issueItemId: site.itemId,
+    issueItemName: issueItemName(site),
+    revenueFingerprint: invoiceRevenueFingerprint(entries),
     lines,
     subtotal,
     taxAmount,
     totalAmount: subtotal + taxAmount,
   };
+}
+
+export function invoiceRevenueFingerprint(entries: InvoiceSourceEntry[]) {
+  return stableFingerprint(entries.map((entry) => ({
+    id: entry.id,
+    itemId: entry.itemId,
+    itemName: entry.itemName,
+    itemSpecification: entry.itemSpecification,
+    description: entry.description,
+    supplyAmount: entry.supplyAmount,
+    contractCategoryId: entry.contractCategoryId,
+    invoiceDisplayItemId: entry.invoiceDisplayItemId,
+    invoiceDisplayItemName: entry.invoiceDisplayItemName,
+  })));
+}
+
+function issueItemName(entry: InvoiceSourceEntry) {
+  return entry.itemId ? (entry.itemName ?? entry.title) : "품목 없음";
 }
 
 function aggregateLines(entries: InvoiceSourceEntry[]) {

@@ -144,4 +144,13 @@ describe("monthly close evaluator", () => {
     expect(evaluateSiteMonth(same).replacementRequired).toBe(false);
     expect(evaluateSiteMonth(changed).replacementRequired).toBe(true);
   });
+
+  it("부분 발행은 남은 품목 발행을 위한 대체발행으로 표시하지 않는다", () => {
+    const result = evaluateSiteMonth(baseInput({
+      latestCloseSnapshot: { revenueEntryIds: ["contract-revenue-1", "contract-revenue-2"], totalSalesAmount: 300 },
+      invoiceDocuments: [{ id: "invoice-1", status: "ISSUED", revenueEntryIds: ["contract-revenue-1"], subtotal: 100 }],
+    }));
+
+    expect(result.replacementRequired).toBe(false);
+  });
 });

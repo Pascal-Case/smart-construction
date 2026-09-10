@@ -33,6 +33,17 @@ export function replacementRequiredForPeriod(
   );
 }
 
+export function isPartialRevenueIssuance(
+  closeCycles: Array<{ revenueEntryIds: string[] }>,
+  currentDocuments: Array<{ revenueEntryIds: string[] }>,
+) {
+  const closeRevenueIds = new Set(closeCycles.flatMap((cycle) => cycle.revenueEntryIds));
+  const currentRevenueIds = [...new Set(currentDocuments.flatMap((document) => document.revenueEntryIds))];
+  return currentRevenueIds.length > 0
+    && currentRevenueIds.length < closeRevenueIds.size
+    && currentRevenueIds.every((id) => closeRevenueIds.has(id));
+}
+
 export function classifyInvoiceCandidateState(input: {
   close: { revenueEntryIds: string[]; totalSalesAmount: number };
   currentDocuments: Array<{ revenueEntryIds: string[]; subtotal: number }>;

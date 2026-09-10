@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { InvoiceDocumentPages, type InvoicePrintDocument } from "@/components/invoices/invoice-document";
-import { reconcileIssueResults, selectionSummary, toggleAllSelectable } from "@/components/invoices/invoice-issuance-state";
+import { applyIssueDateToSelected, preserveCandidateIssueDates, reconcileIssueResults, selectionSummary, toggleAllSelectable } from "@/components/invoices/invoice-issuance-state";
 import { useRealtimeRefresh } from "@/components/realtime-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,10 @@ type Candidate = {
   siteId: string;
   siteCode: string;
   siteName: string;
+  contractCategoryId: string | null;
+  contractCategoryName: string | null;
+  issueItemId: string | null;
+  issueItemName: string;
   revenueCount: number;
   supplyAmount: number;
   revenueFingerprint: string;
@@ -51,6 +55,7 @@ type InvoiceRow = {
   periodEnd: string;
   recipientName: string;
   contractCategoryName: string | null;
+  issueItemName: string | null;
   subtotal: number;
   taxAmount: number;
   totalAmount: number;
@@ -107,9 +112,12 @@ type IssuePayload = {
   targets: Array<{
     targetKey: string;
     kind: "NEW";
-    cycleId: string;
-    expectedCloseVersion: number;
-    expectedRevenueFingerprint: string;
+  cycleId: string;
+  expectedCloseVersion: number;
+  expectedRevenueFingerprint: string;
+  contractCategoryId: string | null;
+  issueItemId?: string | null;
+    issueDate?: string;
   } | {
     targetKey: string;
     kind: "REPLACEMENT";
@@ -118,6 +126,7 @@ type IssuePayload = {
     expectedRevenueEntryIds: string[];
     expectedActiveInvoiceIds: string[];
     expectedCloseCycleIds: string[];
+    issueDate?: string;
   }>;
   issueDate: string;
   displayMode: "AGGREGATED" | "ITEMIZED";
@@ -135,6 +144,7 @@ type PreviewResult = {
   currentInvoices?: Array<{ id: string; invoiceNo: string; version: number }>;
   warnings?: Array<{ id: string; contractNo: string; title: string }>;
   error?: { code: string; message: string };
+  issueDateWarning?: string | null;
 };
 type BatchPreview = {
   summary: { total: number; newCount: number; replacementCount: number; blockedCount: number; supplyAmount: number };
@@ -150,6 +160,7 @@ type ReplacementState = {
     documents: PreviewDocument[];
     expectedRevenueEntryIds: string[];
     warnings: Array<{ id: string; contractNo: string; title: string }>;
+    issueDateWarning?: string | null;
   } | null;
 };
 
@@ -180,6 +191,7 @@ export function InvoiceManager({
   const [data, setData] = useState(initialData);
   const [candidates, setCandidates] = useState<CandidateData | null>(initialCandidates);
   const [selected, setSelected] = useState<string[]>([]);
+  const [issueDates, setIssueDates] = useState<Record<string, string>>(() => Object.fromEntries((initialCandidates?.rows ?? []).map((row) => [row.targetKey, today])));
   const [month, setMonth] = useState(initialMonth ?? today.slice(0, 7));
   const [siteId, setSiteId] = useState(initialSiteId);
   const [issueDate, setIssueDate] = useState(today);
@@ -202,6 +214,7 @@ export function InvoiceManager({
       setCandidates(body);
       const available = new Set((body.rows as Candidate[]).map((row) => row.targetKey));
       setSelected(preserve ? preserve.selected.filter((key) => available.has(key)) : []);
+      setIssueDates((current) => preserveCandidateIssueDates(current, body.rows as Candidate[], issueDate));
       setCandidateErrors(preserve ? Object.fromEntries(Object.entries(preserve.errors).filter(([key]) => available.has(key))) : {});
       setPreview(null);
       setPending(null);
@@ -238,6 +251,19 @@ export function InvoiceManager({
     setPending(null);
   }
 
+  function setCandidateIssueDate(targetKey: string, value: string) {
+    setIssueDates((current) => ({ ...current, [targetKey]: value }));
+    setPreview(null);
+    setPending(null);
+  }
+
+  function applyBulkIssueDate() {
+    if (!selected.length) return toast.error("발행일을 적용할 대상을 선택해 주세요.");
+    setIssueDates((current) => applyIssueDateToSelected(current, selected, issueDate));
+    setPreview(null);
+    setPending(null);
+  }
+
   async function showPreview() {
     if (!selected.length) return toast.error("발행할 대상을 선택해 주세요.");
     const template = templates.find((item) => item.id === templateId) ?? templates[0];
@@ -245,8 +271,8 @@ export function InvoiceManager({
     const selectedRows = candidates?.rows.filter((row) => row.selectable && selected.includes(row.targetKey)) ?? [];
     const previewPayload = {
       targets: selectedRows.map((row) => row.kind === "REPLACEMENT" && row.sourceInvoiceId && row.sourceVersion
-        ? { targetKey: row.targetKey, kind: "REPLACEMENT" as const, sourceInvoiceId: row.sourceInvoiceId, sourceVersion: row.sourceVersion }
-        : { targetKey: row.targetKey, kind: "NEW" as const, cycleId: row.cycleId, expectedCloseVersion: row.closeVersion, expectedRevenueFingerprint: row.revenueFingerprint }),
+        ? { targetKey: row.targetKey, kind: "REPLACEMENT" as const, sourceInvoiceId: row.sourceInvoiceId, sourceVersion: row.sourceVersion, issueDate: issueDates[row.targetKey] ?? issueDate }
+        : { targetKey: row.targetKey, kind: "NEW" as const, cycleId: row.cycleId, expectedCloseVersion: row.closeVersion, expectedRevenueFingerprint: row.revenueFingerprint, contractCategoryId: row.contractCategoryId, issueItemId: row.issueItemId, issueDate: issueDates[row.targetKey] ?? issueDate }),
       issueDate,
       displayMode,
       memo: memo.trim() || null,
@@ -343,6 +369,7 @@ export function InvoiceManager({
           documents: body.documents,
           expectedRevenueEntryIds: body.expectedRevenueEntryIds,
           warnings: body.warnings,
+          issueDateWarning: body.issueDateWarning,
         },
       } : current);
     } catch (error) {
@@ -429,7 +456,7 @@ export function InvoiceManager({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm">
             <span className="font-medium">대기 {candidates.total}건</span>
-            <span className="ml-3 text-muted-foreground">선택 {selectedSummary.total}건 · 신규 {selectedSummary.newCount} · 대체 {selectedSummary.replacementCount} · {selectedSummary.supplyAmount.toLocaleString()}원</span>
+            <span className="ml-3 text-muted-foreground">전체 {candidates.totals.supplyAmount.toLocaleString()}원 · 선택 {selectedSummary.total}건 ({selectedSummary.supplyAmount.toLocaleString()}원) · 신규 {selectedSummary.newCount} · 대체 {selectedSummary.replacementCount}</span>
           </div>
           <Button size="sm" variant="outline" disabled={!candidates.rows.some((row) => row.selectable)} onClick={selectAll}>
             {allSelectableSelected ? "전체 해제" : "전체 선택"}
@@ -443,13 +470,16 @@ export function InvoiceManager({
                 <TableHead>구분</TableHead>
                 <TableHead>매출월</TableHead>
                 <TableHead>현장</TableHead>
+                <TableHead>계약 구분</TableHead>
+                <TableHead>발행 품목</TableHead>
+                <TableHead>발행일</TableHead>
                 <TableHead className="text-right">확정 매출</TableHead>
                 <TableHead className="text-right">공급가액</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {candidates.rows.length === 0 ? <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   현재 발행 대기 중인 대상이 없습니다.
                 </TableCell>
               </TableRow> : candidates.rows.map((row) => <TableRow key={row.targetKey}>
@@ -465,6 +495,9 @@ export function InvoiceManager({
                 <TableCell><Badge variant={row.kind === "REPLACEMENT" ? "secondary" : "outline"}>{row.kind === "REPLACEMENT" ? "대체" : row.kind === "BLOCKED" ? "확인 필요" : "신규"}</Badge></TableCell>
                 <TableCell>{row.month}</TableCell>
                 <TableCell><span className="font-medium">{row.siteName}</span><span className="block text-xs text-muted-foreground">{row.siteCode}</span>{row.currentInvoices.length > 0 && <span className="block text-xs text-muted-foreground">현재 {row.currentInvoices.map((invoice) => invoice.invoiceNo).join(", ")}</span>}{(row.blockReason || candidateErrors[row.targetKey]) && <span className="mt-1 block max-w-96 whitespace-normal text-xs text-destructive">{candidateErrors[row.targetKey] ?? row.blockReason}</span>}</TableCell>
+                <TableCell>{row.contractCategoryName ?? "-"}</TableCell>
+                <TableCell>{row.issueItemName}</TableCell>
+                <TableCell><Input aria-label={`${row.siteName} ${row.issueItemName} 발행일`} className="w-36" type="date" value={issueDates[row.targetKey] ?? issueDate} disabled={!row.selectable} onChange={(event) => setCandidateIssueDate(row.targetKey, event.target.value)} /></TableCell>
                 <TableCell className="text-right tabular-nums">{row.revenueCount}건</TableCell>
                 <TableCell className="text-right tabular-nums">{row.supplyAmount.toLocaleString()}원</TableCell>
               </TableRow>)}
@@ -472,7 +505,7 @@ export function InvoiceManager({
           </Table>
         </div>
         <div className="grid gap-3 md:grid-cols-5">
-          <Field label="발행일" type="date" value={issueDate} onChange={(value) => { setIssueDate(value); setPreview(null); }} />
+          <div className="space-y-1.5"><Field label="일괄 발행일" type="date" value={issueDate} onChange={(value) => { setIssueDate(value); setPreview(null); }} /><Button size="sm" variant="outline" className="w-full" onClick={applyBulkIssueDate}>선택 항목에 적용</Button></div>
           <Select label="표시 방식" value={displayMode} onChange={(value) => { setDisplayMode(value as "AGGREGATED" | "ITEMIZED"); setPreview(null); }} options={[
             { value: "AGGREGATED", label: "동일 품목 합산" },
             { value: "ITEMIZED", label: "원장 건별 표시" },
@@ -495,11 +528,11 @@ export function InvoiceManager({
       </div>
       <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
-          <TableHeader><TableRow><TableHead>발행번호</TableHead><TableHead>상태</TableHead><TableHead>발행일</TableHead><TableHead>수신처</TableHead><TableHead>계약 구분</TableHead><TableHead>매출기간</TableHead><TableHead>원장/표시행</TableHead><TableHead className="text-right">공급가액</TableHead><TableHead>방식</TableHead><TableHead>최종수정일</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
-          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={11} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" ? "opacity-65" : undefined}>
+          <TableHeader><TableRow><TableHead>발행번호</TableHead><TableHead>상태</TableHead><TableHead>발행일</TableHead><TableHead>수신처</TableHead><TableHead>계약 구분</TableHead><TableHead>발행 품목</TableHead><TableHead>매출기간</TableHead><TableHead>원장/표시행</TableHead><TableHead className="text-right">공급가액</TableHead><TableHead>방식</TableHead><TableHead>최종수정일</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
+          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={12} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" ? "opacity-65" : undefined}>
             <TableCell className="font-mono text-xs">{row.invoiceNo}{row.supersededBy && <span className="block font-sans text-[11px] text-muted-foreground">→ {row.supersededBy.invoiceNo}</span>}</TableCell>
             <TableCell><Badge variant={row.status === "ISSUED" ? "secondary" : "outline"}>{row.status === "ISSUED" ? "유효" : row.status === "SUPERSEDED" ? "대체됨" : "작성 중"}</Badge></TableCell>
-            <TableCell>{row.issueDate.slice(0, 10)}</TableCell><TableCell>{row.recipientName}</TableCell><TableCell>{row.contractCategoryName ?? "-"}</TableCell>
+            <TableCell>{row.issueDate.slice(0, 10)}</TableCell><TableCell>{row.recipientName}</TableCell><TableCell>{row.contractCategoryName ?? "-"}</TableCell><TableCell>{row.issueItemName ?? "-"}</TableCell>
             <TableCell className="text-xs">{row.periodStart.slice(0, 10)} ~ {row.periodEnd.slice(0, 10)}{row.monthlyCloseCycle && <span className="block text-muted-foreground">마감 {row.monthlyCloseCycle.cycleNo}회차 근거</span>}</TableCell>
             <TableCell>{row._count.revenueLinks}/{row._count.lines}</TableCell>
             <TableCell className="text-right font-medium tabular-nums">{row.subtotal.toLocaleString()}</TableCell>
@@ -520,7 +553,8 @@ export function InvoiceManager({
 
     {preview && <Dialog open onOpenChange={(open) => { if (!open) setPreview(null); }}>
       <DialogContent className="max-h-[94svh] overflow-y-auto sm:max-w-6xl">
-        <DialogHeader><DialogTitle>거래명세표 발행 미리보기</DialogTitle><DialogDescription>전체 {preview.summary.total}건 · 신규 {preview.summary.newCount}건 · 대체 {preview.summary.replacementCount}건 · 차단 {preview.summary.blockedCount}건을 확인하세요.</DialogDescription></DialogHeader>
+         <DialogHeader><DialogTitle>거래명세표 발행 미리보기</DialogTitle><DialogDescription>전체 {preview.summary.total}건 · 신규 {preview.summary.newCount}건 · 대체 {preview.summary.replacementCount}건 · 차단 {preview.summary.blockedCount}건을 확인하세요.</DialogDescription></DialogHeader>
+         {preview.results.some((result) => result.issueDateWarning) && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong>발행일 확인</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.issueDateWarning ? [<li key={`${result.targetKey}:date`}>{result.issueDateWarning}</li>] : [])}</ul></div>}
         {preview.results.some((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED") && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong>대체될 현재 발행본</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED" ? (result.currentInvoices ?? []).map((invoice) => <li key={`${result.targetKey}:${invoice.id}`}>{invoice.invoiceNo}</li>) : [])}</ul></div>}
         {preview.results.some((result) => result.outcome === "BLOCKED") && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"><strong>미리보기에서 제외된 대상</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.outcome === "BLOCKED" ? [<li key={result.targetKey}>{result.error?.message ?? "최신 상태를 확인해 주세요."}</li>] : [])}</ul></div>}
         <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={preview.results.flatMap((result) => result.outcome === "PREVIEWED" ? (result.documents ?? (result.document ? [result.document] : [])) : []).map(toPrintPreview)} /></div>
@@ -537,8 +571,9 @@ export function InvoiceManager({
           <Select label="출력 템플릿" value={replacement.templateId} onChange={(value) => updateReplacement({ templateId: value })} options={templates.map((template) => ({ value: template.id, label: template.name }))} />
           <Field label="메모" value={replacement.memo} onChange={(value) => updateReplacement({ memo: value })} placeholder="선택" />
         </div>
-        {replacement.preview ? <>
-          <div className="rounded-lg border bg-muted/40 p-3 text-sm"><strong>재마감 매출 {replacement.preview.expectedRevenueEntryIds.length}건</strong>{replacement.preview.warnings.length > 0 && <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900"><p className="font-medium">확정 매출이 없는 진행 계약이 있습니다.</p><ul className="mt-1 list-disc pl-5">{replacement.preview.warnings.map((warning) => <li key={warning.id}>{warning.contractNo} · {warning.title}</li>)}</ul><p className="mt-1 text-xs">필요한 계약 매출을 생성·확정하고 재마감한 뒤 다시 미리보기하세요.</p></div>}</div>
+         {replacement.preview ? <>
+           <div className="rounded-lg border bg-muted/40 p-3 text-sm"><strong>재마감 매출 {replacement.preview.expectedRevenueEntryIds.length}건</strong>{replacement.preview.warnings.length > 0 && <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900"><p className="font-medium">확정 매출이 없는 진행 계약이 있습니다.</p><ul className="mt-1 list-disc pl-5">{replacement.preview.warnings.map((warning) => <li key={warning.id}>{warning.contractNo} · {warning.title}</li>)}</ul><p className="mt-1 text-xs">필요한 계약 매출을 생성·확정하고 재마감한 뒤 다시 미리보기하세요.</p></div>}</div>
+           {replacement.preview.issueDateWarning && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">{replacement.preview.issueDateWarning}</div>}
           <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={replacement.preview.documents.map(toPrintPreview)} /></div>
         </> : <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">월을 되돌려 수정한 뒤 재마감한 회차가 있어야 대체 발행할 수 있습니다.</div>}
         <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setReplacement(null)}>취소</Button>{replacement.preview ? <><Button variant="outline" disabled={busy} onClick={() => updateReplacement({ preview: null })}>설정 변경</Button><Button disabled={busy} onClick={() => void replaceCurrentInvoice()}><FileCheck2 data-icon="inline-start" />{busy ? "대체 발행 중..." : "재마감 회차로 월 전체 대체 발행"}</Button></> : <Button disabled={busy} onClick={() => void showReplacementPreview()}><Eye data-icon="inline-start" />대체 발행 미리보기</Button>}</div>
