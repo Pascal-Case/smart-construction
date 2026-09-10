@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { parseExplicitSort, serializeListQuery, toggleSort, type ExplicitSort } from "@/lib/list-sorting";
 import { monthlyCloseSortKeys, type MonthlyCloseSortKey } from "@/lib/monthly-close/schemas";
 import type { MonthCloseException } from "@/lib/monthly-close/types";
+import { isInteractiveRowTarget } from "@/lib/row-selection";
 
 export type ControlRoomData = {
   month: string;
@@ -226,7 +227,18 @@ export function MonthCloseControlRoom({ initialMonth, initialView, initialSort, 
           <TableBody>{rows.length === 0 ? <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">{busy ? "월마감 현황을 불러오는 중입니다." : view === "exceptions" ? "확인할 예외가 없습니다." : "마감 대상 현장이 없습니다."}</TableCell></TableRow> : rows.map((row) => {
             const closed = row.close?.state === "CLOSED";
             const latestCycle = row.close?.cycles[0];
-            return <TableRow key={row.site.id} className={closed ? "bg-emerald-50/30 hover:bg-emerald-50/50 dark:bg-transparent dark:hover:bg-muted/50" : undefined}>
+            const selectable = !closed && canClose;
+            const selectedRow = selectable && selected.includes(row.site.id);
+            return <TableRow
+              key={row.site.id}
+              aria-selected={selectable ? selected.includes(row.site.id) : undefined}
+              data-state={selectedRow ? "selected" : undefined}
+              className={closed ? "bg-emerald-50/30 hover:bg-emerald-50/50 dark:bg-transparent dark:hover:bg-muted/50" : selectable ? "cursor-pointer" : undefined}
+              onClick={(event) => {
+                if (!selectable || isInteractiveRowTarget(event.target)) return;
+                toggle(row.site.id);
+              }}
+            >
               <TableCell><input aria-label={`${row.site.name} 선택`} type="checkbox" disabled={closed || !canClose} checked={selected.includes(row.site.id)} onChange={() => toggle(row.site.id)} /></TableCell>
               <TableCell><span className="font-medium">{row.site.name}</span><span className="block text-xs text-muted-foreground">{row.site.code}</span></TableCell>
               <TableCell><div className="flex flex-wrap gap-1">{closed ? <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300" variant="outline"><CheckCircle2 data-icon="inline-start" />마감 {row.close?.latestCycleNo}회차</Badge> : row.evaluation.blockingCount > 0 ? <Badge className="border-red-200 bg-red-50 text-red-800" variant="outline"><AlertTriangle data-icon="inline-start" />차단 {row.evaluation.blockingCount}</Badge> : <Badge variant="secondary">마감 가능</Badge>}{row.evaluation.replacementRequired && <Badge className="border-amber-200 bg-amber-50 text-amber-800" variant="outline">대체 발행 필요</Badge>}</div>{latestCycle && <span className="mt-1 block text-xs text-muted-foreground">{new Date(latestCycle.closedAt).toLocaleString("ko-KR")}</span>}{row.close && <CloseHistory close={row.close} />}</TableCell>

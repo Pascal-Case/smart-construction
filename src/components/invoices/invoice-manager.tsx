@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatSeoulDateTime } from "@/lib/date-time";
 import type { InvoiceTemplateConfig, InvoiceTemplateView } from "@/lib/invoice-templates/config";
+import { isInteractiveRowTarget } from "@/lib/row-selection";
 
 type SiteOption = { id: string; name: string };
 type Candidate = {
@@ -553,7 +554,16 @@ export function InvoiceManager({
                 <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                   현재 발행 대기 중인 대상이 없습니다.
                 </TableCell>
-              </TableRow> : candidates.rows.map((row) => <TableRow key={row.targetKey}>
+              </TableRow> : candidates.rows.map((row) => <TableRow
+                key={row.targetKey}
+                aria-selected={row.selectable ? selected.includes(row.targetKey) : undefined}
+                data-state={row.selectable && selected.includes(row.targetKey) ? "selected" : undefined}
+                className={row.selectable ? "cursor-pointer" : undefined}
+                onClick={(event) => {
+                  if (!row.selectable || isInteractiveRowTarget(event.target)) return;
+                  toggle(row.targetKey);
+                }}
+              >
                 <TableCell>
                   <input
                     aria-label={`${row.siteName} ${row.month} ${row.kind === "REPLACEMENT" ? "대체" : "신규"} 발행 선택`}

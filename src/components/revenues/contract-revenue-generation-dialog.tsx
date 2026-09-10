@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatSeoulDateTime } from "@/lib/date-time";
 import { limitSearchSelection, retainBlockedContractSelection, toggleCandidatePageSelection, toggleCandidateSelection } from "@/components/revenues/contract-revenue-generation-state";
+import { isInteractiveRowTarget } from "@/lib/row-selection";
 
 type SiteOption = { id: string; name: string; isActive: boolean };
 type Candidate = { id: string; contractNo: string; title: string; pendingAt: string; site: { id: string; name: string } };
@@ -212,7 +213,16 @@ export function ContractRevenueGenerationDialog({ sites, onClose, onGenerated }:
       <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader><TableRow><TableHead className="w-10"><input aria-label="현재 페이지 계약 전체 선택" type="checkbox" checked={allPageSelected} disabled={loadingCandidates || busy || !pageIds.length} onChange={togglePageSelection} /></TableHead><TableHead>계약번호</TableHead><TableHead>현장</TableHead><TableHead>계약명</TableHead><TableHead>처리 대기</TableHead></TableRow></TableHeader>
-          <TableBody>{loadingCandidates && !candidates ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">처리할 계약을 불러오는 중입니다.</TableCell></TableRow> : !candidates?.rows.length ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">처리할 계약 매출이 없습니다.</TableCell></TableRow> : candidates.rows.map((candidate) => <TableRow key={candidate.id}><TableCell><input aria-label={`${candidate.contractNo} 선택`} type="checkbox" checked={selectedIds.includes(candidate.id)} disabled={busy} onChange={() => toggleOneSelection(candidate.id)} /></TableCell><TableCell className="font-medium">{candidate.contractNo}</TableCell><TableCell>{candidate.site.name}</TableCell><TableCell>{candidate.title}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatSeoulDateTime(candidate.pendingAt)}</TableCell></TableRow>)}</TableBody>
+          <TableBody>{loadingCandidates && !candidates ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">처리할 계약을 불러오는 중입니다.</TableCell></TableRow> : !candidates?.rows.length ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">처리할 계약 매출이 없습니다.</TableCell></TableRow> : candidates.rows.map((candidate) => <TableRow
+            key={candidate.id}
+            aria-selected={selectedIds.includes(candidate.id)}
+            data-state={selectedIds.includes(candidate.id) ? "selected" : undefined}
+            className={busy ? undefined : "cursor-pointer"}
+            onClick={(event) => {
+              if (busy || isInteractiveRowTarget(event.target)) return;
+              toggleOneSelection(candidate.id);
+            }}
+          ><TableCell><input aria-label={`${candidate.contractNo} 선택`} type="checkbox" checked={selectedIds.includes(candidate.id)} disabled={busy} onChange={() => toggleOneSelection(candidate.id)} /></TableCell><TableCell className="font-medium">{candidate.contractNo}</TableCell><TableCell>{candidate.site.name}</TableCell><TableCell>{candidate.title}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatSeoulDateTime(candidate.pendingAt)}</TableCell></TableRow>)}</TableBody>
         </Table>
       </div>
       {candidates && <div className="flex items-center justify-between text-sm text-muted-foreground"><span>처리 대기 {candidates.total}건 · {candidates.page}/{candidates.totalPages} 페이지</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={loadingCandidates || busy || candidates.page <= 1} onClick={() => void loadCandidates({ query: q, site: siteId, page: candidates.page - 1 })}>이전</Button><Button size="sm" variant="outline" disabled={loadingCandidates || busy || candidates.page >= candidates.totalPages} onClick={() => void loadCandidates({ query: q, site: siteId, page: candidates.page + 1 })}>다음</Button></div></div>}
