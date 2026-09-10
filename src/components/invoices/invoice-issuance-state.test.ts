@@ -59,4 +59,37 @@ describe("invoice issuance selection state", () => {
 
     expect(targets).toEqual([expect.objectContaining({ issueDate: "2026-09-10", issueItemIds: ["item-a", "item-b"], candidateKeys: ["new:a", "new:b"] })]);
   });
+
+  it("keeps automatic targets scoped to selected items", () => {
+    const groupCandidates = [
+      { targetKey: "new:a", kind: "NEW" as const, selectable: true, supplyAmount: 100, siteId: "site-1", siteName: "강남 현장", contractCategoryId: "category-1", contractCategoryName: "안전", cycleId: "cycle-1", closeVersion: 2, revenueFingerprint: "a".repeat(64), issueItemId: "item-a" },
+      { targetKey: "new:b", kind: "NEW" as const, selectable: true, supplyAmount: 200, siteId: "site-1", siteName: "강남 현장", contractCategoryId: "category-1", contractCategoryName: "안전", cycleId: "cycle-1", closeVersion: 2, revenueFingerprint: "a".repeat(64), issueItemId: "item-b" },
+    ];
+
+    expect(buildNewIssueTargets(groupCandidates, ["new:a"], {}, {}, "2026-09-10")).toEqual([
+      expect.objectContaining({ issueItemIds: ["item-a"], candidateKeys: ["new:a"] }),
+    ]);
+  });
+
+  it("creates one target per selected item when manual groups are assigned", () => {
+    const groupCandidates = [
+      { targetKey: "new:a", kind: "NEW" as const, selectable: true, supplyAmount: 100, siteId: "site-1", siteName: "강남 현장", contractCategoryId: "category-1", contractCategoryName: "안전", cycleId: "cycle-1", closeVersion: 2, revenueFingerprint: "a".repeat(64), issueItemId: "item-a" },
+      { targetKey: "new:b", kind: "NEW" as const, selectable: true, supplyAmount: 200, siteId: "site-1", siteName: "강남 현장", contractCategoryId: "category-1", contractCategoryName: "안전", cycleId: "cycle-1", closeVersion: 2, revenueFingerprint: "a".repeat(64), issueItemId: "item-b" },
+    ];
+
+    expect(buildNewIssueTargets(groupCandidates, ["new:a", "new:b"], {}, { "new:a": "manual-a", "new:b": "manual-b" }, "2026-09-10")).toEqual([
+      expect.objectContaining({ documentGroupKey: "manual-a", issueItemIds: ["item-a"], candidateKeys: ["new:a"] }),
+      expect.objectContaining({ documentGroupKey: "manual-b", issueItemIds: ["item-b"], candidateKeys: ["new:b"] }),
+    ]);
+  });
+
+  it("keeps a manual item split when its issue date changes", () => {
+    const groupCandidates = [
+      { targetKey: "new:a", kind: "NEW" as const, selectable: true, supplyAmount: 100, siteId: "site-1", siteName: "강남 현장", contractCategoryId: "category-1", contractCategoryName: "안전", cycleId: "cycle-1", closeVersion: 2, revenueFingerprint: "a".repeat(64), issueItemId: "item-a" },
+    ];
+
+    expect(buildNewIssueTargets(groupCandidates, ["new:a"], { "new:a": "2026-09-11" }, { "new:a": "manual-a" }, "2026-09-10")).toEqual([
+      expect.objectContaining({ documentGroupKey: "manual-a", issueDate: "2026-09-11", issueItemIds: ["item-a"] }),
+    ]);
+  });
 });

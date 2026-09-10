@@ -100,6 +100,7 @@ export function buildNewIssueTargets(
   manualGroupKeys: Record<string, string>,
   defaultDate: string,
 ) {
+  const candidateByKey = new Map(candidates.map((candidate) => [candidate.targetKey, candidate]));
   return buildIssueGroups(candidates, selected, issueDates, manualGroupKeys, defaultDate)
     .filter((group) => group.selectedKeys.length > 0)
     .map((group) => ({
@@ -109,7 +110,10 @@ export function buildNewIssueTargets(
       expectedCloseVersion: group.closeVersion,
       expectedRevenueFingerprint: group.revenueFingerprint,
       contractCategoryId: group.contractCategoryId,
-      issueItemIds: group.issueItemIds,
+      issueItemIds: [...new Set(group.selectedKeys.flatMap((key) => {
+        const candidate = candidateByKey.get(key);
+        return candidate ? [candidate.issueItemId] : [];
+      }))],
       documentGroupKey: group.groupKey,
       candidateKeys: group.selectedKeys,
       issueDate: group.issueDate,

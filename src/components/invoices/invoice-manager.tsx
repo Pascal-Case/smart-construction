@@ -260,11 +260,6 @@ export function InvoiceManager({
 
   function setCandidateIssueDate(targetKey: string, value: string) {
     setIssueDates((current) => ({ ...current, [targetKey]: value }));
-    setManualGroupKeys((current) => {
-      const next = { ...current };
-      delete next[targetKey];
-      return next;
-    });
     setPreview(null);
     setPending(null);
   }
@@ -272,22 +267,21 @@ export function InvoiceManager({
   function applyBulkIssueDate() {
     if (!selected.length) return toast.error("발행일을 적용할 대상을 선택해 주세요.");
     setIssueDates((current) => applyIssueDateToSelected(current, selected, issueDate));
-    setManualGroupKeys((current) => {
-      const next = { ...current };
-      for (const targetKey of selected) delete next[targetKey];
-      return next;
-    });
     setPreview(null);
     setPending(null);
   }
 
   function splitSelectedIntoGroup() {
     const selectedRows = candidates?.rows.filter((row): row is Candidate & { kind: "NEW" } => row.kind === "NEW" && row.selectable && selected.includes(row.targetKey)) ?? [];
-    if (!selectedRows.length) return toast.error("분리할 신규 품목을 선택해 주세요.");
-    const automaticKeys = new Set(selectedRows.map((row) => automaticIssueGroupKey(row, issueDates[row.targetKey] ?? issueDate)));
-    if (automaticKeys.size !== 1) return toast.error("같은 현장·계약 구분·발행일의 품목만 하나의 별도 거래명세표로 분리할 수 있습니다.");
-    const manualGroupKey = `${[...automaticKeys][0]}:manual:${globalThis.crypto.randomUUID()}`;
-    setManualGroupKeys((current) => ({ ...current, ...Object.fromEntries(selectedRows.map((row) => [row.targetKey, manualGroupKey])) }));
+    const itemRows = selectedRows.filter((row) => row.issueItemId != null);
+    if (!itemRows.length) return toast.error("개별 분리할 품목이 있는 신규 매출을 선택해 주세요.");
+    setManualGroupKeys((current) => ({
+      ...current,
+      ...Object.fromEntries(itemRows.map((row) => [
+        row.targetKey,
+        `${automaticIssueGroupKey(row, issueDates[row.targetKey] ?? issueDate)}:manual:${globalThis.crypto.randomUUID()}`,
+      ])),
+    }));
     setPreview(null);
     setPending(null);
   }
@@ -309,8 +303,7 @@ export function InvoiceManager({
     const template = templates.find((item) => item.id === templateId) ?? templates[0];
     if (!template) return toast.error("사용할 템플릿을 선택해 주세요.");
     const selectedRows = candidates?.rows.filter((row) => row.selectable && selected.includes(row.targetKey)) ?? [];
-    const selectedNewCandidates = selectedRows.filter((row): row is Candidate & { kind: "NEW" } => row.kind === "NEW");
-    const newTargets = buildNewIssueTargets(selectedNewCandidates as IssueGroupingCandidate[], selected, issueDates, manualGroupKeys, issueDate);
+    const newTargets = buildNewIssueTargets(issueGroupCandidates, selected, issueDates, manualGroupKeys, issueDate);
     const replacementTargets = selectedRows.flatMap((row) => row.kind === "REPLACEMENT" && row.sourceInvoiceId && row.sourceVersion
       ? [{ targetKey: row.targetKey, kind: "REPLACEMENT" as const, sourceInvoiceId: row.sourceInvoiceId, sourceVersion: row.sourceVersion, candidateKeys: [row.targetKey], issueDate: issueDates[row.targetKey] ?? issueDate }]
       : []);
@@ -460,6 +453,8 @@ export function InvoiceManager({
   const selectedSummary = selectionSummary(selected, candidates?.rows ?? []);
   const issueGroupCandidates: IssueGroupingCandidate[] = (candidates?.rows.filter((row): row is Candidate & { kind: "NEW" } => row.kind === "NEW") ?? []) as IssueGroupingCandidate[];
   const issueGroups = buildIssueGroups(issueGroupCandidates, selected, issueDates, manualGroupKeys, issueDate);
+  const selectedIssueGroupCount = issueGroups.filter((group) => group.selectedKeys.length > 0).length;
+  const expectedDocumentCount = selectedIssueGroupCount + selectedSummary.replacementCount;
   const groupByCandidateKey = new Map(issueGroups.flatMap((group) => group.candidateKeys.map((key) => [key, group] as const)));
   const allSelectableSelected = Boolean(candidates?.rows.some((row) => row.selectable))
     && candidates!.rows.filter((row) => row.selectable).every((row) => selected.includes(row.targetKey));
@@ -512,12 +507,12 @@ export function InvoiceManager({
         {issueGroups.length > 0 && <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-sm font-medium">거래명세표 그룹 {issueGroups.length}개</p>
-              <p className="text-xs text-muted-foreground">같은 현장·계약 구분·발행일은 자동으로 묶이며, 선택 품목은 별도 거래명세표로 분리할 수 있습니다.</p>
+              <p className="text-sm font-medium">거래명세표 그룹 {issueGroups.length}개 · 선택 발행 예상 {expectedDocumentCount}장</p>
+              <p className="text-xs text-muted-foreground">같은 현장·계약 구분·발행일은 자동으로 묶이며, 개별 분리 시 선택한 각 품목을 각각 별도 거래명세표로 출력합니다.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" disabled={!selected.some((key) => issueGroupCandidates.some((candidate) => candidate.targetKey === key))} onClick={splitSelectedIntoGroup}>
-                <GitBranch data-icon="inline-start" />선택 품목 분리
+                <GitBranch data-icon="inline-start" />선택 품목별 개별 분리
               </Button>
               <Button size="sm" variant="ghost" disabled={!Object.keys(manualGroupKeys).some((key) => selected.includes(key))} onClick={mergeSelectedIntoAutomaticGroups}>
                 <Merge data-icon="inline-start" />자동 묶음으로 복귀
@@ -531,7 +526,7 @@ export function InvoiceManager({
                 <span className="text-xs text-muted-foreground">{group.issueDate}</span>
               </div>
               <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{group.manual ? "수동 분리" : "자동 묶음"} · 품목 {group.candidateKeys.length}개 · 선택 {group.selectedKeys.length}개</span>
+                <span>{group.manual ? "개별 분리" : "자동 묶음"} · 품목 {group.candidateKeys.length}개 · 선택 {group.selectedKeys.length}개</span>
                 <span className="tabular-nums">{group.selectedAmount.toLocaleString()}원</span>
               </div>
             </div>)}
