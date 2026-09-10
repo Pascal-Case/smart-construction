@@ -79,13 +79,49 @@ describe("invoice calculation", () => {
     expect(result.map((document) => document.lines.flatMap((line) => line.revenueEntryIds))).toEqual([["r2"], ["r1"]]);
   });
 
-  it("합산 출력은 대표 품목이 같은 원본 품목의 금액을 합치고 서로 다른 산출 필드를 비운다", () => {
+  it("합산 출력은 대표 품목 매출의 표시값을 유지하고 합산 금액에 맞춰 단가를 계산한다", () => {
     const result = buildInvoiceDrafts([
-      { ...base, id: "platform", itemId: "item-platform", itemName: "플랫폼 사용료", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+      { ...base, id: "platform", itemId: "item-platform", itemName: "플랫폼 사용료", itemSpecification: "서비스형", description: null, invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+      { ...base, id: "analysis", itemId: "item-analysis", itemName: "사진 분석 개발비용", description: "AI 분석", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 500_000, supplyAmount: 500_000 },
+    ], "AGGREGATED");
+
+    expect(result[0].lines).toEqual([expect.objectContaining({ itemName: "플랫폼 사용료", specification: "서비스형", quantity: 1, unit: "월", unitPrice: 800_000, supplyAmount: 800_000, taxAmount: 80_000, revenueEntryIds: ["platform", "analysis"] })]);
+  });
+
+  it("합산 그룹에 대표 품목 매출이 없으면 계산 열을 비운다", () => {
+    const result = buildInvoiceDrafts([
       { ...base, id: "analysis", itemId: "item-analysis", itemName: "사진 분석 개발비용", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 500_000, supplyAmount: 500_000 },
     ], "AGGREGATED");
 
-    expect(result[0].lines).toEqual([expect.objectContaining({ itemName: "플랫폼 사용료", specification: null, quantity: null, unit: null, unitPrice: null, supplyAmount: 800_000, taxAmount: 80_000, revenueEntryIds: ["platform", "analysis"] })]);
+    expect(result[0].lines[0]).toMatchObject({ itemName: "플랫폼 사용료", specification: null, quantity: null, unit: null, unitPrice: null, supplyAmount: 500_000 });
+  });
+
+  it("대표 품목 매출이 여러 건이면 수량을 합산하고 정확히 계산되는 단가만 표시한다", () => {
+    const result = buildInvoiceDrafts([
+      { ...base, id: "platform-1", itemId: "item-platform", itemName: "플랫폼 사용료", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+      { ...base, id: "platform-2", itemId: "item-platform", itemName: "플랫폼 사용료", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+      { ...base, id: "analysis", itemId: "item-analysis", itemName: "사진 분석 개발비용", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 400_000, supplyAmount: 400_001 },
+    ], "AGGREGATED");
+
+    expect(result[0].lines[0]).toMatchObject({ quantity: 2, unit: "월", unitPrice: null, supplyAmount: 1_000_001 });
+  });
+
+  it("대표 품목 매출의 단위가 다르면 수량·단위·단가를 비운다", () => {
+    const result = buildInvoiceDrafts([
+      { ...base, id: "platform-1", itemId: "item-platform", itemName: "플랫폼 사용료", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+      { ...base, id: "platform-2", itemId: "item-platform", itemName: "플랫폼 사용료", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 300_000, supplyAmount: 300_000 },
+    ], "AGGREGATED");
+
+    expect(result[0].lines[0]).toMatchObject({ quantity: null, unit: null, unitPrice: null, supplyAmount: 600_000 });
+  });
+
+  it("대표 품목 매출의 규격만 다르면 규격만 비우고 계산값은 유지한다", () => {
+    const result = buildInvoiceDrafts([
+      { ...base, id: "platform-1", itemId: "item-platform", itemName: "플랫폼 사용료", description: "기본형", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+      { ...base, id: "platform-2", itemId: "item-platform", itemName: "플랫폼 사용료", description: "확장형", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
+    ], "AGGREGATED");
+
+    expect(result[0].lines[0]).toMatchObject({ specification: null, quantity: 2, unit: "월", unitPrice: 300_000, supplyAmount: 600_000 });
   });
 
   it("건별 출력은 대표 품목 설정이 있어도 원본 품목을 유지한다", () => {

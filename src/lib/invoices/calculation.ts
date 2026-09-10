@@ -78,33 +78,52 @@ function buildDocument(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" 
 }
 
 function aggregateLines(entries: InvoiceSourceEntry[]) {
-  const groups = new Map<string, InvoiceLineDraft>();
+  const groups = new Map<string, InvoiceSourceEntry[]>();
   for (const entry of entries) {
-    const line = toLine(entry, true);
     const key = entry.invoiceDisplayItemId
       ? JSON.stringify(["display", entry.invoiceDisplayItemId])
-      : JSON.stringify(["source", line.itemName, line.specification, line.unit, line.unitPrice]);
-    const current = groups.get(key);
-    if (!current) {
-      groups.set(key, line);
-      continue;
-    }
-    const sameCalculation = current.specification === line.specification
-      && current.unit === line.unit
-      && current.unitPrice === line.unitPrice;
-    current.quantity = sameCalculation && current.quantity != null && line.quantity != null
-      ? current.quantity + line.quantity
-      : null;
-    if (!sameCalculation) {
-      current.specification = null;
-      current.unit = null;
-      current.unitPrice = null;
-    }
-    current.supplyAmount += line.supplyAmount;
-    current.taxAmount = Math.round(current.supplyAmount * 0.1);
-    current.revenueEntryIds.push(...line.revenueEntryIds);
+      : JSON.stringify(["source", entry.itemName ?? entry.title, entry.description ?? entry.itemSpecification, entry.unit, entry.unitPrice]);
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
-  return [...groups.values()];
+  return [...groups.values()].map((group) => group[0].invoiceDisplayItemId
+    ? aggregateDisplayItemLines(group)
+    : aggregateMatchingLines(group));
+}
+
+function aggregateMatchingLines(entries: InvoiceSourceEntry[]): InvoiceLineDraft {
+  const line = toLine(entries[0]);
+  for (const entry of entries.slice(1)) {
+    const next = toLine(entry);
+    line.quantity = line.quantity != null && next.quantity != null ? line.quantity + next.quantity : null;
+    line.supplyAmount += next.supplyAmount;
+    line.revenueEntryIds.push(...next.revenueEntryIds);
+  }
+  line.taxAmount = Math.round(line.supplyAmount * 0.1);
+  return line;
+}
+
+function aggregateDisplayItemLines(entries: InvoiceSourceEntry[]): InvoiceLineDraft {
+  const line = toLine(entries[0], true);
+  line.supplyAmount = entries.reduce((sum, entry) => sum + entry.supplyAmount, 0);
+  line.taxAmount = Math.round(line.supplyAmount * 0.1);
+  line.revenueEntryIds = entries.map((entry) => entry.id);
+
+  const representativeEntries = entries.filter((entry) => entry.itemId === entry.invoiceDisplayItemId);
+  if (!representativeEntries.length) return { ...line, specification: null, quantity: null, unit: null, unitPrice: null };
+
+  const representativeLines = representativeEntries.map((entry) => toLine(entry));
+  line.specification = commonValue(representativeLines.map((entry) => entry.specification));
+  line.unit = commonValue(representativeLines.map((entry) => entry.unit));
+  line.quantity = line.unit != null && representativeLines.every((entry) => entry.quantity != null)
+    ? representativeLines.reduce((sum, entry) => sum + entry.quantity!, 0)
+    : null;
+  const calculatedUnitPrice = line.quantity ? line.supplyAmount / line.quantity : null;
+  line.unitPrice = calculatedUnitPrice != null && Number.isInteger(calculatedUnitPrice) ? calculatedUnitPrice : null;
+  return line;
+}
+
+function commonValue<T>(values: T[]): T | null {
+  return values.every((value) => value === values[0]) ? values[0] : null;
 }
 
 function toLine(entry: InvoiceSourceEntry, useDisplayItem = false): InvoiceLineDraft {
