@@ -218,7 +218,7 @@ export async function previewInvoices(input: InvoicePreviewInput) {
       try {
         if (target.kind === "NEW") {
           const context = await loadIssueCycle(tx, target);
-          const documents = buildInvoiceDrafts(toSourceEntries(context.entries, context.cycle.snapshotJson), input.displayMode);
+          const documents = buildInvoiceDrafts(toSourceEntries(context.entries, context.cycle.snapshotJson), input.displayMode, { documentGroupKey: target.documentGroupKey ?? null });
           const issueDate = target.issueDate ?? input.issueDate;
           results.push({
             targetKey: target.targetKey,
@@ -244,7 +244,7 @@ export async function previewInvoices(input: InvoicePreviewInput) {
         const context = await loadReplacementContext(tx, target.sourceInvoiceId);
         if (context.source.version !== target.sourceVersion) throw replacementChanged();
         const warnings = await loadMissingContractWarnings(tx, context.source);
-        const documents = buildInvoiceDrafts(toSourceEntriesForCycles(context.entries, context.latestCycles), input.displayMode);
+        const documents = buildReplacementDrafts(context.entries, context.latestCycles, context.activeDocuments, input.displayMode);
         if (!documents.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
         const issueDate = target.issueDate ?? input.issueDate;
         results.push({
@@ -299,14 +299,14 @@ export async function issueInvoices(actor: SessionUser, input: InvoiceIssueInput
         if (target.kind === "NEW") return issueNewInvoiceInTransaction(tx, actor, target, input);
         return replaceInvoiceInTransaction(tx, actor, target.sourceInvoiceId, { ...input, ...target });
       });
-      results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), outcome: "ISSUED" as const, documents: Array.isArray(documents) ? documents : [documents] });
+      results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), candidateKeys: target.candidateKeys, outcome: "ISSUED" as const, documents: Array.isArray(documents) ? documents : [documents] });
     } catch (error) {
       if (error instanceof AuthError) {
-        results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), outcome: "BLOCKED" as const, error: { code: error.code, message: error.message } });
+        results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), candidateKeys: target.candidateKeys, outcome: "BLOCKED" as const, error: { code: error.code, message: error.message } });
         continue;
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), outcome: "ALREADY_ISSUED" as const });
+        results.push({ targetKey: target.targetKey, kind: target.kind, ...(target.kind === "NEW" ? { cycleId: target.cycleId } : {}), candidateKeys: target.candidateKeys, outcome: "ALREADY_ISSUED" as const });
         continue;
       }
       throw error;
@@ -324,7 +324,7 @@ async function issueNewInvoiceInTransaction(
   const setting = await requireCompanySetting(tx);
   const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
   const context = await loadIssueCycle(tx, target);
-  const drafts = buildInvoiceDrafts(toSourceEntries(context.entries, context.cycle.snapshotJson), input.displayMode);
+  const drafts = buildInvoiceDrafts(toSourceEntries(context.entries, context.cycle.snapshotJson), input.displayMode, { documentGroupKey: target.documentGroupKey ?? null });
   const issuedAt = new Date();
   const issueDate = target.issueDate ?? input.issueDate;
   const snapshotInput = { periodStart: context.month + "-01", periodEnd: monthEnd(context.month), issueDate, displayMode: input.displayMode, memo: input.memo };
@@ -334,7 +334,7 @@ async function issueNewInvoiceInTransaction(
     const revenueEntryIds = draft.lines.flatMap((line) => line.revenueEntryIds);
     const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: revenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
     if (assigned.count !== revenueEntryIds.length) throw new AuthError("마감 회차의 일부 매출이 이미 발행되었습니다.", 409, "INVOICE_CYCLE_CHANGED");
-    await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, monthlyCloseCycleId: context.cycle.id, contractCategoryCode: draft.contractCategoryCode, issueItemId: draft.issueItemId, issueItemName: draft.issueItemName, issueDate, siteId: draft.siteId, revenueEntryIds, subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount, templateId: template.id, templateVersion: template.version } });
+    await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "ISSUE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, monthlyCloseCycleId: context.cycle.id, documentGroupKey: draft.documentGroupKey, contractCategoryCode: draft.contractCategoryCode, issueItemId: draft.issueItemId, issueItemName: draft.issueItemName, issueDate, siteId: draft.siteId, revenueEntryIds, subtotal: draft.subtotal, taxAmount: draft.taxAmount, totalAmount: draft.totalAmount, templateId: template.id, templateVersion: template.version } });
     await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, month: context.month, actorId: actor.id });
     documents.push(await getInvoiceDocument(document.id, tx));
   }
@@ -348,7 +348,7 @@ export async function previewReplacementInvoice(invoiceId: string, input: Invoic
     if (context.source.version !== input.sourceVersion) throw replacementChanged();
     const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
     const warnings = await loadMissingContractWarnings(tx, context.source);
-    const drafts = buildInvoiceDrafts(toSourceEntriesForCycles(context.entries, context.latestCycles), input.displayMode);
+    const drafts = buildReplacementDrafts(context.entries, context.latestCycles, context.activeDocuments, input.displayMode);
     if (!drafts.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
     return {
       expectedRevenueEntryIds: context.entries.map((entry) => entry.id),
@@ -388,7 +388,7 @@ async function replaceInvoiceInTransaction(
     || (input.expectedActiveInvoiceIds && !sameRevenueSet(input.expectedActiveInvoiceIds, activeInvoiceIds))
     || (input.expectedCloseCycleIds && !sameRevenueSet(input.expectedCloseCycleIds, closeCycleIds))) throw replacementChanged();
   const template = await resolveInvoiceTemplate(input.templateId, input.templateVersion, tx);
-  const drafts = buildInvoiceDrafts(toSourceEntriesForCycles(context.entries, context.latestCycles), input.displayMode);
+  const drafts = buildReplacementDrafts(context.entries, context.latestCycles, context.activeDocuments, input.displayMode);
   if (!drafts.length) throw new AuthError("대체 발행할 확정 매출이 없습니다.", 409, "INVOICE_REPLACEMENT_EMPTY");
 
   const issuedAt = new Date();
@@ -400,13 +400,13 @@ async function replaceInvoiceInTransaction(
     const revenueEntryIds = draft.lines.flatMap((line) => line.revenueEntryIds);
     const assigned = await tx.revenueEntry.updateMany({ where: { id: { in: revenueEntryIds }, currentInvoiceDocumentId: null }, data: { currentInvoiceDocumentId: document.id } });
     if (assigned.count !== revenueEntryIds.length) throw replacementChanged();
-    await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "REPLACE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, contractCategoryCode: draft.contractCategoryCode, issueItemId: draft.issueItemId, issueItemName: draft.issueItemName, issueDate: input.issueDate, siteId: document.siteId, replacedInvoiceIds: activeInvoiceIds, revenueEntryIds, subtotal: document.subtotal, taxAmount: document.taxAmount, totalAmount: document.totalAmount, templateId: template.id, templateVersion: template.version } });
+    await recordAudit(tx, { actorId: actor.id, actorName: actor.name, action: "REPLACE", entityType: "INVOICE", entityId: document.id, after: { invoiceNo: document.invoiceNo, documentGroupKey: draft.documentGroupKey, contractCategoryCode: draft.contractCategoryCode, issueItemId: draft.issueItemId, issueItemName: draft.issueItemName, issueDate: input.issueDate, siteId: document.siteId, replacedInvoiceIds: activeInvoiceIds, revenueEntryIds, subtotal: document.subtotal, taxAmount: document.taxAmount, totalAmount: document.totalAmount, templateId: template.id, templateVersion: template.version } });
     await recordSyncEvent(tx, { type: "invoice.changed", entityId: document.id, siteId: document.siteId, actorId: actor.id });
     documents.push(document);
   }
-  const replacementByItem = new Map(documents.map((document) => [document.issueItemId ?? "__NO_ITEM__", document.id]));
+  const replacementByGroup = new Map(documents.map((document) => [document.documentGroupKey ?? `legacy:${document.id}`, document.id]));
   for (const active of context.activeDocuments) {
-    const supersededByInvoiceId = replacementByItem.get(active.issueItemId ?? "__NO_ITEM__") ?? documents[0].id;
+    const supersededByInvoiceId = replacementByGroup.get(active.documentGroupKey ?? `legacy:${active.id}`) ?? documents[0].id;
     const superseded = await tx.invoiceDocument.updateMany({ where: { id: active.id, status: "ISSUED" }, data: { status: "SUPERSEDED", supersededAt: issuedAt, supersededByInvoiceId, version: { increment: 1 } } });
     if (superseded.count !== 1) throw replacementChanged();
   }
@@ -553,13 +553,15 @@ async function loadIssueCycle(
     throw new AuthError("마감 회차의 확정 매출이 변경되었습니다.", 409, "INVOICE_CYCLE_CHANGED");
   }
   const unissuedEntries = entries.filter((entry) => entry.currentInvoiceDocumentId == null);
+  const issueItemIds = target.issueItemIds ?? (target.issueItemId !== undefined ? [target.issueItemId] : null);
+  const issueItemKeys = issueItemIds ? new Set(issueItemIds.map((itemId) => itemId ?? "__NO_ITEM__")) : null;
   const scopedEntries = unissuedEntries.filter((entry) => entry.contractCategoryId === target.contractCategoryId)
-    .filter((entry) => target.issueItemId !== undefined ? entry.itemId === target.issueItemId : true);
+    .filter((entry) => !issueItemKeys || issueItemKeys.has(entry.itemId ?? "__NO_ITEM__"));
   if (!scopedEntries.length) {
     throw new AuthError(
-      target.issueItemId !== undefined ? "선택한 품목은 이미 발행되었거나 발행할 확정 매출이 없습니다." : "이미 발행된 마감 회차입니다.",
+      issueItemKeys ? "선택한 품목은 이미 발행되었거나 발행할 확정 매출이 없습니다." : "이미 발행된 마감 회차입니다.",
       409,
-      target.issueItemId !== undefined ? "INVOICE_ITEM_ALREADY_ISSUED" : "INVOICE_CYCLE_ALREADY_ISSUED",
+      issueItemKeys ? "INVOICE_ITEM_ALREADY_ISSUED" : "INVOICE_CYCLE_ALREADY_ISSUED",
     );
   }
   return { cycle, close, month: close.month, entries: scopedEntries };
@@ -601,6 +603,68 @@ function toSourceEntriesForCycles(rows: CandidateRow[], cycles: Array<{ snapshot
   });
 }
 
+type ReplacementActiveDocument = {
+  id: string;
+  documentGroupKey: string | null;
+  issueItemId: string | null;
+  revenueLinks: Array<{ revenueEntryId: string }>;
+};
+
+function buildReplacementDrafts(
+  rows: CandidateRow[],
+  cycles: Array<{ snapshotJson: string }>,
+  activeDocuments: ReplacementActiveDocument[],
+  displayMode: "AGGREGATED" | "ITEMIZED",
+) {
+  const sourceEntries = toSourceEntriesForCycles(rows, cycles);
+  const sourceById = new Map(sourceEntries.map((entry) => [entry.id, entry]));
+  const groupEntries = new Map<string, Set<string>>();
+  const entryGroups = new Map<string, Set<string>>();
+  const itemGroups = new Map<string, Set<string>>();
+
+  for (const document of activeDocuments) {
+    const groupKey = document.documentGroupKey ?? `legacy:${document.id}`;
+    const entryIds = groupEntries.get(groupKey) ?? new Set<string>();
+    groupEntries.set(groupKey, entryIds);
+    const itemKeys = new Set<string>();
+    for (const link of document.revenueLinks) {
+      const entry = sourceById.get(link.revenueEntryId);
+      if (!entry) continue;
+      entryIds.add(entry.id);
+      const groups = entryGroups.get(entry.id) ?? new Set<string>();
+      groups.add(groupKey);
+      entryGroups.set(entry.id, groups);
+      itemKeys.add(entry.itemId ?? "__NO_ITEM__");
+    }
+    if (document.issueItemId != null) itemKeys.add(document.issueItemId);
+    for (const itemKey of itemKeys) {
+      const groups = itemGroups.get(itemKey) ?? new Set<string>();
+      groups.add(groupKey);
+      itemGroups.set(itemKey, groups);
+    }
+  }
+
+  for (const entry of sourceEntries) {
+    const exactGroups = entryGroups.get(entry.id);
+    const matchingGroups = exactGroups && exactGroups.size > 0
+      ? exactGroups
+      : itemGroups.get(entry.itemId ?? "__NO_ITEM__") ?? new Set(groupEntries.keys());
+    if (matchingGroups.size !== 1) {
+      throw new AuthError("기존 거래명세표의 품목 분할을 현재 매출에 대응할 수 없습니다.", 409, "INVOICE_REPLACEMENT_SCOPE_CONFLICT");
+    }
+    const groupKey = [...matchingGroups][0];
+    groupEntries.get(groupKey)!.add(entry.id);
+  }
+
+  return [...groupEntries.entries()]
+    .map(([groupKey, entryIds]) => buildInvoiceDrafts(
+      sourceEntries.filter((entry) => entryIds.has(entry.id)),
+      displayMode,
+      { documentGroupKey: groupKey },
+    ))
+    .flat();
+}
+
 async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: string) {
   const source = await tx.invoiceDocument.findUnique({
     where: { id: invoiceId },
@@ -631,6 +695,7 @@ async function loadReplacementContext(tx: Prisma.TransactionClient, invoiceId: s
       where: { siteId: source.siteId, contractCategoryId: source.contractCategoryId, periodStart: source.periodStart, periodEnd: source.periodEnd, status: "ISSUED" },
       select: {
         id: true,
+        documentGroupKey: true,
         invoiceNo: true,
         version: true,
         contractCategoryId: true,
@@ -728,6 +793,7 @@ async function createInvoiceSnapshot(
     contractCategoryId: draft.contractCategoryId,
     contractCategoryCode: draft.contractCategoryCode,
     contractCategoryName: draft.contractCategoryName,
+    documentGroupKey: draft.documentGroupKey,
     issueItemId: draft.issueItemId,
     issueItemName: draft.issueItemName,
     revenueFingerprint: draft.revenueFingerprint,

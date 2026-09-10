@@ -1,12 +1,12 @@
 "use client";
 
-import { CalendarCheck2, Eye, FileCheck2, Printer, RefreshCw, Search, Settings2 } from "lucide-react";
+import { CalendarCheck2, Eye, FileCheck2, GitBranch, Merge, Printer, RefreshCw, Search, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { InvoiceDocumentPages, type InvoicePrintDocument } from "@/components/invoices/invoice-document";
-import { applyIssueDateToSelected, preserveCandidateIssueDates, reconcileIssueResults, selectionSummary, toggleAllSelectable } from "@/components/invoices/invoice-issuance-state";
+import { applyIssueDateToSelected, automaticIssueGroupKey, buildIssueGroups, buildNewIssueTargets, preserveCandidateIssueDates, reconcileIssueResults, selectionSummary, toggleAllSelectable, type IssueGroupingCandidate } from "@/components/invoices/invoice-issuance-state";
 import { useRealtimeRefresh } from "@/components/realtime-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,11 +112,14 @@ type IssuePayload = {
   targets: Array<{
     targetKey: string;
     kind: "NEW";
-  cycleId: string;
-  expectedCloseVersion: number;
-  expectedRevenueFingerprint: string;
-  contractCategoryId: string | null;
-  issueItemId?: string | null;
+    cycleId: string;
+    expectedCloseVersion: number;
+    expectedRevenueFingerprint: string;
+    contractCategoryId: string | null;
+    issueItemIds?: Array<string | null>;
+    issueItemId?: string | null;
+    documentGroupKey?: string;
+    candidateKeys?: string[];
     issueDate?: string;
   } | {
     targetKey: string;
@@ -126,6 +129,8 @@ type IssuePayload = {
     expectedRevenueEntryIds: string[];
     expectedActiveInvoiceIds: string[];
     expectedCloseCycleIds: string[];
+    documentGroupKey?: string;
+    candidateKeys?: string[];
     issueDate?: string;
   }>;
   issueDate: string;
@@ -192,6 +197,7 @@ export function InvoiceManager({
   const [candidates, setCandidates] = useState<CandidateData | null>(initialCandidates);
   const [selected, setSelected] = useState<string[]>([]);
   const [issueDates, setIssueDates] = useState<Record<string, string>>(() => Object.fromEntries((initialCandidates?.rows ?? []).map((row) => [row.targetKey, today])));
+  const [manualGroupKeys, setManualGroupKeys] = useState<Record<string, string>>({});
   const [month, setMonth] = useState(initialMonth ?? today.slice(0, 7));
   const [siteId, setSiteId] = useState(initialSiteId);
   const [issueDate, setIssueDate] = useState(today);
@@ -215,6 +221,7 @@ export function InvoiceManager({
       const available = new Set((body.rows as Candidate[]).map((row) => row.targetKey));
       setSelected(preserve ? preserve.selected.filter((key) => available.has(key)) : []);
       setIssueDates((current) => preserveCandidateIssueDates(current, body.rows as Candidate[], issueDate));
+      setManualGroupKeys((current) => Object.fromEntries(Object.entries(current).filter(([key]) => available.has(key))));
       setCandidateErrors(preserve ? Object.fromEntries(Object.entries(preserve.errors).filter(([key]) => available.has(key))) : {});
       setPreview(null);
       setPending(null);
@@ -253,6 +260,11 @@ export function InvoiceManager({
 
   function setCandidateIssueDate(targetKey: string, value: string) {
     setIssueDates((current) => ({ ...current, [targetKey]: value }));
+    setManualGroupKeys((current) => {
+      const next = { ...current };
+      delete next[targetKey];
+      return next;
+    });
     setPreview(null);
     setPending(null);
   }
@@ -260,6 +272,34 @@ export function InvoiceManager({
   function applyBulkIssueDate() {
     if (!selected.length) return toast.error("발행일을 적용할 대상을 선택해 주세요.");
     setIssueDates((current) => applyIssueDateToSelected(current, selected, issueDate));
+    setManualGroupKeys((current) => {
+      const next = { ...current };
+      for (const targetKey of selected) delete next[targetKey];
+      return next;
+    });
+    setPreview(null);
+    setPending(null);
+  }
+
+  function splitSelectedIntoGroup() {
+    const selectedRows = candidates?.rows.filter((row): row is Candidate & { kind: "NEW" } => row.kind === "NEW" && row.selectable && selected.includes(row.targetKey)) ?? [];
+    if (!selectedRows.length) return toast.error("분리할 신규 품목을 선택해 주세요.");
+    const automaticKeys = new Set(selectedRows.map((row) => automaticIssueGroupKey(row, issueDates[row.targetKey] ?? issueDate)));
+    if (automaticKeys.size !== 1) return toast.error("같은 현장·계약 구분·발행일의 품목만 하나의 별도 거래명세표로 분리할 수 있습니다.");
+    const manualGroupKey = `${[...automaticKeys][0]}:manual:${globalThis.crypto.randomUUID()}`;
+    setManualGroupKeys((current) => ({ ...current, ...Object.fromEntries(selectedRows.map((row) => [row.targetKey, manualGroupKey])) }));
+    setPreview(null);
+    setPending(null);
+  }
+
+  function mergeSelectedIntoAutomaticGroups() {
+    const selectedRows = candidates?.rows.filter((row) => row.kind === "NEW" && row.selectable && selected.includes(row.targetKey)) ?? [];
+    if (!selectedRows.length) return toast.error("자동 묶음으로 되돌릴 신규 품목을 선택해 주세요.");
+    setManualGroupKeys((current) => {
+      const next = { ...current };
+      for (const row of selectedRows) delete next[row.targetKey];
+      return next;
+    });
     setPreview(null);
     setPending(null);
   }
@@ -269,10 +309,13 @@ export function InvoiceManager({
     const template = templates.find((item) => item.id === templateId) ?? templates[0];
     if (!template) return toast.error("사용할 템플릿을 선택해 주세요.");
     const selectedRows = candidates?.rows.filter((row) => row.selectable && selected.includes(row.targetKey)) ?? [];
+    const selectedNewCandidates = selectedRows.filter((row): row is Candidate & { kind: "NEW" } => row.kind === "NEW");
+    const newTargets = buildNewIssueTargets(selectedNewCandidates as IssueGroupingCandidate[], selected, issueDates, manualGroupKeys, issueDate);
+    const replacementTargets = selectedRows.flatMap((row) => row.kind === "REPLACEMENT" && row.sourceInvoiceId && row.sourceVersion
+      ? [{ targetKey: row.targetKey, kind: "REPLACEMENT" as const, sourceInvoiceId: row.sourceInvoiceId, sourceVersion: row.sourceVersion, candidateKeys: [row.targetKey], issueDate: issueDates[row.targetKey] ?? issueDate }]
+      : []);
     const previewPayload = {
-      targets: selectedRows.map((row) => row.kind === "REPLACEMENT" && row.sourceInvoiceId && row.sourceVersion
-        ? { targetKey: row.targetKey, kind: "REPLACEMENT" as const, sourceInvoiceId: row.sourceInvoiceId, sourceVersion: row.sourceVersion, issueDate: issueDates[row.targetKey] ?? issueDate }
-        : { targetKey: row.targetKey, kind: "NEW" as const, cycleId: row.cycleId, expectedCloseVersion: row.closeVersion, expectedRevenueFingerprint: row.revenueFingerprint, contractCategoryId: row.contractCategoryId, issueItemId: row.issueItemId, issueDate: issueDates[row.targetKey] ?? issueDate }),
+      targets: [...newTargets, ...replacementTargets],
       issueDate,
       displayMode,
       memo: memo.trim() || null,
@@ -311,6 +354,7 @@ export function InvoiceManager({
       if (!response.ok) throw new Error(body.error?.message ?? "거래명세표를 발행하지 못했습니다.");
       const results = body.results as Array<{
         targetKey: string;
+        candidateKeys?: string[];
         outcome: "ISSUED" | "BLOCKED" | "ALREADY_ISSUED";
         document?: { id: string };
         documents?: Array<{ id: string }>;
@@ -414,6 +458,9 @@ export function InvoiceManager({
   }
 
   const selectedSummary = selectionSummary(selected, candidates?.rows ?? []);
+  const issueGroupCandidates: IssueGroupingCandidate[] = (candidates?.rows.filter((row): row is Candidate & { kind: "NEW" } => row.kind === "NEW") ?? []) as IssueGroupingCandidate[];
+  const issueGroups = buildIssueGroups(issueGroupCandidates, selected, issueDates, manualGroupKeys, issueDate);
+  const groupByCandidateKey = new Map(issueGroups.flatMap((group) => group.candidateKeys.map((key) => [key, group] as const)));
   const allSelectableSelected = Boolean(candidates?.rows.some((row) => row.selectable))
     && candidates!.rows.filter((row) => row.selectable).every((row) => selected.includes(row.targetKey));
 
@@ -462,6 +509,34 @@ export function InvoiceManager({
             {allSelectableSelected ? "전체 해제" : "전체 선택"}
           </Button>
         </div>
+        {issueGroups.length > 0 && <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium">거래명세표 그룹 {issueGroups.length}개</p>
+              <p className="text-xs text-muted-foreground">같은 현장·계약 구분·발행일은 자동으로 묶이며, 선택 품목은 별도 거래명세표로 분리할 수 있습니다.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" disabled={!selected.some((key) => issueGroupCandidates.some((candidate) => candidate.targetKey === key))} onClick={splitSelectedIntoGroup}>
+                <GitBranch data-icon="inline-start" />선택 품목 분리
+              </Button>
+              <Button size="sm" variant="ghost" disabled={!Object.keys(manualGroupKeys).some((key) => selected.includes(key))} onClick={mergeSelectedIntoAutomaticGroups}>
+                <Merge data-icon="inline-start" />자동 묶음으로 복귀
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {issueGroups.map((group) => <div key={group.groupKey} className="rounded-md border bg-background px-3 py-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{group.siteName} · {group.contractCategoryName ?? "계약 구분 없음"}</span>
+                <span className="text-xs text-muted-foreground">{group.issueDate}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                <span>{group.manual ? "수동 분리" : "자동 묶음"} · 품목 {group.candidateKeys.length}개 · 선택 {group.selectedKeys.length}개</span>
+                <span className="tabular-nums">{group.selectedAmount.toLocaleString()}원</span>
+              </div>
+            </div>)}
+          </div>
+        </div>}
         <div className="max-h-96 overflow-auto rounded-lg border">
           <Table>
             <TableHeader>
@@ -472,6 +547,7 @@ export function InvoiceManager({
                 <TableHead>현장</TableHead>
                 <TableHead>계약 구분</TableHead>
                 <TableHead>발행 품목</TableHead>
+                <TableHead>문서 그룹</TableHead>
                 <TableHead>발행일</TableHead>
                 <TableHead className="text-right">확정 매출</TableHead>
                 <TableHead className="text-right">공급가액</TableHead>
@@ -479,7 +555,7 @@ export function InvoiceManager({
             </TableHeader>
             <TableBody>
               {candidates.rows.length === 0 ? <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                   현재 발행 대기 중인 대상이 없습니다.
                 </TableCell>
               </TableRow> : candidates.rows.map((row) => <TableRow key={row.targetKey}>
@@ -497,6 +573,7 @@ export function InvoiceManager({
                 <TableCell><span className="font-medium">{row.siteName}</span><span className="block text-xs text-muted-foreground">{row.siteCode}</span>{row.currentInvoices.length > 0 && <span className="block text-xs text-muted-foreground">현재 {row.currentInvoices.map((invoice) => invoice.invoiceNo).join(", ")}</span>}{(row.blockReason || candidateErrors[row.targetKey]) && <span className="mt-1 block max-w-96 whitespace-normal text-xs text-destructive">{candidateErrors[row.targetKey] ?? row.blockReason}</span>}</TableCell>
                 <TableCell>{row.contractCategoryName ?? "-"}</TableCell>
                 <TableCell>{row.issueItemName}</TableCell>
+                <TableCell>{groupByCandidateKey.get(row.targetKey) ? `${groupByCandidateKey.get(row.targetKey)!.manual ? "분리" : "자동"} · ${groupByCandidateKey.get(row.targetKey)!.issueDate}` : "-"}</TableCell>
                 <TableCell><Input aria-label={`${row.siteName} ${row.issueItemName} 발행일`} className="w-36" type="date" value={issueDates[row.targetKey] ?? issueDate} disabled={!row.selectable} onChange={(event) => setCandidateIssueDate(row.targetKey, event.target.value)} /></TableCell>
                 <TableCell className="text-right tabular-nums">{row.revenueCount}건</TableCell>
                 <TableCell className="text-right tabular-nums">{row.supplyAmount.toLocaleString()}원</TableCell>

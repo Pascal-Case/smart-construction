@@ -26,7 +26,10 @@ const newIssueTargetSchema = z.object({
   expectedCloseVersion: z.number().int().positive(),
   expectedRevenueFingerprint: z.string().regex(/^[a-f0-9]{64}$/i),
   contractCategoryId: z.string().min(1).nullable(),
+  issueItemIds: z.array(z.string().min(1).nullable()).min(1).max(500).optional(),
   issueItemId: z.string().min(1).nullable().optional(),
+  documentGroupKey: z.string().min(1).max(300).optional(),
+  candidateKeys: z.array(z.string().min(1)).min(1).max(500).optional(),
   issueDate: z.iso.date().optional(),
 });
 
@@ -35,6 +38,8 @@ const replacementPreviewTargetSchema = z.object({
   kind: z.literal("REPLACEMENT"),
   sourceInvoiceId: z.string().min(1),
   sourceVersion: z.number().int().positive(),
+  documentGroupKey: z.string().min(1).max(300).optional(),
+  candidateKeys: z.array(z.string().min(1)).min(1).max(500).optional(),
   issueDate: z.iso.date().optional(),
 });
 

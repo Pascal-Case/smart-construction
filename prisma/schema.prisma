@@ -496,6 +496,7 @@ model InvoiceDocument {
   contractCategoryId             String?
   contractCategoryCode           String?
   contractCategoryName           String?
+  documentGroupKey               String?
   issueItemId                    String?
   issueItemName                  String?
   revenueFingerprint             String?
@@ -543,6 +544,7 @@ model InvoiceDocument {
 
   @@index([siteId, issueDate])
   @@index([contractCategoryId])
+  @@index([siteId, issueDate, documentGroupKey])
   @@index([issueItemId])
   @@index([monthlyCloseCycleId])
   @@index([status, issuedAt])

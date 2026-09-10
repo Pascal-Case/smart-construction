@@ -79,15 +79,15 @@ describe("invoice calculation", () => {
     expect(result.map((document) => document.lines.flatMap((line) => line.revenueEntryIds))).toEqual([["r2"], ["r1"]]);
   });
 
-  it("대표 품목 설정은 실제 품목별 문서 안에서만 표시값에 영향을 준다", () => {
+  it("대표 품목 설정은 같은 계약 구분·발행일 문서 안의 출력행에만 영향을 준다", () => {
     const result = buildInvoiceDrafts([
       { ...base, id: "platform", itemId: "item-platform", itemName: "플랫폼 사용료", itemSpecification: "서비스형", description: null, invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
       { ...base, id: "analysis", itemId: "item-analysis", itemName: "사진 분석 개발비용", description: "AI 분석", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 500_000, supplyAmount: 500_000 },
     ], "AGGREGATED");
 
-    expect(result).toHaveLength(2);
-    expect(result.find((document) => document.issueItemId === "item-platform")?.lines).toEqual([expect.objectContaining({ itemName: "플랫폼 사용료", specification: "서비스형", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 })]);
-    expect(result.find((document) => document.issueItemId === "item-analysis")?.lines).toEqual([expect.objectContaining({ itemName: "플랫폼 사용료", specification: null, quantity: null, unit: null, unitPrice: null, supplyAmount: 500_000 })]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ issueItemId: null, issueItemName: "여러 품목", subtotal: 800_000 });
+    expect(result[0].lines).toEqual([expect.objectContaining({ itemName: "플랫폼 사용료", specification: "서비스형", quantity: 1, unit: "월", unitPrice: 800_000, supplyAmount: 800_000 })]);
   });
 
   it("합산 그룹에 대표 품목 매출이 없으면 계산 열을 비운다", () => {
@@ -105,8 +105,8 @@ describe("invoice calculation", () => {
       { ...base, id: "analysis", itemId: "item-analysis", itemName: "사진 분석 개발비용", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 400_000, supplyAmount: 400_001 },
     ], "AGGREGATED");
 
-    expect(result.find((document) => document.issueItemId === "item-platform")?.lines[0]).toMatchObject({ quantity: 2, unit: "월", unitPrice: 300_000, supplyAmount: 600_000 });
-    expect(result.find((document) => document.issueItemId === "item-analysis")?.lines[0]).toMatchObject({ itemName: "플랫폼 사용료", quantity: null, unit: null, unitPrice: null, supplyAmount: 400_001 });
+    expect(result).toHaveLength(1);
+    expect(result[0].lines[0]).toMatchObject({ quantity: 2, unit: "월", unitPrice: null, supplyAmount: 1_000_001 });
   });
 
   it("대표 품목 매출의 단위가 다르면 수량·단위·단가를 비운다", () => {
@@ -115,7 +115,7 @@ describe("invoice calculation", () => {
       { ...base, id: "platform-2", itemId: "item-platform", itemName: "플랫폼 사용료", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "건", unitPrice: 300_000, supplyAmount: 300_000 },
     ], "AGGREGATED");
 
-    expect(result.find((document) => document.issueItemId === "item-platform")?.lines[0]).toMatchObject({ quantity: null, unit: null, unitPrice: null, supplyAmount: 600_000 });
+    expect(result[0].lines[0]).toMatchObject({ quantity: null, unit: null, unitPrice: null, supplyAmount: 600_000 });
   });
 
   it("대표 품목 매출의 규격만 다르면 규격만 비우고 계산값은 유지한다", () => {
@@ -124,7 +124,7 @@ describe("invoice calculation", () => {
       { ...base, id: "platform-2", itemId: "item-platform", itemName: "플랫폼 사용료", description: "확장형", invoiceDisplayItemId: "item-platform", invoiceDisplayItemName: "플랫폼 사용료", quantity: 1, unit: "월", unitPrice: 300_000, supplyAmount: 300_000 },
     ], "AGGREGATED");
 
-    expect(result.find((document) => document.issueItemId === "item-platform")?.lines[0]).toMatchObject({ specification: null, quantity: 2, unit: "월", unitPrice: 300_000, supplyAmount: 600_000 });
+    expect(result[0].lines[0]).toMatchObject({ specification: null, quantity: 2, unit: "월", unitPrice: 300_000, supplyAmount: 600_000 });
   });
 
   it("건별 출력은 대표 품목 설정이 있어도 원본 품목을 유지한다", () => {
@@ -141,9 +141,11 @@ describe("invoice calculation", () => {
       { ...base, id: "r-no-item-2", itemId: null, itemName: null, invoiceDisplayItemId: null, invoiceDisplayItemName: null, supplyAmount: 30_000 },
     ], "AGGREGATED");
 
-    expect(result).toHaveLength(3);
-    expect(result.map((document) => document.issueItemId)).toEqual(["item-b", "item-a", null]);
-    expect(result.map((document) => document.issueItemName)).toEqual(["교육", "안전 점검", "품목 없음"]);
-    expect(result.map((document) => document.subtotal)).toEqual([200_000, 100_000, 80_000]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ issueItemId: null, issueItemName: "여러 품목", subtotal: 380_000 });
+    expect(result[0].lines).toEqual([
+      expect.objectContaining({ itemName: "안전 관리", supplyAmount: 300_000 }),
+      expect.objectContaining({ itemName: "5월 CCTV", quantity: 2, unit: "EA", unitPrice: 220_000, supplyAmount: 80_000 }),
+    ]);
   });
 });

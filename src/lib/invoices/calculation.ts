@@ -42,6 +42,7 @@ export type InvoiceDocumentDraft = {
   contractCategoryId: string;
   contractCategoryCode: string;
   contractCategoryName: string;
+  documentGroupKey: string | null;
   issueItemId: string | null;
   issueItemName: string;
   revenueFingerprint: string;
@@ -51,24 +52,26 @@ export type InvoiceDocumentDraft = {
   totalAmount: number;
 };
 
-export function buildInvoiceDrafts(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" | "ITEMIZED") {
+export function buildInvoiceDrafts(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" | "ITEMIZED", options: { documentGroupKey?: string | null } = {}) {
   const documentGroups = new Map<string, InvoiceSourceEntry[]>();
   for (const entry of entries) {
-    const key = JSON.stringify([entry.siteId, entry.contractCategoryId, entry.itemId]);
+    const key = JSON.stringify([entry.siteId, entry.contractCategoryId, options.documentGroupKey ?? "__DEFAULT__"]);
     documentGroups.set(key, [...(documentGroups.get(key) ?? []), entry]);
   }
   return [...documentGroups.values()]
     .sort((a, b) => a[0].siteName.localeCompare(b[0].siteName)
       || a[0].contractCategoryName.localeCompare(b[0].contractCategoryName)
       || issueItemName(a[0]).localeCompare(issueItemName(b[0])))
-    .map((rows) => buildDocument(rows, displayMode));
+    .map((rows) => buildDocument(rows, displayMode, options.documentGroupKey ?? null));
 }
 
-function buildDocument(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" | "ITEMIZED"): InvoiceDocumentDraft {
+function buildDocument(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" | "ITEMIZED", documentGroupKey: string | null): InvoiceDocumentDraft {
   const lines = displayMode === "AGGREGATED" ? aggregateLines(entries) : entries.map((entry) => toLine(entry));
   const subtotal = lines.reduce((sum, line) => sum + line.supplyAmount, 0);
   const taxAmount = lines.reduce((sum, line) => sum + line.taxAmount, 0);
   const site = entries[0];
+  const itemKeys = new Set(entries.map((entry) => entry.itemId ?? "__NO_ITEM__"));
+  const singleItem = itemKeys.size === 1;
   return {
     siteId: site.siteId,
     siteCode: site.siteCode,
@@ -77,8 +80,9 @@ function buildDocument(entries: InvoiceSourceEntry[], displayMode: "AGGREGATED" 
     contractCategoryId: site.contractCategoryId,
     contractCategoryCode: site.contractCategoryCode,
     contractCategoryName: site.contractCategoryName,
-    issueItemId: site.itemId,
-    issueItemName: issueItemName(site),
+    documentGroupKey,
+    issueItemId: singleItem ? site.itemId : null,
+    issueItemName: singleItem ? issueItemName(site) : "여러 품목",
     revenueFingerprint: invoiceRevenueFingerprint(entries),
     lines,
     subtotal,
@@ -110,7 +114,7 @@ function aggregateLines(entries: InvoiceSourceEntry[]) {
   for (const entry of entries) {
     const key = entry.invoiceDisplayItemId
       ? JSON.stringify(["display", entry.invoiceDisplayItemId])
-      : JSON.stringify(["source", entry.itemName ?? entry.title, entry.description ?? entry.itemSpecification, entry.unit, entry.unitPrice]);
+      : JSON.stringify(["source", entry.itemId, entry.itemName ?? entry.title, entry.description ?? entry.itemSpecification, entry.unit, entry.unitPrice]);
     groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
   return [...groups.values()].map((group) => group[0].invoiceDisplayItemId
