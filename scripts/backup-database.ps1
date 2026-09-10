@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$DatabasePath, [string]$BackupDirectory, [string]$SqliteExe, [ValidateRange(0, 3650)][int]$RetentionDays = 30, [switch]$SkipIfMissing)
 
 . (Join-Path $PSScriptRoot "lib\SmartConstruction.Common.ps1")
@@ -8,17 +8,14 @@ if (-not (Test-Path -LiteralPath $database)) {
     if ($SkipIfMissing) { Write-Host "새 설치이므로 백업할 기존 데이터베이스가 없습니다."; return }
     throw "백업할 DB가 없습니다: $database"
 }
-$sqlite = Resolve-SqliteExecutable -SqliteExe $SqliteExe
 $backupRoot = if ($BackupDirectory) { Resolve-SmartConstructionPath -Path $BackupDirectory -BasePath $root } else { Join-Path $root "data\backups" }
 New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
 $target = Join-Path $backupRoot ("smart-construction-" + $timestamp + ".db")
 $temporary = $target + ".tmp"
-$sqliteTarget = $temporary.Replace("\", "/").Replace("'", "''")
 try {
-    & $sqlite $database ".timeout 10000" (".backup '" + $sqliteTarget + "'")
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $temporary)) { throw "SQLite online backup 명령이 실패했습니다." }
-    Invoke-SqliteQuickCheck -SqliteExe $sqlite -DatabasePath $temporary
+    Invoke-SqliteMaintenance -Operation backup -SourcePath $database -DestinationPath $temporary
+    if (-not (Test-Path -LiteralPath $temporary)) { throw "SQLite online backup 명령이 실패했습니다." }
     Move-Item -LiteralPath $temporary -Destination $target
     $metadata = [ordered]@{
         format = "smart-construction-backup-v1"

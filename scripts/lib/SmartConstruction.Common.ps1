@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 function Get-SmartConstructionRoot {
@@ -34,15 +34,21 @@ function Resolve-SmartConstructionDatabase {
     return [IO.Path]::GetFullPath((Join-Path $root $configured))
 }
 
-function Resolve-SqliteExecutable {
-    param([string]$SqliteExe)
-    $candidates = @()
-    if ($SqliteExe) { $candidates += $SqliteExe }
-    $command = Get-Command sqlite3.exe -ErrorAction SilentlyContinue
-    if ($command) { $candidates += $command.Source }
-    $candidates += "D:\SQLite\sqlite3.exe"
-    foreach ($candidate in $candidates) { if ($candidate -and (Test-Path -LiteralPath $candidate)) { return [IO.Path]::GetFullPath($candidate) } }
-    throw "sqlite3.exe를 찾지 못했습니다. -SqliteExe 또는 D:\SQLite\sqlite3.exe를 확인해 주세요."
+function Invoke-SqliteMaintenance {
+    param(
+        [Parameter(Mandatory)][ValidateSet("backup", "verify")][string]$Operation,
+        [Parameter(Mandatory)][string]$SourcePath,
+        [string]$DestinationPath
+    )
+    $root = Get-SmartConstructionRoot
+    $node = (Get-Command node.exe -ErrorAction Stop).Source
+    $tsx = Join-Path $root "node_modules\tsx\dist\cli.mjs"
+    $script = Join-Path $root "scripts\sqlite-maintenance.ts"
+    if (-not (Test-Path -LiteralPath $tsx)) { throw "SQLite 유지관리 실행 파일이 없습니다. npm ci를 먼저 실행해 주세요." }
+    $arguments = @($tsx, $script, $Operation, $SourcePath)
+    if ($DestinationPath) { $arguments += $DestinationPath }
+    & $node @arguments
+    if ($LASTEXITCODE -ne 0) { throw "SQLite $Operation 작업이 실패했습니다." }
 }
 
 function Test-SmartConstructionAdministrator {
@@ -55,10 +61,4 @@ function Assert-SmartConstructionServerStopped {
     param([int]$Port = 3000)
     $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($listener) { throw "$Port 포트의 서버 프로세스(PID $($listener.OwningProcess))를 먼저 중지해 주세요." }
-}
-
-function Invoke-SqliteQuickCheck {
-    param([Parameter(Mandatory)][string]$SqliteExe, [Parameter(Mandatory)][string]$DatabasePath)
-    $result = & $SqliteExe $DatabasePath "PRAGMA quick_check;"
-    if ($LASTEXITCODE -ne 0 -or ($result | Select-Object -Last 1) -ne "ok") { throw ("SQLite quick_check 실패: " + $DatabasePath + " / " + ($result -join [Environment]::NewLine)) }
 }

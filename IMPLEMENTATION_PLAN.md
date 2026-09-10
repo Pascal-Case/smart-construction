@@ -1283,8 +1283,7 @@ smart-construction/
 
 ### 28.3 SQLite 운영 메모
 
-- 애플리케이션은 내장 `better-sqlite3` 드라이버를 사용하므로 외부 SQLite 설치에 의존하지 않는다.
-- 로컬 `D:\SQLite\sqlite3.exe` 3.53.3 설치를 확인했으며 운영 진단과 무결성 검사에 사용할 수 있다.
+- 애플리케이션과 운영 백업·복구·무결성 검사는 내장 `better-sqlite3` 드라이버를 사용하므로 외부 SQLite 설치에 의존하지 않는다.
 - DB 파일은 `data/app.db`에 저장하고 사용자 PC가 네트워크 공유로 직접 열지 않게 한다.
 - Prisma 7 migration 실행 전에 `db:prepare`가 DB 폴더와 파일을 준비해 Windows의 초기 파일 생성 실패를 방지한다.
 
