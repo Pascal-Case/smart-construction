@@ -61,7 +61,7 @@ const entries = [
   candidate("r1", "기존 계약", 100_000, "invoice-old"),
   candidate("r2", "추가 계약", 200_000, null),
 ];
-const settings = { sourceVersion: 2, issueDate: "2026-07-25", displayMode: "ITEMIZED" as const, memo: "7월 전체", templateId: "system-default", templateVersion: 1 };
+const settings = { sourceVersion: 2, issueDate: "2026-07-25", reason: "발행일과 그룹핑 변경" };
 
 describe("invoice replacement service", () => {
   beforeEach(() => {
@@ -189,31 +189,66 @@ describe("invoice replacement service", () => {
     });
   });
 
-  it("previews every confirmed revenue in the source period and reports missing-contract warnings", async () => {
+  it("previews only the revenue linked to the source document", async () => {
     const preview = await previewReplacementInvoice(source.id, settings);
 
-    expect(preview.expectedRevenueEntryIds).toEqual(["r1", "r2"]);
-    expect(preview.documents).toEqual([expect.objectContaining({ siteId: "site-1", subtotal: 300_000, periodStart: "2026-07-01", periodEnd: "2026-07-31" })]);
-    expect(preview.warnings).toEqual([{ id: "contract-missing", contractNo: "C-NEW", title: "말일 추가 계약" }]);
+    expect(preview.expectedRevenueEntryIds).toEqual(["r1"]);
+    expect(preview.expectedActiveInvoiceIds).toEqual([source.id]);
+    expect(preview.documents).toEqual([expect.objectContaining({ siteId: "site-1", subtotal: 100_000, periodStart: "2026-07-01", periodEnd: "2026-07-31" })]);
+    expect(preview.warnings).toEqual([]);
   });
 
-  it("대체 발행에서 기존 문서 그룹 분할을 유지한다", async () => {
+  it("재발행은 같은 현장·계약 구분이어도 발행일이 다르면 문서를 분리한다", async () => {
     const itemB = { ...entries[1], itemId: "item-2", item: { id: "item-2", name: "추가 계약", specification: null, invoiceDisplayItem: null, invoiceDisplaySources: [] }, currentInvoiceDocumentId: "invoice-extra" };
     mocks.invoiceFindUnique.mockResolvedValue({ ...source, subtotal: 300_000, revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] });
     mocks.invoiceFindMany.mockResolvedValue([
-      { id: source.id, invoiceNo: source.invoiceNo, version: source.version, documentGroupKey: "auto:manual:a", issueItemId: "item-1", revenueFingerprint: null, subtotal: 100_000, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r1" }] },
-      { id: "invoice-extra", invoiceNo: "I-EXTRA", version: 1, documentGroupKey: "auto:manual:b", issueItemId: "item-2", revenueFingerprint: null, subtotal: 200_000, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r2" }] },
+      { id: source.id, invoiceNo: source.invoiceNo, version: source.version, siteId: "site-1", contractCategoryId: "category-1", issueDate: new Date("2026-07-20T00:00:00.000Z"), documentGroupKey: "auto:manual:a", issueItemId: "item-1", revenueFingerprint: null, subtotal: 100_000, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r1" }] },
+      { id: "invoice-extra", invoiceNo: "I-EXTRA", version: 1, siteId: "site-1", contractCategoryId: "category-1", issueDate: new Date("2026-07-26T00:00:00.000Z"), documentGroupKey: "auto:manual:b", issueItemId: "item-2", revenueFingerprint: null, subtotal: 200_000, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r2" }] },
     ]);
     mocks.revenueFindMany.mockResolvedValue([{ ...entries[0], currentInvoiceDocumentId: source.id }, itemB]);
     mocks.closeFindMany.mockResolvedValue([{ id: "close-1", month: "2026-07", cycles: [{ id: "cycle-1", totalSalesAmount: 300_000, revenueFingerprint: "latest", snapshotJson: JSON.stringify({ revenueEntryIds: ["r1", "r2"] }) }] }]);
 
     const preview = await previewReplacementInvoice(source.id, settings);
 
-    expect(preview.documents).toHaveLength(2);
-    expect(preview.documents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ documentGroupKey: "auto:manual:a", subtotal: 100_000 }),
-      expect.objectContaining({ documentGroupKey: "auto:manual:b", subtotal: 200_000 }),
-    ]));
+    expect(preview.documents).toHaveLength(1);
+    expect(preview.documents).toEqual([expect.objectContaining({ documentGroupKey: "site-1:category-1:2026-07-25", subtotal: 100_000 })]);
+    expect(preview.expectedActiveInvoiceIds).toEqual([source.id]);
+  });
+
+  it("재발행 대상 발행일에 이미 문서가 있으면 자동으로 하나의 그룹으로 합친다", async () => {
+    mocks.invoiceFindUnique.mockResolvedValue({ ...source, subtotal: 300_000, revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] });
+    mocks.invoiceFindMany.mockResolvedValue([
+      { id: source.id, invoiceNo: source.invoiceNo, version: source.version, siteId: "site-1", contractCategoryId: "category-1", issueDate: new Date("2026-07-20T00:00:00.000Z"), displayMode: "AGGREGATED", revenueLinks: [{ revenueEntryId: "r1" }] },
+      { id: "invoice-extra", invoiceNo: "I-EXTRA", version: 1, siteId: "site-1", contractCategoryId: "category-1", issueDate: new Date("2026-07-25T00:00:00.000Z"), displayMode: "AGGREGATED", memo: "다른 메모", revenueLinks: [{ revenueEntryId: "r2" }] },
+    ]);
+    mocks.revenueFindMany.mockResolvedValue(entries);
+
+    const preview = await previewReplacementInvoice(source.id, settings);
+
+    expect(preview.documents).toEqual([expect.objectContaining({ documentGroupKey: "site-1:category-1:2026-07-25", subtotal: 300_000 })]);
+    expect(preview.expectedActiveInvoiceIds).toEqual([source.id, "invoice-extra"]);
+    expect(preview.documents[0].snapshotNotice).toContain("선택한 원본 문서");
+  });
+
+  it("재발행은 기존 문서 snapshot의 금액을 유지한다", async () => {
+    mocks.invoiceFindMany.mockResolvedValue([{
+      id: source.id,
+      invoiceNo: source.invoiceNo,
+      version: source.version,
+      siteId: "site-1",
+      contractCategoryId: "category-1",
+      issueDate: source.issueDate,
+      displayMode: "ITEMIZED",
+      subtotal: 100_000,
+      revenueLinks: [{ revenueEntryId: "r1" }],
+      lines: [{ itemName: "기존 계약", specification: null, quantity: 1, unit: "식", unitPrice: 100_000, supplyAmount: 100_000, taxAmount: 10_000, revenueLinks: [{ revenueEntryId: "r1" }] }],
+    }]);
+    mocks.revenueFindMany.mockResolvedValue([{ ...entries[0], salesAmount: 999_000, appliedSalesPrice: 999_000 }]);
+
+    const preview = await previewReplacementInvoice(source.id, settings);
+
+    expect(preview.documents[0]).toMatchObject({ subtotal: 100_000, taxAmount: 10_000, totalAmount: 110_000, displayMode: "ITEMIZED" });
+    expect(preview.documents[0].lines).toEqual([expect.objectContaining({ itemName: "기존 계약", supplyAmount: 100_000, taxAmount: 10_000 })]);
   });
 
   it("partial issuance replacement keeps unissued item groups as later NEW candidates", async () => {
@@ -237,7 +272,8 @@ describe("invoice replacement service", () => {
   });
 
   it("atomically creates a new snapshot, supersedes the current document, and moves active revenue pointers", async () => {
-    const documents = await replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1", "r2"] });
+    mocks.revenueUpdateMany.mockResolvedValue({ count: 1 });
+    const documents = await replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1"], expectedActiveInvoiceIds: [source.id] });
 
     expect(documents).toEqual([expect.objectContaining({ id: "invoice-new", invoiceNo: "I-NEW" })]);
     expect(mocks.invoiceUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -245,15 +281,30 @@ describe("invoice replacement service", () => {
       data: expect.objectContaining({ status: "SUPERSEDED", supersededByInvoiceId: "invoice-new" }),
     }));
     expect(mocks.revenueUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { currentInvoiceDocumentId: "invoice-new" } }));
-    expect(mocks.recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "REPLACE", entityId: "invoice-new" }));
+    expect(mocks.recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "REPLACE", entityId: "invoice-new", after: expect.objectContaining({ reason: settings.reason }) }));
+  });
+
+  it("재발행 확정은 다른 발행일의 문서를 건드리지 않는다", async () => {
+    mocks.invoiceFindMany.mockResolvedValue([
+      { id: source.id, invoiceNo: source.invoiceNo, version: source.version, siteId: "site-1", contractCategoryId: "category-1", issueDate: source.issueDate, revenueLinks: [{ revenueEntryId: "r1" }] },
+      { id: "invoice-other-date", invoiceNo: "I-OTHER", version: 1, siteId: "site-1", contractCategoryId: "category-1", issueDate: new Date("2026-07-26T00:00:00.000Z"), revenueLinks: [{ revenueEntryId: "r2" }] },
+    ]);
+    mocks.revenueFindMany.mockResolvedValue(entries);
+    mocks.revenueUpdateMany.mockResolvedValue({ count: 1 });
+
+    await replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1"], expectedActiveInvoiceIds: [source.id] });
+
+    expect(mocks.invoiceUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.invoiceUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: source.id, status: "ISSUED" } }));
+    expect(mocks.invoiceUpdateMany).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: "invoice-other-date", status: "ISSUED" } }));
   });
 
   it("rejects issue when the confirmed revenue set changed after preview", async () => {
-    await expect(replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1"] })).rejects.toMatchObject({ status: 409, code: "INVOICE_REPLACEMENT_CHANGED" });
+    await expect(replaceInvoice(actor, source.id, { ...settings, expectedRevenueEntryIds: ["r1", "r2"], expectedActiveInvoiceIds: [source.id] })).rejects.toMatchObject({ status: 409, code: "INVOICE_REPLACEMENT_CHANGED" });
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects replacement when the latest close is identical to the issued document", async () => {
+  it("allows reissue even when the source data is unchanged", async () => {
     mocks.invoiceFindUnique.mockResolvedValue({ ...source, subtotal: 300_000, revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] });
     mocks.invoiceFindMany.mockResolvedValue([{
       id: source.id,
@@ -263,13 +314,14 @@ describe("invoice replacement service", () => {
       revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }],
     }]);
 
-    await expect(previewReplacementInvoice(source.id, settings)).rejects.toMatchObject({
-      status: 409,
-      code: "INVOICE_REPLACEMENT_NOT_REQUIRED",
+    await expect(previewReplacementInvoice(source.id, settings)).resolves.toMatchObject({
+      expectedRevenueEntryIds: ["r1", "r2"],
+      documents: [expect.objectContaining({ subtotal: 300_000 })],
     });
   });
 
   it("compares the latest close with every active document in the same period", async () => {
+    const extraEntry = candidate("r-extra", "추가 매출", 50_000, "invoice-extra");
     mocks.invoiceFindUnique.mockResolvedValue({
       ...source,
       subtotal: 300_000,
@@ -287,14 +339,16 @@ describe("invoice replacement service", () => {
         id: "invoice-extra",
         invoiceNo: "I-EXTRA",
         version: 1,
+        siteId: "site-1",
+        contractCategoryId: "category-1",
+        issueDate: new Date("2026-07-26T00:00:00.000Z"),
         subtotal: 50_000,
         revenueLinks: [{ revenueEntryId: "r-extra" }],
       },
     ]);
+    mocks.revenueFindMany.mockResolvedValue([...entries, extraEntry]);
 
-    await expect(previewReplacementInvoice(source.id, settings)).resolves.toMatchObject({
-      documents: [expect.objectContaining({ subtotal: 300_000 })],
-    });
+    await expect(previewReplacementInvoice(source.id, settings)).resolves.toMatchObject({ documents: expect.any(Array) });
   });
 
   it("issues the complete latest close cycle and stores its provenance", async () => {
@@ -339,6 +393,26 @@ describe("invoice replacement service", () => {
     ]));
   });
 
+  it("배치 재발행은 기존 문서에 없던 새 품목의 확정 매출도 같은 재발행 문서에 포함한다", async () => {
+    const newItemEntry = {
+      ...candidate("r2", "새 품목", 200_000, null),
+      itemId: "item-2",
+      item: { id: "item-2", name: "새 품목", specification: null, invoiceDisplayItem: null, invoiceDisplaySources: [] },
+    };
+    mocks.revenueFindMany.mockResolvedValue([entries[0], newItemEntry]);
+
+    const preview = await previewInvoices({
+      ...issueSettings(),
+      targets: [{ targetKey: "replacement:site-1:2026-07", kind: "REPLACEMENT", sourceInvoiceId: source.id, sourceVersion: source.version }],
+    });
+
+    expect(preview.results[0]).toMatchObject({
+      outcome: "PREVIEWED",
+      commitTarget: { expectedRevenueEntryIds: ["r1", "r2"] },
+      documents: [expect.objectContaining({ subtotal: 300_000 })],
+    });
+  });
+
   it("issues valid mixed targets and leaves a stale replacement blocked", async () => {
     mocks.revenueFindMany.mockResolvedValue(entries.map((entry) => ({ ...entry, currentInvoiceDocumentId: null })));
     const results = await issueInvoices(actor, {
@@ -353,6 +427,7 @@ describe("invoice replacement service", () => {
           expectedRevenueEntryIds: ["r1", "r2"],
           expectedActiveInvoiceIds: [source.id],
           expectedCloseCycleIds: ["cycle-1"],
+          reason: "발행일 변경",
         },
       ],
     });

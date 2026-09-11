@@ -47,6 +47,7 @@ const replacementIssueTargetSchema = replacementPreviewTargetSchema.extend({
   expectedRevenueEntryIds: z.array(z.string().min(1)).min(1).max(500),
   expectedActiveInvoiceIds: z.array(z.string().min(1)).min(1).max(500),
   expectedCloseCycleIds: z.array(z.string().min(1)).min(1).max(500),
+  reason: z.string().trim().min(1, "재발행 사유를 입력해 주세요.").max(500, "재발행 사유는 500자 이내로 입력해 주세요."),
 });
 
 export const invoicePreviewInputSchema = commonIssueSettingsSchema.extend({
@@ -76,17 +77,18 @@ export const invoiceIssueInputSchema = commonIssueSettingsSchema.extend({
 export const invoiceReplacementPreviewInputSchema = z.object({
   sourceVersion: z.number().int().positive(),
   issueDate: z.iso.date(),
-  displayMode: z.enum(["AGGREGATED", "ITEMIZED"]),
-  memo: z.string().trim().max(500).optional().nullable(),
-  templateId: z.string().min(1).default(INVOICE_TEMPLATE_SYSTEM_ID),
-  templateVersion: z.number().int().positive().default(1),
 });
 
 export const invoiceReplacementIssueInputSchema = invoiceReplacementPreviewInputSchema.extend({
-  expectedRevenueEntryIds: z.array(z.string().min(1)).min(1, "대체 발행할 매출이 없습니다.").max(500, "한 번에 최대 500건까지 발행할 수 있습니다."),
+  expectedRevenueEntryIds: z.array(z.string().min(1)).min(1, "재발행할 매출이 없습니다.").max(500, "한 번에 최대 500건까지 발행할 수 있습니다."),
+  expectedActiveInvoiceIds: z.array(z.string().min(1)).min(1, "재발행할 현재 문서가 없습니다.").max(500),
+  reason: z.string().trim().min(1, "재발행 사유를 입력해 주세요.").max(500, "재발행 사유는 500자 이내로 입력해 주세요."),
 }).superRefine((value, context) => {
   if (new Set(value.expectedRevenueEntryIds).size !== value.expectedRevenueEntryIds.length) {
     context.addIssue({ code: "custom", message: "중복된 매출 선택이 포함되어 있습니다.", path: ["expectedRevenueEntryIds"] });
+  }
+  if (new Set(value.expectedActiveInvoiceIds).size !== value.expectedActiveInvoiceIds.length) {
+    context.addIssue({ code: "custom", message: "중복된 현재 발행본이 포함되어 있습니다.", path: ["expectedActiveInvoiceIds"] });
   }
 });
 

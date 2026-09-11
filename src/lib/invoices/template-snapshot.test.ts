@@ -33,19 +33,17 @@ describe("invoice template snapshot input", () => {
     expect(DEFAULT_INVOICE_TEMPLATE_CONFIG.schemaVersion).toBe(1);
   });
 
-  it("pins replacement preview and issue to the source version and expected revenue set", () => {
+  it("keeps replacement preview limited to the editable issue date", () => {
     const settings = {
       sourceVersion: 3,
       issueDate: "2026-07-25",
-      displayMode: "ITEMIZED" as const,
-      memo: "7월 전체 재발행",
-      templateId: "template-bi",
-      templateVersion: 4,
     };
     expect(invoiceReplacementPreviewInputSchema.parse(settings)).toMatchObject(settings);
-    expect(invoiceReplacementIssueInputSchema.parse({ ...settings, expectedRevenueEntryIds: ["r1", "r2"] })).toMatchObject({
+    expect(invoiceReplacementIssueInputSchema.parse({ ...settings, reason: "발행일 변경", expectedRevenueEntryIds: ["r1", "r2"], expectedActiveInvoiceIds: ["invoice-old"] })).toMatchObject({
       sourceVersion: 3,
       expectedRevenueEntryIds: ["r1", "r2"],
+      expectedActiveInvoiceIds: ["invoice-old"],
+      reason: "발행일 변경",
     });
   });
 
@@ -58,6 +56,7 @@ describe("invoice template snapshot input", () => {
       expectedRevenueEntryIds: ["r1", "r2"],
       expectedActiveInvoiceIds: ["invoice-old"],
       expectedCloseCycleIds: ["cycle-2"],
+      reason: "발행일 변경",
     };
     expect(invoiceIssueInputSchema.parse({ ...baseInput, targets: [...baseInput.targets, replacement] }).targets).toHaveLength(2);
     expect(() => invoiceIssueInputSchema.parse({ ...baseInput, targets: [baseInput.targets[0], { ...replacement, targetKey: baseInput.targets[0].targetKey }] })).toThrow("중복된 발행 대상");
