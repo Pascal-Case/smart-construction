@@ -7,6 +7,7 @@ const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "월은 YYYY-MM 형식
 const candidateQuery = z.object({
   month,
   siteId: z.string().default(""),
+  contractCategoryId: z.string().default(""),
 });
 
 export const invoiceCandidateQuerySchema = candidateQuery;

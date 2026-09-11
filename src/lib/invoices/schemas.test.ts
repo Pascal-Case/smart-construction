@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { invoiceNewIssueInputSchema, invoiceRestoreToPendingInputSchema } from "@/lib/invoices/schemas";
+import { invoiceCandidateQuerySchema, invoiceNewIssueInputSchema, invoiceRestoreToPendingInputSchema } from "@/lib/invoices/schemas";
 
 describe("invoice restore-to-pending input", () => {
   it("requires the current positive document version", () => {
@@ -22,5 +22,12 @@ describe("new invoice issue input", () => {
       templateVersion: 1,
       targets: [{ targetKey: "replacement:old", kind: "REPLACEMENT", sourceInvoiceId: "old", sourceVersion: 1 }],
     }).success).toBe(false);
+  });
+});
+
+describe("invoice candidate query", () => {
+  it("defaults the contract category filter to all categories", () => {
+    expect(invoiceCandidateQuerySchema.parse({ month: "2026-07" })).toEqual({ month: "2026-07", siteId: "", contractCategoryId: "" });
+    expect(invoiceCandidateQuerySchema.parse({ month: "2026-07", contractCategoryId: "category-1" }).contractCategoryId).toBe("category-1");
   });
 });

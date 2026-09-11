@@ -19,6 +19,7 @@ import type { InvoiceTemplateConfig, InvoiceTemplateView } from "@/lib/invoice-t
 import { isInteractiveRowTarget } from "@/lib/row-selection";
 
 type SiteOption = { id: string; name: string };
+type ContractCategoryOption = { id: string; name: string; isActive: boolean };
 type Candidate = {
   targetKey: string;
   kind: "NEW" | "BLOCKED";
@@ -149,24 +150,28 @@ type BatchPreview = {
 type InvoiceManagerProps = {
   initialData: InvoiceList;
   sites: SiteOption[];
+  contractCategories: ContractCategoryOption[];
   templates: InvoiceTemplateView[];
   canIssue: boolean;
   companyComplete: boolean;
   isAdmin: boolean;
   initialMonth?: string;
   initialSiteId?: string;
+  initialContractCategoryId?: string;
   initialCandidates?: CandidateData | null;
 };
 
 export function InvoiceManager({
   initialData,
   sites,
+  contractCategories,
   templates,
   canIssue,
   companyComplete,
   isAdmin,
   initialMonth,
   initialSiteId = "",
+  initialContractCategoryId = "",
   initialCandidates = null,
 }: InvoiceManagerProps) {
   const today = localDateKey(new Date());
@@ -177,6 +182,7 @@ export function InvoiceManager({
   const [manualGroupKeys, setManualGroupKeys] = useState<Record<string, string>>({});
   const [month, setMonth] = useState(initialMonth ?? today.slice(0, 7));
   const [siteId, setSiteId] = useState(initialSiteId);
+  const [contractCategoryId, setContractCategoryId] = useState(initialContractCategoryId);
   const [issueDate, setIssueDate] = useState(today);
   const [displayMode, setDisplayMode] = useState<"AGGREGATED" | "ITEMIZED">("AGGREGATED");
   const [memo, setMemo] = useState("");
@@ -190,7 +196,7 @@ export function InvoiceManager({
   async function loadCandidates(preserve?: { selected: string[]; errors: Record<string, string> }) {
     setBusy(true);
     try {
-      const params = new URLSearchParams({ month, siteId });
+      const params = new URLSearchParams({ month, siteId, contractCategoryId });
       const response = await fetch(`/api/invoices/candidates?${params}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message ?? "발행 후보를 불러오지 못했습니다.");
@@ -396,11 +402,15 @@ export function InvoiceManager({
         </div>}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <Field label="매출월" type="month" value={month} onChange={setMonth} />
         <Select label="현장" value={siteId} onChange={setSiteId} options={[
           { value: "", label: "전체 현장" },
           ...sites.map((site) => ({ value: site.id, label: site.name })),
+        ]} />
+        <Select label="계약 구분" value={contractCategoryId} onChange={setContractCategoryId} options={[
+          { value: "", label: "전체 계약 구분" },
+          ...contractCategories.map((category) => ({ value: category.id, label: `${category.name}${category.isActive ? "" : " (중지)"}` })),
         ]} />
         <div className="flex items-end">
           <Button className="w-full" variant="outline" disabled={busy} onClick={() => void loadCandidates()}>

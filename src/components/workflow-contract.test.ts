@@ -175,6 +175,17 @@ describe("registration workflow contract", () => {
     expect(source).toContain('id="new-issue"');
   });
 
+  it("거래명세표 발행 대기는 계약 구분을 전체 기본값으로 필터링한다", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/components/invoices/invoice-manager.tsx"), "utf8");
+    const pageSource = readFileSync(path.join(process.cwd(), "src/app/(main)/invoices/page.tsx"), "utf8");
+
+    expect(source).toContain("contractCategoryId");
+    expect(source).toContain('전체 계약 구분');
+    expect(source).toContain("contractCategories");
+    expect(pageSource).toContain("initialContractCategoryId");
+    expect(pageSource).toContain("contractCategoryId: initialContractCategoryId");
+  });
+
   it("현재 사용자 화면과 운영 문서는 매출 기준 용어를 사용한다", () => {
     const files = [
       "src/components/app-shell.tsx",

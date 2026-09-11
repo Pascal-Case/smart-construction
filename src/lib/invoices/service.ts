@@ -62,6 +62,7 @@ type InvoiceCandidateRow = {
 
 export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
   const range = monthRange(query.month);
+  const categoryWhere = query.contractCategoryId ? { contractCategoryId: query.contractCategoryId } : {};
   const closes = await prisma.monthlyClose.findMany({
     where: { month: query.month, state: "CLOSED", ...(query.siteId ? { siteId: query.siteId } : {}) },
     include: {
@@ -75,7 +76,7 @@ export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
   const [currentDocuments, revenueEntries] = siteIds.length
     ? await Promise.all([
       prisma.invoiceDocument.findMany({
-        where: { status: "ISSUED", siteId: { in: siteIds }, periodStart: { lte: range.end }, periodEnd: { gte: range.start } },
+        where: { status: "ISSUED", siteId: { in: siteIds }, periodStart: { lte: range.end }, periodEnd: { gte: range.start }, ...categoryWhere },
         select: {
           id: true,
           invoiceNo: true,
@@ -95,7 +96,7 @@ export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
         orderBy: [{ issuedAt: "desc" }, { invoiceNo: "desc" }],
       }),
       revenueEntryIds.length
-        ? prisma.revenueEntry.findMany({ where: { id: { in: revenueEntryIds } }, select: candidateSelect })
+        ? prisma.revenueEntry.findMany({ where: { id: { in: revenueEntryIds }, ...categoryWhere }, select: candidateSelect })
         : Promise.resolve([]),
     ])
     : [[], []];

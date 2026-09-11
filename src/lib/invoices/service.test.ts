@@ -104,7 +104,7 @@ describe("invoice replacement service", () => {
   });
 
   it("keeps the remaining item as a new candidate after partial issuance", async () => {
-    const result = await getInvoiceCandidates({ month: "2026-07", siteId: "" });
+    const result = await getInvoiceCandidates({ month: "2026-07", siteId: "", contractCategoryId: "" });
 
     expect(result.rows).toEqual([expect.objectContaining({
       targetKey: "new:cycle-2:category-1:item-1",
@@ -120,7 +120,7 @@ describe("invoice replacement service", () => {
     mocks.rootInvoiceFindMany.mockResolvedValue([]);
     mocks.rootRevenueFindMany.mockResolvedValue([itemA, itemB]);
 
-    const result = await getInvoiceCandidates({ month: "2026-07", siteId: "" });
+    const result = await getInvoiceCandidates({ month: "2026-07", siteId: "", contractCategoryId: "" });
 
     expect(result.rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "NEW", issueItemId: "item-1", issueItemName: "안전 점검", supplyAmount: 100_000 }),
@@ -180,11 +180,22 @@ describe("invoice replacement service", () => {
     expect(mocks.revenueUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["r1"] }, currentInvoiceDocumentId: null } }));
   });
 
+  it("발행 대기 후보를 선택한 계약 구분으로 제한한다", async () => {
+    const categoryOne = candidate("r1", "안전 점검", 100_000, null);
+    const categoryTwo = { ...candidate("r2", "안전 점검", 200_000, null), contractCategoryId: "category-2", contractCategory: { code: "CONTRACT-TYPE-0002", name: "시설관리" } };
+    mocks.rootRevenueFindMany.mockImplementation(({ where }: { where: { contractCategoryId?: string } }) => Promise.resolve(where.contractCategoryId === "category-2" ? [categoryTwo] : [categoryOne, categoryTwo]));
+
+    const result = await getInvoiceCandidates({ month: "2026-07", siteId: "", contractCategoryId: "category-2" });
+
+    expect(mocks.rootRevenueFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["r1", "r2"] }, contractCategoryId: "category-2" } }));
+    expect(result.rows).toEqual([expect.objectContaining({ contractCategoryId: "category-2", contractCategoryName: "시설관리", supplyAmount: 200_000 })]);
+  });
+
   it("발행 중인 매출은 대체 후보로 노출하지 않는다", async () => {
     mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 300_000, contractCategoryId: source.contractCategoryId, issueItemId: "item-1", issueItemName: "기존 계약", revenueFingerprint: null, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] }]);
     mocks.rootRevenueFindMany.mockResolvedValue(entries.map((entry) => ({ ...entry, currentInvoiceDocumentId: source.id })));
 
-    expect(await getInvoiceCandidates({ month: "2026-07", siteId: "" })).toMatchObject({ rows: [] });
+    expect(await getInvoiceCandidates({ month: "2026-07", siteId: "", contractCategoryId: "" })).toMatchObject({ rows: [] });
   });
 
   it("원본 매출 연결만 해제하고 기존 문서를 취소 이력으로 보존한다", async () => {
