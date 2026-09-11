@@ -1,4 +1,4 @@
-export type ReplaceableInvoiceStatus = "DRAFT" | "ISSUED" | "SUPERSEDED";
+export type ReplaceableInvoiceStatus = "DRAFT" | "ISSUED" | "SUPERSEDED" | "CANCELED";
 
 export function isReplaceableInvoiceStatus(status: ReplaceableInvoiceStatus) {
   return status === "ISSUED";

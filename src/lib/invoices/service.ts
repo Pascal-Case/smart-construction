@@ -12,7 +12,7 @@ import { resolveInvoiceTemplate } from "@/lib/invoice-templates/service";
 import { decodeInvoiceTemplateSnapshot } from "@/lib/invoice-templates/schemas";
 import { buildInvoiceDrafts, invoiceRevenueFingerprint, type InvoiceSourceEntry } from "@/lib/invoices/calculation";
 import { isPartialRevenueIssuance, isReplaceableInvoiceStatus, replacementRequiredForPeriod, sameRevenueSet, sameRevenueState } from "@/lib/invoices/replacement-policy";
-import type { InvoiceCandidateQuery, InvoiceIssueInput, InvoiceListQuery, InvoicePreviewInput, InvoiceReplacementIssueInput, InvoiceReplacementPreviewInput } from "@/lib/invoices/schemas";
+import type { InvoiceCandidateQuery, InvoiceIssueInput, InvoiceListQuery, InvoicePreviewInput, InvoiceReplacementIssueInput, InvoiceReplacementPreviewInput, InvoiceRestoreToPendingInput } from "@/lib/invoices/schemas";
 import { nextInvoiceNo } from "@/lib/masters/sequence";
 
 const candidateSelect = {
@@ -40,7 +40,7 @@ type NewPreviewTarget = Extract<InvoicePreviewInput["targets"][number], { kind: 
 type ReplacementIssueTarget = Extract<InvoiceIssueInput["targets"][number], { kind: "REPLACEMENT" }>;
 type InvoiceCandidateRow = {
   targetKey: string;
-  kind: "NEW" | "REPLACEMENT" | "BLOCKED";
+  kind: "NEW" | "BLOCKED";
   selectable: boolean;
   blockReason: string | null;
   cycleId: string;
@@ -58,8 +58,6 @@ type InvoiceCandidateRow = {
   supplyAmount: number;
   revenueFingerprint: string;
   currentInvoices: Array<{ id: string; invoiceNo: string; version: number }>;
-  sourceInvoiceId?: string;
-  sourceVersion?: number;
 };
 
 export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
@@ -117,33 +115,9 @@ export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
       const categoryId = categoryEntries[0]?.contractCategoryId ?? null;
       const categoryDocuments = documents.filter((document) => document.contractCategoryId === categoryId);
       const categoryDocumentIds = new Set(categoryDocuments.map((document) => document.id));
-      const categoryRevenueIds = categoryEntries.map((entry) => entry.id);
-      const unissuedEntries = categoryEntries.filter((entry) => entry.currentInvoiceDocumentId == null);
       const periodMatches = categoryDocuments.every((document) => document.periodStart.getTime() === range.start.getTime() && document.periodEnd.getTime() === range.end.getTime());
       const pointerConflict = categoryEntries.some((entry) => entry.currentInvoiceDocumentId != null && !categoryDocumentIds.has(entry.currentInvoiceDocumentId));
       const hasScopeConflict = !periodMatches || pointerConflict;
-      const documentFingerprintChanged = categoryDocuments.some((document) => {
-        if (!document.revenueFingerprint) return false;
-        const linkedEntries = document.revenueLinks.flatMap((link) => {
-          const entry = revenueById.get(link.revenueEntryId);
-          return entry ? [entry] : [];
-        });
-        if (linkedEntries.length !== document.revenueLinks.length) return true;
-        try {
-          return invoiceRevenueFingerprint(linkedEntries.map(toSourceEntry)) !== document.revenueFingerprint;
-        } catch {
-          return true;
-        }
-      });
-      const legacyFingerprintChanged = !unissuedEntries.length
-        && categoryDocuments.every((document) => !document.revenueFingerprint)
-        && categoryDocuments.some((document) => document.closeRevenueFingerprint != null)
-        && categoryDocuments.some((document) => document.closeRevenueFingerprint !== cycle.revenueFingerprint);
-      const fingerprintChanged = documentFingerprintChanged || legacyFingerprintChanged;
-      const categoryReplacementRequired = categoryDocuments.length > 0 && (fingerprintChanged || (!unissuedEntries.length && replacementRequiredForPeriod(
-        [{ revenueEntryIds: categoryRevenueIds, totalSalesAmount: categoryEntries.reduce((sum, entry) => sum + entry.salesAmount, 0) }],
-        categoryDocuments.map((document) => ({ revenueEntryIds: document.revenueLinks.map((link) => link.revenueEntryId), subtotal: document.subtotal })),
-      )));
       const common = {
         cycleId: cycle.id,
         closeId: close.id,
@@ -168,18 +142,6 @@ export async function getInvoiceCandidates(query: InvoiceCandidateQuery) {
         selectable: false,
         blockReason: "현재 유효 거래명세표의 매출기간 또는 연결 상태가 최신 마감 회차와 충돌합니다. 발행 이력에서 확인해 주세요.",
       }];
-      if (categoryReplacementRequired) {
-        const source = categoryDocuments[0];
-        return source ? [{
-          ...common,
-          targetKey: `replacement:${close.siteId}:${close.month}:${categoryKey}`,
-          kind: "REPLACEMENT" as const,
-          selectable: true,
-          sourceInvoiceId: source.id,
-          sourceVersion: source.version,
-          blockReason: null,
-        }] : [];
-      }
       return [...groupBy(categoryEntries, (entry) => entry.itemId ?? "__NO_ITEM__").values()]
         .flatMap((groupEntries) => {
           const newEntries = groupEntries.filter((entry) => entry.currentInvoiceDocumentId == null);
@@ -384,6 +346,57 @@ export async function replaceInvoice(actor: SessionUser, invoiceId: string, inpu
   return prisma.$transaction((tx) => replaceInvoiceInTransaction(tx, actor, invoiceId, input));
 }
 
+export async function restoreInvoiceToPending(actor: SessionUser, invoiceId: string, input: InvoiceRestoreToPendingInput) {
+  return prisma.$transaction(async (tx) => {
+    const source = await tx.invoiceDocument.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        invoiceNo: true,
+        siteId: true,
+        status: true,
+        version: true,
+        revenueLinks: { select: { revenueEntryId: true } },
+        currentRevenueEntries: { select: { id: true } },
+      },
+    });
+    if (!source) throw new AuthError("거래명세표를 찾을 수 없습니다.", 404, "INVOICE_NOT_FOUND");
+    if (source.status !== "ISSUED") throw new AuthError("현재 유효한 거래명세표만 발행대기로 되돌릴 수 있습니다.", 409, "INVOICE_NOT_RESTORABLE");
+    if (source.version !== input.sourceVersion) throw new AuthError("거래명세표가 변경되었습니다. 목록을 새로고침해 주세요.", 409, "INVOICE_RESTORE_CHANGED");
+
+    const historicalRevenueIds = uniqueBy(source.revenueLinks.map((link) => link.revenueEntryId), (id) => id);
+    const currentRevenueIds = uniqueBy(source.currentRevenueEntries.map((entry) => entry.id), (id) => id);
+    if (!historicalRevenueIds.length || !sameRevenueSet(historicalRevenueIds, currentRevenueIds)) {
+      throw new AuthError("거래명세표의 현재 매출 연결이 발행 이력과 일치하지 않습니다.", 409, "INVOICE_RESTORE_SCOPE_CONFLICT");
+    }
+
+    const restored = await tx.revenueEntry.updateMany({
+      where: { id: { in: historicalRevenueIds }, currentInvoiceDocumentId: source.id },
+      data: { currentInvoiceDocumentId: null },
+    });
+    if (restored.count !== historicalRevenueIds.length) throw new AuthError("거래명세표의 매출 연결이 변경되었습니다. 다시 시도해 주세요.", 409, "INVOICE_RESTORE_CHANGED");
+
+    const canceledAt = new Date();
+    const canceled = await tx.invoiceDocument.updateMany({
+      where: { id: source.id, status: "ISSUED", version: input.sourceVersion },
+      data: { status: "CANCELED", canceledAt, version: { increment: 1 } },
+    });
+    if (canceled.count !== 1) throw new AuthError("거래명세표가 변경되었습니다. 목록을 새로고침해 주세요.", 409, "INVOICE_RESTORE_CHANGED");
+
+    await recordAudit(tx, {
+      actorId: actor.id,
+      actorName: actor.name,
+      action: "RESTORE_TO_PENDING",
+      entityType: "INVOICE",
+      entityId: source.id,
+      before: { invoiceNo: source.invoiceNo, status: source.status, revenueEntryIds: historicalRevenueIds },
+      after: { invoiceNo: source.invoiceNo, status: "CANCELED", restoredRevenueEntryIds: historicalRevenueIds },
+    });
+    await recordSyncEvent(tx, { type: "invoice.changed", entityId: source.id, siteId: source.siteId, actorId: actor.id });
+    return { invoiceId: source.id, invoiceNo: source.invoiceNo, restoredRevenueCount: historicalRevenueIds.length };
+  });
+}
+
 async function replaceInvoiceInTransaction(
   tx: Prisma.TransactionClient,
   actor: SessionUser,
@@ -454,6 +467,7 @@ export async function listInvoices(query: InvoiceListQuery) {
         issuedAt: true,
         updatedAt: true,
         supersededAt: true,
+        canceledAt: true,
         supersededBy: { select: { id: true, invoiceNo: true } },
         monthlyCloseCycle: { select: { cycleNo: true } },
         _count: { select: { lines: true, revenueLinks: true } },

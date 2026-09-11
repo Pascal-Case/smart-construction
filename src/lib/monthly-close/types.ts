@@ -47,7 +47,7 @@ export type MonthCloseReview = {
 
 export type MonthCloseInvoiceSummary = {
   id: string;
-  status: "DRAFT" | "ISSUED" | "SUPERSEDED";
+  status: "DRAFT" | "ISSUED" | "SUPERSEDED" | "CANCELED";
   revenueEntryIds: string[];
   subtotal: number;
 };

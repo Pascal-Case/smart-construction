@@ -21,7 +21,7 @@ import { isInteractiveRowTarget } from "@/lib/row-selection";
 type SiteOption = { id: string; name: string };
 type Candidate = {
   targetKey: string;
-  kind: "NEW" | "REPLACEMENT" | "BLOCKED";
+  kind: "NEW" | "BLOCKED";
   selectable: boolean;
   blockReason: string | null;
   cycleId: string;
@@ -39,8 +39,6 @@ type Candidate = {
   supplyAmount: number;
   revenueFingerprint: string;
   currentInvoices: Array<{ id: string; invoiceNo: string; version: number }>;
-  sourceInvoiceId?: string;
-  sourceVersion?: number;
 };
 type CandidateData = {
   rows: Candidate[];
@@ -61,11 +59,12 @@ type InvoiceRow = {
   taxAmount: number;
   totalAmount: number;
   displayMode: "AGGREGATED" | "ITEMIZED";
-  status: "DRAFT" | "ISSUED" | "SUPERSEDED";
+  status: "DRAFT" | "ISSUED" | "SUPERSEDED" | "CANCELED";
   version: number;
   issuedAt: string;
   updatedAt: string;
   supersededAt: string | null;
+  canceledAt: string | null;
   supersededBy: { id: string; invoiceNo: string } | null;
   monthlyCloseCycle: { cycleNo: number } | null;
   replacementRequired: boolean;
@@ -124,18 +123,6 @@ type IssuePayload = {
     documentGroupKey?: string;
     candidateKeys?: string[];
     issueDate?: string;
-  } | {
-    targetKey: string;
-    kind: "REPLACEMENT";
-    sourceInvoiceId: string;
-    sourceVersion: number;
-    expectedRevenueEntryIds: string[];
-    expectedActiveInvoiceIds: string[];
-    expectedCloseCycleIds: string[];
-    reason: string;
-    documentGroupKey?: string;
-    candidateKeys?: string[];
-    issueDate?: string;
   }>;
   issueDate: string;
   displayMode: "AGGREGATED" | "ITEMIZED";
@@ -145,7 +132,7 @@ type IssuePayload = {
 };
 type PreviewResult = {
   targetKey: string;
-  kind: "NEW" | "REPLACEMENT";
+  kind: "NEW";
   outcome: "PREVIEWED" | "BLOCKED";
   document?: PreviewDocument;
   documents?: PreviewDocument[];
@@ -159,19 +146,6 @@ type BatchPreview = {
   summary: { total: number; newCount: number; replacementCount: number; blockedCount: number; supplyAmount: number };
   results: PreviewResult[];
 };
-type ReplacementState = {
-  source: InvoiceRow;
-  issueDate: string;
-  reason: string;
-  preview: {
-    documents: PreviewDocument[];
-    expectedRevenueEntryIds: string[];
-    expectedActiveInvoiceIds: string[];
-    warnings: Array<{ id: string; contractNo: string; title: string }>;
-    issueDateWarning?: string | null;
-  } | null;
-};
-
 type InvoiceManagerProps = {
   initialData: InvoiceList;
   sites: SiteOption[];
@@ -206,12 +180,11 @@ export function InvoiceManager({
   const [issueDate, setIssueDate] = useState(today);
   const [displayMode, setDisplayMode] = useState<"AGGREGATED" | "ITEMIZED">("AGGREGATED");
   const [memo, setMemo] = useState("");
-  const [replacementReason, setReplacementReason] = useState("");
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? "system-default");
   const [preview, setPreview] = useState<BatchPreview | null>(null);
   const [pending, setPending] = useState<IssuePayload | null>(null);
   const [candidateErrors, setCandidateErrors] = useState<Record<string, string>>({});
-  const [replacement, setReplacement] = useState<ReplacementState | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<InvoiceRow | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function loadCandidates(preserve?: { selected: string[]; errors: Record<string, string> }) {
@@ -306,14 +279,9 @@ export function InvoiceManager({
     if (!selected.length) return toast.error("발행할 대상을 선택해 주세요.");
     const template = templates.find((item) => item.id === templateId) ?? templates[0];
     if (!template) return toast.error("사용할 템플릿을 선택해 주세요.");
-    const selectedRows = candidates?.rows.filter((row) => row.selectable && selected.includes(row.targetKey)) ?? [];
-    if (selectedRows.some((row) => row.kind === "REPLACEMENT") && !replacementReason.trim()) return toast.error("재발행 사유를 입력해 주세요.");
     const newTargets = buildNewIssueTargets(issueGroupCandidates, selected, issueDates, manualGroupKeys, issueDate);
-    const replacementTargets = selectedRows.flatMap((row) => row.kind === "REPLACEMENT" && row.sourceInvoiceId && row.sourceVersion
-      ? [{ targetKey: row.targetKey, kind: "REPLACEMENT" as const, sourceInvoiceId: row.sourceInvoiceId, sourceVersion: row.sourceVersion, candidateKeys: [row.targetKey], issueDate: issueDates[row.targetKey] ?? issueDate }]
-      : []);
     const previewPayload = {
-      targets: [...newTargets, ...replacementTargets],
+      targets: newTargets,
       issueDate,
       displayMode,
       memo: memo.trim() || null,
@@ -331,7 +299,7 @@ export function InvoiceManager({
       if (!response.ok) throw new Error(body.error?.message ?? "미리보기를 만들지 못했습니다.");
       const batch = body as BatchPreview;
       setPreview(batch);
-      setPending({ ...previewPayload, targets: batch.results.flatMap((result) => result.outcome === "PREVIEWED" && result.commitTarget ? [result.commitTarget.kind === "REPLACEMENT" ? { ...result.commitTarget, reason: replacementReason.trim() } : result.commitTarget] : []) });
+      setPending({ ...previewPayload, targets: batch.results.flatMap((result) => result.outcome === "PREVIEWED" && result.commitTarget ? [result.commitTarget] : []) });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "미리보기를 만들지 못했습니다.");
     } finally {
@@ -376,73 +344,22 @@ export function InvoiceManager({
     }
   }
 
-  function openReplacement(source: InvoiceRow) {
-    setReplacement({ source, issueDate: source.issueDate.slice(0, 10), reason: "", preview: null });
-  }
-
-  function updateReplacement(patch: Partial<Omit<ReplacementState, "source">>) {
-    setReplacement((current) => current ? { ...current, ...patch, preview: patch.preview ?? null } : current);
-  }
-
-  async function showReplacementPreview() {
-    if (!replacement) return;
-    const payload = {
-      sourceVersion: replacement.source.version,
-      issueDate: replacement.issueDate,
-    };
+  async function restoreToPending() {
+    if (!restoreTarget) return;
     setBusy(true);
     try {
-      const response = await fetch(`/api/invoices/${replacement.source.id}/replacement-preview`, {
+      const response = await fetch(`/api/invoices/${restoreTarget.id}/restore-to-pending`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ sourceVersion: restoreTarget.version }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message ?? "재발행 미리보기를 만들지 못했습니다.");
-      setReplacement((current) => current ? {
-        ...current,
-        preview: {
-          documents: body.documents,
-          expectedRevenueEntryIds: body.expectedRevenueEntryIds,
-          expectedActiveInvoiceIds: body.expectedActiveInvoiceIds,
-          warnings: body.warnings,
-          issueDateWarning: body.issueDateWarning,
-        },
-      } : current);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "재발행 미리보기를 만들지 못했습니다.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function replaceCurrentInvoice() {
-    if (!replacement?.preview) return;
-    const reason = replacement.reason.trim();
-    if (!reason) return toast.error("재발행 사유를 입력해 주세요.");
-    const payload = {
-      sourceVersion: replacement.source.version,
-      expectedRevenueEntryIds: replacement.preview.expectedRevenueEntryIds,
-      expectedActiveInvoiceIds: replacement.preview.expectedActiveInvoiceIds,
-      issueDate: replacement.issueDate,
-      reason,
-    };
-    setBusy(true);
-    try {
-      const response = await fetch(`/api/invoices/${replacement.source.id}/replace`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message ?? "거래명세표를 재발행하지 못했습니다.");
-      const invoiceNos = body.documents.map((document: { invoiceNo: string }) => document.invoiceNo).join(", ");
-      toast.success(`${replacement.source.invoiceNo}을(를) ${invoiceNos}(으)로 대체했습니다.`);
-      setReplacement(null);
+      if (!response.ok) throw new Error(body.error?.message ?? "거래명세표를 발행대기로 되돌리지 못했습니다.");
+      toast.success(`${body.invoiceNo}의 원본 매출 ${body.restoredRevenueCount}건을 발행대기로 되돌렸습니다.`);
+      setRestoreTarget(null);
       await Promise.all([candidates ? loadCandidates() : Promise.resolve(), loadInvoices(1)]);
-      window.open(`/invoices/print?ids=${body.documents.map((document: { id: string }) => document.id).join(",")}`, "_blank", "noopener,noreferrer");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "거래명세표를 재발행하지 못했습니다.");
+      toast.error(error instanceof Error ? error.message : "거래명세표를 발행대기로 되돌리지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -452,7 +369,7 @@ export function InvoiceManager({
   const issueGroupCandidates: IssueGroupingCandidate[] = (candidates?.rows.filter((row): row is Candidate & { kind: "NEW" } => row.kind === "NEW") ?? []) as IssueGroupingCandidate[];
   const issueGroups = buildIssueGroups(issueGroupCandidates, selected, issueDates, manualGroupKeys, issueDate);
   const selectedIssueGroupCount = issueGroups.filter((group) => group.selectedKeys.length > 0).length;
-  const expectedDocumentCount = selectedIssueGroupCount + selectedSummary.replacementCount;
+  const expectedDocumentCount = selectedIssueGroupCount;
   const groupByCandidateKey = new Map(issueGroups.flatMap((group) => group.candidateKeys.map((key) => [key, group] as const)));
   const allSelectableSelected = Boolean(candidates?.rows.some((row) => row.selectable))
     && candidates!.rows.filter((row) => row.selectable).every((row) => selected.includes(row.targetKey));
@@ -472,7 +389,7 @@ export function InvoiceManager({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold">발행 대기</h2>
-          <p className="text-sm text-muted-foreground">최신 마감 기준의 신규 발행과 재발행 대상을 함께 표시합니다.</p>
+          <p className="text-sm text-muted-foreground">최신 마감 기준의 발행 대기 매출을 표시합니다.</p>
         </div>
         {!companyComplete && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           공급자 정보가 필요합니다. {isAdmin ? <Link className="underline" href="/settings/company">설정하기</Link> : "관리자에게 설정을 요청하세요."}
@@ -496,7 +413,7 @@ export function InvoiceManager({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm">
             <span className="font-medium">대기 {candidates.total}건</span>
-            <span className="ml-3 text-muted-foreground">전체 {candidates.totals.supplyAmount.toLocaleString()}원 · 선택 {selectedSummary.total}건 ({selectedSummary.supplyAmount.toLocaleString()}원) · 신규 {selectedSummary.newCount} · 대체 {selectedSummary.replacementCount}</span>
+            <span className="ml-3 text-muted-foreground">전체 {candidates.totals.supplyAmount.toLocaleString()}원 · 선택 {selectedSummary.total}건 ({selectedSummary.supplyAmount.toLocaleString()}원)</span>
           </div>
           <Button size="sm" variant="outline" disabled={!candidates.rows.some((row) => row.selectable)} onClick={selectAll}>
             {allSelectableSelected ? "전체 해제" : "전체 선택"}
@@ -563,14 +480,14 @@ export function InvoiceManager({
               >
                 <TableCell>
                   <input
-                    aria-label={`${row.siteName} ${row.month} ${row.kind === "REPLACEMENT" ? "대체" : "신규"} 발행 선택`}
+                    aria-label={`${row.siteName} ${row.month} 신규 발행 선택`}
                     type="checkbox"
                     disabled={!row.selectable}
                     checked={selected.includes(row.targetKey)}
                     onChange={() => toggle(row.targetKey)}
                   />
                 </TableCell>
-                <TableCell><Badge variant={row.kind === "REPLACEMENT" ? "secondary" : "outline"}>{row.kind === "REPLACEMENT" ? "대체" : row.kind === "BLOCKED" ? "확인 필요" : "신규"}</Badge></TableCell>
+                <TableCell><Badge variant="outline">{row.kind === "BLOCKED" ? "확인 필요" : "신규"}</Badge></TableCell>
                 <TableCell>{row.month}</TableCell>
                 <TableCell><span className="font-medium">{row.siteName}</span><span className="block text-xs text-muted-foreground">{row.siteCode}</span>{row.currentInvoices.length > 0 && <span className="block text-xs text-muted-foreground">현재 {row.currentInvoices.map((invoice) => invoice.invoiceNo).join(", ")}</span>}{(row.blockReason || candidateErrors[row.targetKey]) && <span className="mt-1 block max-w-96 whitespace-normal text-xs text-destructive">{candidateErrors[row.targetKey] ?? row.blockReason}</span>}</TableCell>
                 <TableCell>{row.contractCategoryName ?? "-"}</TableCell>
@@ -597,21 +514,20 @@ export function InvoiceManager({
             </Button>
           </div>
         </div>
-        {selected.some((key) => candidates?.rows.find((row) => row.targetKey === key)?.kind === "REPLACEMENT") && <div className="max-w-xl"><Field label="재발행 사유" value={replacementReason} onChange={(value) => { setReplacementReason(value); setPreview(null); }} placeholder="예: 발행일 변경 및 자동 그룹 재계산" /></div>}
       </>}
     </section>}
 
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <div><h2 className="font-semibold">발행 이력</h2><p className="text-sm text-muted-foreground">최신 유효본과 대체된 과거 snapshot을 구분해 관리합니다.</p></div>
+        <div><h2 className="font-semibold">발행 이력</h2><p className="text-sm text-muted-foreground">유효 문서와 취소·대체된 과거 발행본을 구분해 관리합니다.</p></div>
         <Button size="sm" variant="outline" onClick={() => void loadInvoices()}><RefreshCw data-icon="inline-start" />새로고침</Button>
       </div>
       <div className="overflow-x-auto rounded-xl border bg-card">
         <Table>
           <TableHeader><TableRow><TableHead>발행번호</TableHead><TableHead>상태</TableHead><TableHead>발행일</TableHead><TableHead>수신처</TableHead><TableHead>계약 구분</TableHead><TableHead>발행 품목</TableHead><TableHead>매출기간</TableHead><TableHead>원장/표시행</TableHead><TableHead className="text-right">공급가액</TableHead><TableHead>방식</TableHead><TableHead>최종수정일</TableHead><TableHead className="text-right">관리</TableHead></TableRow></TableHeader>
-          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={12} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" ? "opacity-65" : undefined}>
+          <TableBody>{data.rows.length === 0 ? <TableRow><TableCell colSpan={12} className="h-28 text-center text-muted-foreground">발행된 거래명세표가 없습니다.</TableCell></TableRow> : data.rows.map((row) => <TableRow key={row.id} className={row.status === "SUPERSEDED" || row.status === "CANCELED" ? "opacity-65" : undefined}>
             <TableCell className="font-mono text-xs">{row.invoiceNo}{row.supersededBy && <span className="block font-sans text-[11px] text-muted-foreground">→ {row.supersededBy.invoiceNo}</span>}</TableCell>
-            <TableCell><Badge variant={row.status === "ISSUED" ? "secondary" : "outline"}>{row.status === "ISSUED" ? "유효" : row.status === "SUPERSEDED" ? "대체됨" : "작성 중"}</Badge></TableCell>
+            <TableCell><Badge variant={row.status === "ISSUED" ? "secondary" : "outline"}>{row.status === "ISSUED" ? "유효" : row.status === "SUPERSEDED" ? "대체됨" : row.status === "CANCELED" ? "취소됨" : "작성 중"}</Badge></TableCell>
             <TableCell>{row.issueDate.slice(0, 10)}</TableCell><TableCell>{row.recipientName}</TableCell><TableCell>{row.contractCategoryName ?? "-"}</TableCell><TableCell>{row.issueItemName ?? "-"}</TableCell>
             <TableCell className="text-xs">{row.periodStart.slice(0, 10)} ~ {row.periodEnd.slice(0, 10)}{row.monthlyCloseCycle && <span className="block text-muted-foreground">마감 {row.monthlyCloseCycle.cycleNo}회차 근거</span>}</TableCell>
             <TableCell>{row._count.revenueLinks}/{row._count.lines}</TableCell>
@@ -619,7 +535,7 @@ export function InvoiceManager({
             <TableCell><Badge variant="outline">{row.displayMode === "AGGREGATED" ? "합산" : "건별"}</Badge></TableCell>
             <TableCell className="whitespace-nowrap text-xs tabular-nums">{formatSeoulDateTime(row.updatedAt)}</TableCell>
             <TableCell className="text-right"><div className="flex justify-end gap-1">
-              {canIssue && row.status === "ISSUED" && <Button size="sm" variant="outline" onClick={() => openReplacement(row)}><RefreshCw data-icon="inline-start" />재발행</Button>}
+              {canIssue && row.status === "ISSUED" && <Button size="sm" variant="outline" onClick={() => setRestoreTarget(row)}><RefreshCw data-icon="inline-start" />발행대기로 되돌리기</Button>}
               <Button size="sm" variant="ghost" nativeButton={false} render={<a href={`/invoices/print?ids=${row.id}`} target="_blank" rel="noreferrer" />}><Printer data-icon="inline-start" />재출력</Button>
             </div></TableCell>
           </TableRow>)}</TableBody>
@@ -633,9 +549,8 @@ export function InvoiceManager({
 
     {preview && <Dialog open onOpenChange={(open) => { if (!open) setPreview(null); }}>
       <DialogContent className="max-h-[94svh] overflow-y-auto sm:max-w-6xl">
-         <DialogHeader><DialogTitle>거래명세표 발행 미리보기</DialogTitle><DialogDescription>전체 {preview.summary.total}건 · 신규 {preview.summary.newCount}건 · 대체 {preview.summary.replacementCount}건 · 차단 {preview.summary.blockedCount}건을 확인하세요.</DialogDescription></DialogHeader>
+         <DialogHeader><DialogTitle>거래명세표 발행 미리보기</DialogTitle><DialogDescription>전체 {preview.summary.total}건 · 발행 {preview.summary.newCount}건 · 차단 {preview.summary.blockedCount}건을 확인하세요.</DialogDescription></DialogHeader>
         {preview.results.some((result) => result.issueDateWarning) && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong>발행일 확인</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.issueDateWarning ? [<li key={`${result.targetKey}:date`}>{result.issueDateWarning}</li>] : [])}</ul></div>}
-        {preview.results.some((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED") && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong>대체될 현재 발행본</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.kind === "REPLACEMENT" && result.outcome === "PREVIEWED" ? (result.currentInvoices ?? []).map((invoice) => <li key={`${result.targetKey}:${invoice.id}`}>{invoice.invoiceNo}</li>) : [])}</ul></div>}
         {preview.results.some((result) => result.outcome === "PREVIEWED" && (result.documents ?? []).some((document) => document.snapshotNotice)) && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><strong>병합 snapshot 적용</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.outcome === "PREVIEWED" ? (result.documents ?? []).flatMap((document, index) => document.snapshotNotice ? [<li key={`${result.targetKey}:snapshot:${index}`}>{document.snapshotNotice}</li>] : []) : [])}</ul></div>}
         {preview.results.some((result) => result.outcome === "BLOCKED") && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"><strong>미리보기에서 제외된 대상</strong><ul className="mt-1 list-disc pl-5">{preview.results.flatMap((result) => result.outcome === "BLOCKED" ? [<li key={result.targetKey}>{result.error?.message ?? "최신 상태를 확인해 주세요."}</li>] : [])}</ul></div>}
         <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={preview.results.flatMap((result) => result.outcome === "PREVIEWED" ? (result.documents ?? (result.document ? [result.document] : [])) : []).map(toPrintPreview)} /></div>
@@ -643,20 +558,11 @@ export function InvoiceManager({
       </DialogContent>
     </Dialog>}
 
-    {replacement && <Dialog open onOpenChange={(open) => { if (!open) setReplacement(null); }}>
-      <DialogContent className="max-h-[94svh] overflow-y-auto sm:max-w-6xl">
-        <DialogHeader><DialogTitle>{replacement.source.invoiceNo} 재발행</DialogTitle><DialogDescription>{replacement.source.recipientName} · 발행일과 자동 그룹 결과만 바꾸고, 기존 문서에 연결된 매출로 새 발행번호를 만듭니다.</DialogDescription></DialogHeader>
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field label="새 발행일" type="date" value={replacement.issueDate} onChange={(value) => updateReplacement({ issueDate: value })} />
-          <Field label="재발행 사유" value={replacement.reason} onChange={(value) => updateReplacement({ reason: value })} placeholder="예: 발행일 변경 및 자동 그룹 재계산" />
-        </div>
-         {replacement.preview ? <>
-           <div className="rounded-lg border bg-muted/40 p-3 text-sm"><strong>기존 문서 {replacement.preview.expectedActiveInvoiceIds.length}건 → 새 문서 {replacement.preview.documents.length}건</strong><span className="ml-2 text-muted-foreground">연결 매출 {replacement.preview.expectedRevenueEntryIds.length}건 · 그룹은 현장·계약 구분·발행일 기준 자동 계산</span><ul className="mt-2 space-y-1 text-xs">{replacement.preview.documents.map((document, index) => <li key={`${document.documentGroupKey ?? "group"}:${index}`}>새 문서 {index + 1} · 발행일 {document.issueDate} · 그룹 {document.documentGroupKey ?? "자동"} · 공급가액 {document.subtotal.toLocaleString()}원</li>)}</ul></div>
-           {replacement.preview.issueDateWarning && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">{replacement.preview.issueDateWarning}</div>}
-           {replacement.preview.documents.some((document) => document.snapshotNotice) && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">{replacement.preview.documents.find((document) => document.snapshotNotice)?.snapshotNotice}</div>}
-          <div className="overflow-auto rounded-xl bg-slate-100 p-4"><InvoiceDocumentPages documents={replacement.preview.documents.map(toPrintPreview)} /></div>
-        </> : <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">새 발행일을 확인하고 미리보기를 실행하세요.</div>}
-        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setReplacement(null)}>취소</Button>{replacement.preview ? <><Button variant="outline" disabled={busy} onClick={() => updateReplacement({ preview: null })}>날짜·사유 수정</Button><Button disabled={busy || !replacement.reason.trim()} onClick={() => void replaceCurrentInvoice()}><FileCheck2 data-icon="inline-start" />{busy ? "재발행 중..." : "재발행 확정"}</Button></> : <Button disabled={busy} onClick={() => void showReplacementPreview()}><Eye data-icon="inline-start" />재발행 미리보기</Button>}</div>
+    {restoreTarget && <Dialog open onOpenChange={(open) => { if (!open) setRestoreTarget(null); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{restoreTarget.invoiceNo} 발행대기로 되돌리기</DialogTitle><DialogDescription>이 거래명세표를 취소하고 연결된 원본 매출 {restoreTarget._count.revenueLinks}건을 발행대기로 되돌립니다.</DialogDescription></DialogHeader>
+        <div className="rounded-lg border bg-muted/40 p-4 text-sm">월마감과 확정 매출은 유지됩니다. 되돌린 뒤 발행 대기에서 그룹·발행일·표시 방식을 다시 지정해 발행하세요.</div>
+        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setRestoreTarget(null)}>취소</Button><Button disabled={busy} onClick={() => void restoreToPending()}>{busy ? "되돌리는 중..." : "발행대기로 되돌리기"}</Button></div>
       </DialogContent>
     </Dialog>}
   </div>;

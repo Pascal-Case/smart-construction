@@ -79,6 +79,20 @@ export const invoiceReplacementPreviewInputSchema = z.object({
   issueDate: z.iso.date(),
 });
 
+export const invoiceNewPreviewInputSchema = commonIssueSettingsSchema.extend({
+  targets: z.array(newIssueTargetSchema).min(1, "미리보기할 발행 대상을 선택해 주세요.").max(500),
+}).superRefine((value, context) => {
+  const keys = value.targets.map((target) => target.targetKey);
+  if (new Set(keys).size !== keys.length) context.addIssue({ code: "custom", message: "중복된 발행 대상이 포함되어 있습니다.", path: ["targets"] });
+});
+
+export const invoiceNewIssueInputSchema = commonIssueSettingsSchema.extend({
+  targets: z.array(newIssueTargetSchema).min(1, "발행할 대상을 선택해 주세요.").max(500),
+}).superRefine((value, context) => {
+  const keys = value.targets.map((target) => target.targetKey);
+  if (new Set(keys).size !== keys.length) context.addIssue({ code: "custom", message: "중복된 발행 대상이 포함되어 있습니다.", path: ["targets"] });
+});
+
 export const invoiceReplacementIssueInputSchema = invoiceReplacementPreviewInputSchema.extend({
   expectedRevenueEntryIds: z.array(z.string().min(1)).min(1, "재발행할 매출이 없습니다.").max(500, "한 번에 최대 500건까지 발행할 수 있습니다."),
   expectedActiveInvoiceIds: z.array(z.string().min(1)).min(1, "재발행할 현재 문서가 없습니다.").max(500),
@@ -90,6 +104,10 @@ export const invoiceReplacementIssueInputSchema = invoiceReplacementPreviewInput
   if (new Set(value.expectedActiveInvoiceIds).size !== value.expectedActiveInvoiceIds.length) {
     context.addIssue({ code: "custom", message: "중복된 현재 발행본이 포함되어 있습니다.", path: ["expectedActiveInvoiceIds"] });
   }
+});
+
+export const invoiceRestoreToPendingInputSchema = z.object({
+  sourceVersion: z.number().int().positive(),
 });
 
 export const invoiceListQuerySchema = z.object({
@@ -106,4 +124,5 @@ export type InvoicePreviewInput = z.infer<typeof invoicePreviewInputSchema>;
 export type InvoiceIssueInput = z.infer<typeof invoiceIssueInputSchema>;
 export type InvoiceReplacementPreviewInput = z.infer<typeof invoiceReplacementPreviewInputSchema>;
 export type InvoiceReplacementIssueInput = z.infer<typeof invoiceReplacementIssueInputSchema>;
+export type InvoiceRestoreToPendingInput = z.infer<typeof invoiceRestoreToPendingInputSchema>;
 export type InvoiceListQuery = z.infer<typeof invoiceListQuerySchema>;

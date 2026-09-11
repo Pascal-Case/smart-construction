@@ -57,6 +57,7 @@ enum InvoiceStatus {
   DRAFT
   ISSUED
   SUPERSEDED
+  CANCELED
 }
 
 enum InvoiceDisplayMode {
@@ -529,6 +530,7 @@ model InvoiceDocument {
   issuedById                     String
   issuedAt                       DateTime
   supersededAt                   DateTime?
+  canceledAt                     DateTime?
   supersededByInvoiceId          String?
   monthlyCloseCycleId            String?
   createdAt                      DateTime             @default(now())

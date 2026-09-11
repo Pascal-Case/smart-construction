@@ -1,7 +1,7 @@
 import { UserRole } from "@/generated/prisma/client";
 import { errorResponse } from "@/lib/auth/errors";
 import { requireUser } from "@/lib/auth/session";
-import { invoiceIssueInputSchema, invoiceListQuerySchema } from "@/lib/invoices/schemas";
+import { invoiceListQuerySchema, invoiceNewIssueInputSchema } from "@/lib/invoices/schemas";
 import { issueInvoices, listInvoices } from "@/lib/invoices/service";
 
 export async function GET(request: Request) {
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const actor = await requireUser([UserRole.ADMIN, UserRole.MANAGER]);
-    const results = await issueInvoices(actor, invoiceIssueInputSchema.parse(await request.json()));
+    const results = await issueInvoices(actor, invoiceNewIssueInputSchema.parse(await request.json()));
     return Response.json({ results }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

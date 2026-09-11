@@ -38,7 +38,7 @@ vi.mock("@/lib/masters/sequence", () => ({ nextInvoiceNo: mocks.nextInvoiceNo })
 vi.mock("@/lib/audit/record", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/events/bus", () => ({ recordSyncEvent: mocks.recordSyncEvent }));
 
-import { getInvoiceCandidates, issueInvoices, previewInvoices, previewReplacementInvoice, replaceInvoice } from "@/lib/invoices/service";
+import { getInvoiceCandidates, issueInvoices, previewInvoices, previewReplacementInvoice, replaceInvoice, restoreInvoiceToPending } from "@/lib/invoices/service";
 
 const actor = { id: "u1", loginId: "manager", name: "매니저", role: UserRole.MANAGER, isActive: true, version: 1 };
 const source = {
@@ -180,13 +180,62 @@ describe("invoice replacement service", () => {
     expect(mocks.revenueUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["r1"] }, currentInvoiceDocumentId: null } }));
   });
 
-  it("계약 구분 또는 대표 품목 snapshot만 바뀐 재마감도 대체 대상으로 분류한다", async () => {
+  it("발행 중인 매출은 대체 후보로 노출하지 않는다", async () => {
     mocks.rootInvoiceFindMany.mockResolvedValue([{ id: source.id, invoiceNo: source.invoiceNo, siteId: source.siteId, periodStart: source.periodStart, periodEnd: source.periodEnd, version: source.version, issuedAt: new Date("2026-07-20T00:00:00.000Z"), subtotal: 300_000, contractCategoryId: source.contractCategoryId, issueItemId: "item-1", issueItemName: "기존 계약", revenueFingerprint: null, closeRevenueFingerprint: "before", revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }] }]);
     mocks.rootRevenueFindMany.mockResolvedValue(entries.map((entry) => ({ ...entry, currentInvoiceDocumentId: source.id })));
 
-    expect(await getInvoiceCandidates({ month: "2026-07", siteId: "" })).toMatchObject({
-      rows: [expect.objectContaining({ kind: "REPLACEMENT", sourceInvoiceId: source.id })],
+    expect(await getInvoiceCandidates({ month: "2026-07", siteId: "" })).toMatchObject({ rows: [] });
+  });
+
+  it("원본 매출 연결만 해제하고 기존 문서를 취소 이력으로 보존한다", async () => {
+    mocks.invoiceFindUnique.mockResolvedValue({
+      id: source.id,
+      invoiceNo: source.invoiceNo,
+      siteId: source.siteId,
+      status: "ISSUED",
+      version: source.version,
+      revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }],
+      currentRevenueEntries: [{ id: "r1" }, { id: "r2" }],
     });
+    mocks.revenueUpdateMany.mockResolvedValue({ count: 2 });
+
+    await expect(restoreInvoiceToPending(actor, source.id, { sourceVersion: source.version })).resolves.toEqual({
+      invoiceId: source.id,
+      invoiceNo: source.invoiceNo,
+      restoredRevenueCount: 2,
+    });
+    expect(mocks.revenueUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["r1", "r2"] }, currentInvoiceDocumentId: source.id },
+      data: { currentInvoiceDocumentId: null },
+    });
+    expect(mocks.invoiceUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: source.id, status: "ISSUED", version: source.version },
+      data: expect.objectContaining({ status: "CANCELED", version: { increment: 1 } }),
+    }));
+    expect(mocks.recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      action: "RESTORE_TO_PENDING",
+      entityId: source.id,
+    }));
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("현재 연결과 발행 이력이 다르면 아무것도 복원하지 않는다", async () => {
+    mocks.invoiceFindUnique.mockResolvedValue({
+      id: source.id,
+      invoiceNo: source.invoiceNo,
+      siteId: source.siteId,
+      status: "ISSUED",
+      version: source.version,
+      revenueLinks: [{ revenueEntryId: "r1" }, { revenueEntryId: "r2" }],
+      currentRevenueEntries: [{ id: "r1" }],
+    });
+
+    await expect(restoreInvoiceToPending(actor, source.id, { sourceVersion: source.version })).rejects.toMatchObject({
+      status: 409,
+      code: "INVOICE_RESTORE_SCOPE_CONFLICT",
+    });
+    expect(mocks.revenueUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.invoiceUpdateMany).not.toHaveBeenCalled();
   });
 
   it("previews only the revenue linked to the source document", async () => {

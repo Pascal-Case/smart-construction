@@ -64,7 +64,7 @@ export function evaluateSiteMonth(input: MonthCloseEvaluationInput): MonthCloseE
     }
   }
 
-  if (input.invoiceDocuments.some((document) => document.status === "SUPERSEDED")) {
+  if (input.invoiceDocuments.some((document) => document.status === "SUPERSEDED" || document.status === "CANCELED")) {
     exceptions.push({
       key: "INVOICE_HISTORY:" + input.site.id + ":" + input.month,
       kind: "INVOICE_HISTORY",
@@ -72,7 +72,7 @@ export function evaluateSiteMonth(input: MonthCloseEvaluationInput): MonthCloseE
       reviewable: false,
       reviewed: false,
       fingerprint: stableFingerprint(input.invoiceDocuments),
-      message: "대체된 과거 거래명세표 이력이 있습니다.",
+      message: "취소되거나 대체된 과거 거래명세표 이력이 있습니다.",
     });
   }
 

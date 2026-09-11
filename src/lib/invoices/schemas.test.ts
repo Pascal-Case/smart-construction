@@ -1,27 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { invoiceReplacementIssueInputSchema } from "@/lib/invoices/schemas";
+import { invoiceNewIssueInputSchema, invoiceRestoreToPendingInputSchema } from "@/lib/invoices/schemas";
 
-describe("invoice replacement input", () => {
-  it("requires a replacement reason and the expected active documents", () => {
-      const base = {
-        sourceVersion: 2,
-        issueDate: "2026-07-25",
-        expectedRevenueEntryIds: ["revenue-1"],
-        expectedActiveInvoiceIds: ["invoice-1"],
-    };
-
-    expect(invoiceReplacementIssueInputSchema.safeParse(base).success).toBe(false);
-    expect(invoiceReplacementIssueInputSchema.safeParse({ ...base, reason: "발행일과 그룹핑 변경" }).success).toBe(true);
+describe("invoice restore-to-pending input", () => {
+  it("requires the current positive document version", () => {
+    expect(invoiceRestoreToPendingInputSchema.safeParse({ sourceVersion: 2 }).success).toBe(true);
+    expect(invoiceRestoreToPendingInputSchema.safeParse({ sourceVersion: 0 }).success).toBe(false);
   });
 
-  it("does not accept an empty replacement reason", () => {
-    expect(invoiceReplacementIssueInputSchema.safeParse({
-        sourceVersion: 2,
-        issueDate: "2026-07-25",
-        reason: "   ",
-        expectedRevenueEntryIds: ["revenue-1"],
-        expectedActiveInvoiceIds: ["invoice-1"],
+  it("does not accept replacement settings", () => {
+    expect(invoiceRestoreToPendingInputSchema.strict().safeParse({ sourceVersion: 2, issueDate: "2026-07-25" }).success).toBe(false);
+  });
+});
+
+describe("new invoice issue input", () => {
+  it("does not accept the removed replacement target", () => {
+    expect(invoiceNewIssueInputSchema.safeParse({
+      issueDate: "2026-07-25",
+      displayMode: "AGGREGATED",
+      templateId: "system-default",
+      templateVersion: 1,
+      targets: [{ targetKey: "replacement:old", kind: "REPLACEMENT", sourceInvoiceId: "old", sourceVersion: 1 }],
     }).success).toBe(false);
   });
 });

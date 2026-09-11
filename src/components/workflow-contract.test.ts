@@ -152,25 +152,25 @@ describe("registration workflow contract", () => {
     expect(source).toContain('/revenues?exception=ZERO');
   });
 
-  it("거래명세표 이력은 최신본 대체 발행과 과거본 상태를 구분한다", () => {
+  it("거래명세표 이력은 유효본을 발행대기로 되돌리고 취소 이력을 보존한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/invoices/invoice-manager.tsx"), "utf8");
 
-    expect(source).toContain("재발행 미리보기");
-    expect(source).toContain("재발행 사유");
-    expect(source).toContain("병합 snapshot 적용");
-    expect(source).toContain("기존 문서");
+    expect(source).toContain("발행대기로 되돌리기");
+    expect(source).toContain("연결된 원본 매출");
+    expect(source).toContain("월마감과 확정 매출은 유지");
     expect(source).toContain('canIssue && row.status === "ISSUED"');
-    expect(source).not.toContain('row.status === "ISSUED" && row.replacementRequired');
-    expect(source).toContain("대체됨");
+    expect(source).toContain("취소됨");
+    expect(source).not.toContain("재발행 미리보기");
+    expect(source).not.toContain("재발행 사유");
   });
 
-  it("거래명세표 발행 대기는 신규와 대체를 함께 선택하고 부분 실패를 보존한다", () => {
+  it("거래명세표 발행 대기는 복원된 매출을 신규 발행 흐름으로 처리한다", () => {
     const source = readFileSync(path.join(process.cwd(), "src/components/invoices/invoice-manager.tsx"), "utf8");
 
     expect(source).toContain("발행 대기");
     expect(source).toContain("toggleAllSelectable");
-    expect(source).toContain('kind: "REPLACEMENT"');
-    expect(source).toContain("expectedActiveInvoiceIds");
+    expect(source).toContain("buildNewIssueTargets");
+    expect(source).toContain("자동 묶음으로 복귀");
     expect(source).toContain("reconcileIssueResults");
     expect(source).toContain('id="new-issue"');
   });
